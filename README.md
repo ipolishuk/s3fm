@@ -12,12 +12,12 @@
 ## Скриншоты
 
 <p align="center">
-  <img src="docs/images/login1.jpg" alt="Страница входа" width="48%" />
-  <img src="docs/images/login2.jpg" alt="Вход через SSO / локальный логин" width="48%" />
+  <img src="docs/images/pic1.png" alt="Страница входа" width="48%" />
+  <img src="docs/images/pic2.png" alt="Вход через SSO / локальный логин" width="48%" />
 </p>
 <p align="center">
-  <img src="docs/images/files.jpg" alt="Файловый менеджер" width="48%" />
-  <img src="docs/images/settings.jpg" alt="Настройки — бакеты" width="48%" />
+  <img src="docs/images/pic3.png" alt="Файловый менеджер" width="48%" />
+  <img src="docs/images/pic4.png" alt="Настройки — бакеты" width="48%" />
 </p>
 
 ## Быстрый старт (Docker Compose)

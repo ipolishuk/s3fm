@@ -1,0 +1,204 @@
+body {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-controls {
+  position: fixed;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 10;
+}
+
+.login-controls .lang-dropdown > .dropdown-menu {
+  left: auto;
+  right: 0;
+}
+
+.login-container {
+  background: var(--common-bg);
+  padding: 32px 24px;
+  border-radius: 8px;
+  box-shadow: var(--common-box-shadow);
+  border: var(--border-style);
+  width: 350px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 440px) {
+  .login-container {
+    width: calc(100vw - 32px);
+    min-width: 280px;
+    max-width: none;
+  }
+}
+
+.lables,
+.logo,
+.logo h1,
+.login-footer,
+.login-footer a {
+  color: var(--text-primary);
+}
+
+.logo {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.logo-img {
+  display: block;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 12px;
+  filter: drop-shadow(0 8px 16px #2b445c24);
+}
+
+.logo-img .brand-logo-fg {
+  fill: var(--brand-accent-contrast);
+}
+
+.logo-img .brand-logo-muted {
+  fill: var(--brand-accent-contrast);
+  opacity: 0.62;
+}
+
+.logo-img .brand-logo-cut {
+  fill: var(--brand-accent);
+}
+
+.logo-img .brand-logo-pocket {
+  fill: var(--brand-accent);
+  opacity: 0.22;
+}
+
+.logo h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 400;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.lables {
+  display: block;
+  margin-bottom: 6px;
+}
+
+input[type="text"],
+input[type="password"] {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  transition: border-color 0.3s ease;
+  box-sizing: border-box;
+  background: var(--common-bg);
+  color: var(--text-primary);
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus {
+  outline: none;
+  border-color: var(--focus-ring);
+}
+
+input[type="text"]:-webkit-autofill,
+input[type="text"]:-webkit-autofill:hover,
+input[type="text"]:-webkit-autofill:focus,
+input[type="password"]:-webkit-autofill,
+input[type="password"]:-webkit-autofill:hover,
+input[type="password"]:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text-primary);
+  box-shadow: 0 0 0px 1000px var(--common-bg) inset;
+  -webkit-box-shadow: 0 0 0px 1000px var(--common-bg) inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+.login-action-btn {
+  width: 100%;
+  margin-top: 0;
+}
+
+.login-method-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.login-form-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.28s ease;
+}
+
+.login-form-panel.is-open {
+  grid-template-rows: 1fr;
+  margin-bottom: 6px;
+}
+
+.login-form-panel-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.login-form-panel:not(.is-open) .login-form-panel-inner {
+  visibility: hidden;
+}
+
+.login-form-panel.is-open .login-form-panel-inner {
+  visibility: visible;
+}
+
+.login-sso-form {
+  margin: 0;
+}
+
+.btn-sso {
+  margin-top: 0;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-color, var(--text-secondary));
+  opacity: 0.35;
+}
+
+.login-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 30px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.login-footer a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.login-footer a:hover {
+  color: var(--text-primary);
+}

@@ -1,0 +1,1170 @@
+/* Модальные окна и тосты: единая система отступов, типографики и поверхностей. */
+
+.notification {
+  background: var(--common-bg);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  overflow: hidden;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--popup-z-overlay);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: max(16px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+  background: var(--popup-backdrop);
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Плавное появление фона (both — без вспышки полной непрозрачности) */
+.modal-overlay[style*="display: flex"],
+.modal-overlay[style*="display:flex"] {
+  animation: modalOverlayIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes modalOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Карточка диалога */
+.modal {
+  --modal-pad-x: 18px;
+  --modal-pad-y: 18px;
+  --modal-field-gap: 14px;
+  --modal-label-gap: 4px;
+  --modal-max-narrow: 600px;
+  --modal-max-wide: 600px;
+  --modal-control-min-h: 40px;
+
+  background: var(--common-bg);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  overflow: hidden;
+
+  width: 100%;
+  max-width: min(var(--modal-max-narrow), 100%);
+  max-height: min(90vh, 100%);
+  display: flex;
+  flex-direction: column;
+  margin: auto;
+  border: var(--border-style);
+  /* Opacity-only: transform would make position:fixed dropdowns use the modal as containing block */
+  animation: modalPopupIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.modal .add-user-modal {
+  max-width: min(var(--modal-max-wide), 100%);
+}
+
+@keyframes modalPopupIn {
+  from { opacity: 0.85; }
+  to { opacity: 1; }
+}
+
+.modal-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  font-size: large;
+  gap: 8px;
+  padding: var(--modal-pad-y) var(--modal-pad-x);
+  border-bottom: var(--border-style);
+  background: var(--common-bg);
+}
+
+.modal-title {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: large;
+  font-weight: 600;
+  /* line-height: 1.3; */
+  color: var(--text-primary);
+}
+
+.modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--modal-pad-y) var(--modal-pad-x);
+  font-size: var(--font-size-md);
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.modal-body > form {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.modal-message {
+  margin: 0;
+  line-height: 1.5;
+  white-space: pre-line;
+  color: var(--text-primary);
+}
+
+.modal-footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: var(--modal-pad-y) var(--modal-pad-x);
+  border-top: var(--border-style);
+  background: var(--light-bg);
+}
+
+.modal-footer .btn.modal-footer-left {
+  margin-right: auto;
+}
+
+/* Поля формы внутри модалок */
+.modal-body .form-group {
+  margin: 0 0 var(--modal-label-gap) 0;
+}
+
+.form-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.form-control {
+  width: 100%;
+  min-height: var(--modal-control-min-h);
+  padding: 8px;
+  margin: 2px 0;
+  box-sizing: border-box;
+  border: var(--border-style);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-md);
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--common-bg);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: var(--focus-ring);
+}
+
+.form-control.error {
+  border-color: var(--error);
+}
+
+.form-control-reveal {
+  position: relative;
+  margin: 2px 0;
+  width: 100%;
+}
+
+.form-control-reveal .form-control {
+  margin: 0;
+  width: 100%;
+  padding-right: 40px;
+  box-sizing: border-box;
+}
+
+.form-control-reveal:has(.form-control-reveal-btn-copy) .form-control {
+  padding-right: 72px;
+}
+
+.form-control-reveal-btn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 36px;
+  font-size: var(--font-size-sm);
+}
+
+.form-control-reveal-btn:hover:not(:disabled) {
+  transform: translateY(-50%);
+}
+
+/* При двух кнопках: eye слева, clone справа (как у Secret Key) */
+.form-control-reveal:has(.form-control-reveal-btn-copy) .form-control-reveal-btn:not(.form-control-reveal-btn-copy) {
+  right: 30px;
+}
+
+.form-control-reveal-btn-copy {
+  right: 0;
+}
+
+.form-control-reveal-label {
+  display: block;
+  pointer-events: none;
+}
+
+.form-control-reveal-btn:active:not(:disabled) {
+  transform: translateY(-50%) scale(0.99);
+}
+
+/* .btn:disabled ставит transform:none — не сбрасывать вертикальное центрирование */
+.form-control-reveal-btn:disabled,
+.btn.form-control-reveal-btn:disabled {
+  transform: translateY(-50%) !important;
+}
+
+/* LDAP lookup: иконка как в search-container (справа, search-icon) */
+.add-user-username-search .form-control {
+  padding-right: 34px;
+}
+
+.add-user-username-search.add-user-username-search-no-ldap .form-control {
+  padding-right: 8px;
+}
+
+.add-user-ldap-search-btn {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 34px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  z-index: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.add-user-ldap-search-btn .search-icon {
+  position: static;
+  transform: none;
+  left: auto;
+  top: auto;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.add-user-ldap-search-btn:hover:not(:disabled) .search-icon,
+.add-user-ldap-search-btn:focus-visible:not(:disabled) .search-icon {
+  color: var(--text-primary);
+}
+
+.add-user-ldap-search-btn:disabled {
+  cursor: default;
+  opacity: 1;
+  transform: none !important;
+}
+
+.add-user-ldap-search-btn.hidden {
+  display: none;
+}
+
+.add-user-ldap-results {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  border: var(--border-style);
+  border-radius: var(--radius-lg);
+  background: var(--common-bg);
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.12));
+}
+
+.add-user-ldap-results-header {
+  padding: 6px 12px 4px;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.add-user-ldap-results .dropdown-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.add-user-ldap-results .add-user-ldap-result-name {
+  color: var(--text-primary);
+}
+
+.add-user-ldap-results .add-user-ldap-result-meta {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.file-info-acl-edit-row .file-info-acl-remove {
+  align-self: center;
+  flex-shrink: 0;
+}
+
+/* Чекбокс в одну строку с подписью */
+.modal-body .form-group-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.modal-body .form-group-checkbox .lables {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Ошибки формы */
+.modal-body .error-message,
+#folderNameError {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--error-border);
+  background: var(--error-bg);
+  color: var(--error-text);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+.modal-body .error-message:empty,
+#folderNameError:empty {
+  display: none !important;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.role-permissions-panel .role-perm-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--text-primary);
+  transition: background 0.15s;
+}
+
+.role-permissions-panel .role-perm-form-group {
+  margin-bottom: 0;
+}
+
+.role-permissions-panel .role-perm-form-group:not(:last-child) {
+  border-bottom: var(--border-style);
+}
+
+.role-permissions-panel .role-perm-option input {
+  flex-shrink: 0;
+}
+
+.role-permissions-group {
+  margin-bottom: 0;
+}
+
+.role-permissions-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  margin-top: 2px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.role-permissions-panel::-webkit-scrollbar {
+  display: none;
+}
+
+.role-permissions-panel .role-perm-block {
+  flex-shrink: 0;
+}
+
+.role-permissions-panel .role-perm-block .file-info-acl-head {
+  border-bottom: var(--border-style);
+}
+
+.role-permissions-panel .role-perm-grants {
+  background: var(--common-bg);
+}
+
+.add-user-modal-footer {
+  flex-wrap: wrap;
+}
+
+.add-user-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* form оборачивает поля — должен участвовать во flex, иначе Custom roles не сжимается/не скроллится */
+.add-user-modal-body > form {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.add-user-modal-body > form > .form-group:not(.add-user-bucket-roles-group) {
+  flex-shrink: 0;
+}
+
+.add-user-modal-body > form > .add-user-bucket-roles-group,
+.file-info-modal-body > .file-info-acl-group {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+}
+
+.add-user-modal-body > form > .error-message {
+  flex-shrink: 0;
+  margin-top: var(--modal-label-gap);
+}
+
+.add-user-bucket-roles-group > .lables,
+.file-info-acl-group > .lables {
+  flex-shrink: 0;
+  padding: 4px;
+}
+
+.add-user-bucket-roles-group > .file-info-acl-block,
+.file-info-acl-group > .file-info-acl-block {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+
+/* UserInfo: поля прямо в body без .user-info-content-карточки */
+#UserInfoModal {
+  margin: 0;
+  /* padding: 8px; */
+  border: none;
+  overflow: hidden;
+  /* background: var(--light-bg); */
+}
+
+#UserInfoModal .modal-field {
+  padding: 8px 0;
+}
+
+/* Общий блок key/value (copy/move и др.) внутри modal-body */
+.modal-body .user-info-content {
+  margin: 0;
+  padding: 0;
+  border: var(--border-style);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--light-bg);
+}
+
+.modal-body .modal-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.modal-body .modal-field[hidden] {
+  display: none !important;
+}
+
+.modal-body .modal-field:not([hidden]) ~ .modal-field:not([hidden]) {
+  border-top: var(--border-style);
+}
+
+.modal-body .modal-field .lables {
+  flex-shrink: 0;
+  min-width: 120px;
+}
+
+.modal-body .user-info-value {
+  flex: 1;
+  text-align: right;
+  font-size: var(--font-size-md);
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+/* Meilisearch settings: #meiliSettingsForm как body модалки */
+.meili-settings-modal {
+  max-height: min(90dvh, 820px);
+}
+
+.meili-settings-modal #meiliSettingsForm {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: var(--modal-pad-y) var(--modal-pad-x);
+  border: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  font-size: var(--font-size-md);
+  line-height: 1.45;
+  color: var(--text-primary);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44%;
+  align-items: center;
+  gap: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.meili-settings-modal #meiliSettingsForm::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.meili-settings-modal #meiliSettingsForm > .meili-settings-config-error {
+  grid-column: 1 / -1;
+}
+
+/* Children join parent grid so value column shares one left edge */
+.meili-settings-modal .modal-field {
+  display: contents;
+}
+
+.meili-settings-modal .modal-field:not([hidden]) ~ .modal-field:not([hidden]) {
+  border-top: none;
+}
+
+.meili-settings-modal .modal-field .lables {
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  white-space: nowrap;
+  box-sizing: border-box;
+  display: block;
+  min-height: 0;
+  line-height: 1.3;
+}
+
+.meili-settings-label-wrap {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 0;
+  box-sizing: border-box;
+  min-height: var(--modal-control-min-h);
+}
+
+.meili-settings-desc {
+  margin: 0;
+  padding: 0;
+  font-size: var(--font-size-sm, 12px);
+  line-height: 1.25;
+  color: var(--text-secondary);
+  white-space: normal;
+}
+
+.meili-settings-value-col {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  /* padding: 0 4px; */
+  box-sizing: border-box;
+}
+
+.meili-settings-modal .user-info-value.meili-settings-value {
+  flex: none;
+  width: 100%;
+  text-align: left;
+  color: var(--text-primary);
+}
+
+.meili-settings-modal .meili-settings-value .form-control {
+  width: 100%;
+  margin: 0;
+  text-align: left;
+}
+
+.meili-settings-modal .meili-settings-value .dropdown {
+  width: 100%;
+  margin: 0;
+}
+
+/* Env-locked controls reuse .search-container-disabled — без двойного opacity у .btn/.checkbox:disabled */
+.meili-settings-modal .search-container-disabled .form-control.search-input-disabled,
+.meili-settings-modal .search-container-disabled .form-control:disabled {
+  background: var(--common-bg) !important;
+  color: var(--text-secondary) !important;
+  border: var(--border-style);
+  transform: none !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+  pointer-events: none;
+  -webkit-text-fill-color: var(--text-secondary);
+  opacity: 1;
+}
+
+.meili-settings-modal .search-container-disabled .dropdown-trigger:disabled {
+  opacity: 1 !important;
+  color: var(--text-secondary) !important;
+  cursor: not-allowed;
+}
+
+.meili-settings-config-error {
+  color: var(--error-text);
+  margin: 0;
+}
+
+#fileInfoModal .modal-header {
+  min-width: 0;
+  overflow: hidden;
+}
+
+#fileInfoModal .modal-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-info-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.file-info-modal-body > .file-info-details-group,
+.file-info-modal-body > .bulk-acl-summary {
+  flex-shrink: 0;
+}
+
+.file-info-modal-body > .file-info-details-group {
+  flex: 0 0 auto;
+}
+
+.file-info-details-group > .user-info-content {
+  margin-top: 4px;
+}
+
+.file-info-modal-body .modal-field:has(.file-info-value-wrap) {
+  align-items: flex-start;
+}
+
+.file-info-modal-body .file-info-value-wrap {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.file-info-modal-body .file-info-value-wrap a {
+  color: var(--info);
+  text-decoration: none;
+}
+
+.file-info-modal-body .file-info-value-wrap a:hover {
+  text-decoration: underline;
+}
+
+.file-info-acl-block {
+  margin: 0;
+  padding: 0;
+  border: var(--border-style);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--light-bg);
+}
+
+.file-info-acl-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  background: var(--common-bg);
+}
+
+.file-info-acl-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+.file-info-acl-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: center;
+  flex-shrink: 0;
+  margin: 0;
+  background: var(--light-bg);
+  border-bottom: var(--border-style);
+}
+
+/* выше специфичности .modal-body .modal-field (display:flex) */
+.file-info-acl-block .file-info-acl-head.modal-field {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.file-info-acl-head .lables {
+  flex: none;
+  min-width: 0;
+}
+
+.file-info-acl-head .file-info-acl-col-perm {
+  text-align: right;
+}
+
+.file-info-acl-block .file-info-acl-row.modal-field {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.file-info-acl-block .file-info-acl-row .user-info-value {
+  flex: none;
+  min-width: 0;
+}
+
+.file-info-acl-block .file-info-acl-row .file-info-acl-col-user {
+  text-align: left;
+}
+
+.file-info-acl-block .file-info-acl-row .file-info-acl-col-perm {
+  text-align: right;
+}
+
+.file-info-acl-grants {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  display: block;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.file-info-acl-grants::-webkit-scrollbar {
+  display: none;
+}
+
+/* Редактирование: прокрутка только в списке строк */
+.file-info-acl-grants:has(> #fileInfoAclEditRows),
+.file-info-acl-grants:has(> #bulkAclEditRows),
+.file-info-acl-grants:has(> #addUserBucketRolesEditRows) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#fileInfoAclEditRows,
+#bulkAclEditRows,
+#addUserBucketRolesEditRows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scroll-padding-bottom: 12px;
+  padding-bottom: 12px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+#fileInfoAclEditRows::-webkit-scrollbar,
+#bulkAclEditRows::-webkit-scrollbar,
+#addUserBucketRolesEditRows::-webkit-scrollbar {
+  display: none;
+}
+
+.file-info-acl-grants .file-info-acl-row:last-child,
+#fileInfoAclEditRows .file-info-acl-edit-row:last-child,
+#bulkAclEditRows .file-info-acl-edit-row:last-child,
+#addUserBucketRolesEditRows .file-info-acl-edit-row:last-child {
+  border-bottom: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+.file-info-acl-grants > .file-info-acl-message:last-child {
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+/* File info / Bulk ACL: no inner ACL scroll, let modal-body scroll instead */
+.file-info-modal-body {
+  overflow-y: auto;
+}
+
+.file-info-modal-body > .file-info-acl-group,
+.file-info-modal-body > .file-info-acl-group > .file-info-acl-block {
+  flex: 0 0 auto;
+}
+
+.file-info-modal-body .file-info-acl-panel,
+.file-info-modal-body .file-info-acl-table,
+.file-info-modal-body .file-info-acl-grants,
+.file-info-modal-body #fileInfoAclEditRows,
+.file-info-modal-body #bulkAclEditRows {
+  flex: none;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  height: auto;
+}
+
+.file-info-modal-body .file-info-acl-grants:has(> #fileInfoAclEditRows),
+.file-info-modal-body .file-info-acl-grants:has(> #bulkAclEditRows) {
+  display: block;
+}
+
+/* Add user: use modal-body scroll (like Edit bucket), not inner ACL scroll */
+.add-user-modal-body {
+  display: block;
+  overflow-y: auto;
+}
+
+.add-user-modal-body > form {
+  display: block;
+  overflow: visible;
+  min-height: auto;
+}
+
+.add-user-modal-body > form > .add-user-bucket-roles-group {
+  flex: 0 0 auto;
+  min-height: auto;
+  display: block;
+}
+
+.add-user-modal-body > form > .add-user-bucket-roles-group > .file-info-acl-block,
+.add-user-modal-body > form > .add-user-bucket-roles-group > .file-info-acl-block > .file-info-acl-panel,
+.add-user-modal-body > form > .add-user-bucket-roles-group > .file-info-acl-block > .file-info-acl-panel > .file-info-acl-table,
+.add-user-modal-body > form > .add-user-bucket-roles-group .file-info-acl-grants,
+.add-user-modal-body > form > .add-user-bucket-roles-group #addUserBucketRolesEditRows {
+  flex: none;
+  min-height: 0;
+  max-height: none;
+  height: auto;
+  overflow: visible;
+}
+
+.add-user-modal-body > form > .add-user-bucket-roles-group .file-info-acl-grants:has(> #addUserBucketRolesEditRows) {
+  display: block;
+}
+
+.file-info-acl-message {
+  padding: 12px 14px;
+  font-size: var(--font-size-md);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.file-info-acl-row-skeleton .user-info-value {
+  display: block;
+  min-height: 1em;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--bg-secondary, #eee) 25%,
+    var(--bg-tertiary, #f5f5f5) 50%,
+    var(--bg-secondary, #eee) 75%
+  );
+  background-size: 200% 100%;
+  animation: file-info-acl-skeleton 1.2s ease-in-out infinite;
+}
+
+@keyframes file-info-acl-skeleton {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.file-info-modal-footer {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.file-info-acl-block .file-info-acl-edit-row.modal-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  /* gap: 12px; */
+  align-items: start;
+  min-width: 0;
+}
+
+.file-info-acl-grantee-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.file-info-acl-block .file-info-acl-edit-row .file-info-acl-grantee-id.search-input {
+  padding-left: 10px;
+  min-height: var(--modal-control-min-h);
+  height: var(--modal-control-min-h);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Тост-уведомление                                                           */
+/* -------------------------------------------------------------------------- */
+
+.notification {
+  position: fixed;
+  z-index: var(--popup-z-toast);
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  left: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: min(350px, calc(100vw - 32px));
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 14px 16px;
+  transform: translateX(calc(100% + 24px));
+  opacity: 0;
+  border: var(--border-style);
+  word-break: break-word;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.notification.show {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.notification.success {
+  border-left: 4px solid var(--success);
+}
+
+.notification.error {
+  border-left: 4px solid var(--error);
+}
+
+.notification.warning {
+  border-left: 4px solid var(--warning);
+}
+
+.notification.info {
+  border-left: 4px solid var(--info);
+}
+
+.notification-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-title {
+  margin: 0 0 4px 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.notification-message {
+  margin: 0;
+  max-height: 120px;
+  overflow-y: auto;
+  padding-right: 4px;
+  font-size: var(--font-size-md);
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.notification-message::-webkit-scrollbar {
+  width: 4px;
+}
+
+.notification-message::-webkit-scrollbar-track {
+  background: var(--light-bg);
+  border-radius: var(--radius-lg);
+}
+
+.notification-message::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.notification-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.notification-close:hover {
+  background: var(--light-bg);
+  color: var(--text-primary);
+}
+
+/* Bucket ID / Bucket name: только чтение при создании (ID) и редактировании */
+#addBucketModal #addBucketBucketId:read-only,
+#addBucketModal #addBucketBucketName:read-only {
+  background: var(--light-bg);
+  color: var(--text-secondary);
+}
+
+.cloud-endpoints-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cloud-endpoint-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.cloud-endpoint-row .cloud-endpoint-input {
+  flex: 1;
+}
+
+.cloud-endpoint-add-btn,
+.cloud-endpoint-remove-btn {
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 800px) {
+  .modal {
+    --modal-pad-x: 16px;
+    --modal-pad-y: 16px;
+    --modal-max-wide: 100%;
+  }
+
+  .notification {
+    right: max(12px, env(safe-area-inset-right));
+    min-width: 0;
+    max-width: calc(100vw - 24px);
+  }
+
+  /* ACL edit: строка в колонку, чтобы дропдауны не наезжали друг на друга */
+  .file-info-acl-block .file-info-acl-edit-row.modal-field {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .file-info-acl-edit-row .file-info-acl-remove {
+    margin-top: 4px;
+  }
+}
+
+.copy-dst-browser {
+  border: var(--border-style);
+  border-radius: var(--radius-lg);
+  margin-top: 2px;
+  height: 220px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--common-bg);
+}
+
+.copy-dst-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: var(--border-style);
+  background: var(--light-bg);
+  flex-shrink: 0;
+}
+
+.copy-dst-crumb {
+  padding: 2px 6px;
+  min-height: auto;
+  font-size: var(--font-size-sm);
+}
+
+.copy-dst-crumb-sep {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.copy-dst-folder-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.copy-dst-folder-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.copy-dst-folder-item:hover {
+  background: var(--selection-bg);
+}
+
+.copy-dst-empty {
+  padding: 12px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}

@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.11
+    environment:
+      MEILI_ENV: development
+      MEILI_MASTER_KEY: test_master_key
+    ports:
+      - "7700:7700"
+    volumes:
+      - meili_data:/meili_data
+
+  web:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+      args:
+        BASE: python:3.11.9-bookworm
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      MEILI_ENABLED: "true"
+      MEILI_HOST: http://meilisearch:7700
+      MEILI_API_KEY: test_api_key
+      MEILI_REINDEX_ON_STARTUP: "false"
+      APP_SECRET_KEY: test_app_secret_key
+      APP_ADMIN_PASSWORD: admin
+      # Локальный HTTP (localhost:3000): иначе Secure-cookie не сбрасывается и logout «не работает»
+      SESSION_COOKIE_SECURE: "false"
+      APP_EXTERNAL_URL: https://s3fm.example.com
+      SSO_ENABLED: "false"
+      OIDC_ISSUER: https://idp.example.com/realms/internal
+      OIDC_REDIRECT_URI: https://s3fm.example.com/api/auth/sso/callback
+      SSO_POST_LOGOUT_REDIRECT_URI: https://s3fm.example.com/login
+      OIDC_CLIENT_ID: test_oidc_id
+      OIDC_CLIENT_SECRET: test_oidc_secret
+      # LDAP / AD lookup — секреты только из .env (см. .env.example), не хардкодить.
+      LDAP_URI: ${LDAP_URI:-ldaps://example.com}
+      LDAP_BASE_DN: ${LDAP_BASE_DN:-DC=example,DC=com}
+      LDAP_DOMAIN: ${LDAP_DOMAIN:-example.com}
+      LDAP_BIND_USER: ${LDAP_BIND_USER:-test_ldap_user}
+      LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD:-test_ldap_pass}
+      LDAP_SEARCH_SIZE_LIMIT: ${LDAP_SEARCH_SIZE_LIMIT:-200}
+      LDAP_SEARCH_TIME_LIMIT: ${LDAP_SEARCH_TIME_LIMIT:-5}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+      - meilisearch
+
+volumes:
+  pgdata:
+  meili_data:

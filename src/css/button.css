@@ -1,0 +1,100 @@
+/* Single shared button style */
+.btn {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--common-bg);
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--toolbar-item-height);
+  box-sizing: border-box;
+  white-space: nowrap;
+  transition: background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+  font: inherit;
+}
+
+.btn.hidden {
+  display: none;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--selection-bg);
+  transform: none;
+  box-shadow: none;
+}
+
+/* Единое выключенное состояние для всех кнопок */
+.btn:disabled,
+.btn[data-was-enabled="false"],
+.dropdown-trigger:disabled,
+.dropdown-item:disabled,
+.checkbox:disabled {
+  opacity: 0.6 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.btn:disabled,
+.btn[data-was-enabled="false"],
+.dropdown-trigger:disabled,
+.dropdown-item:disabled {
+  color: var(--text-secondary) !important;
+}
+
+.btn:active:not(:disabled) {
+  background: var(--selection-bg);
+  transform: scale(0.99);
+}
+
+.menu-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  text-align: left;
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  width: 100%;
+  font-size: var(--font-size-lg);
+  margin-top: 4px;
+}
+
+.menu-list-header:hover:not(:disabled) {
+  background: var(--selection-bg) !important;
+}
+
+.menu-list-header:active:not(:disabled) {
+  background: var(--selection-bg) !important;
+}
+
+#settingsList .menu-list-header.active {
+  background: var(--selection-bg) !important;
+}
+
+#settingsList .menu-list-header {
+  gap: 12px;
+}
+
+#settingsList .menu-list-header > i {
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+#helpList .menu-list-header.active {
+  background: var(--selection-bg) !important;
+}
+
+#helpList .menu-list-header {
+  gap: 12px;
+}
+
+#helpList .menu-list-header > i {
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+

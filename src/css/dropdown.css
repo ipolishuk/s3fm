@@ -1,0 +1,245 @@
+/* Dropdown — базовые стили */
+
+.dropdown {
+  position: relative;
+  border: var(--border-style);
+  border-radius: var(--radius-lg);
+  background: var(--common-bg);
+  box-sizing: border-box;
+}
+
+/* Toolbar / header: обёртка по ширине кнопки, меню не раздувает layout */
+#userMenuDropdown,
+#uploadDropdown,
+.context-menu-dropdown,
+.lang-dropdown {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: auto;
+  min-width: 0;
+  border: none;
+  background: none;
+  vertical-align: middle;
+}
+
+#userMenuDropdown > #userInfoBtn,
+#uploadDropdown > #uploadBtn,
+.lang-dropdown > #langDropdownTrigger,
+.lang-dropdown > #loginLangTrigger {
+  width: auto;
+}
+
+#userMenuDropdown > .dropdown-menu,
+#uploadDropdown > .dropdown-menu,
+.context-menu-dropdown > .dropdown-menu,
+.lang-dropdown > .dropdown-menu {
+  left: 0;
+  right: auto;
+  width: max-content;
+  min-width: 100%;
+}
+
+#userMenuDropdown > .dropdown-menu {
+  left: auto;
+  right: 0;
+}
+
+#uploadDropdownMenu .dropdown-item.hidden {
+  display: none;
+}
+
+/* Shared menu panel style (ПКМ + user/upload dropdowns) */
+.context-menu-dropdown {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  z-index: var(--popup-z-overlay, 1000);
+  pointer-events: none;
+}
+
+.context-menu-dropdown.open {
+  pointer-events: auto;
+}
+
+.context-menu-dropdown > .context-menu-trigger {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#userMenuDropdown > .context-menu,
+#uploadDropdown > .context-menu,
+.context-menu-dropdown > .context-menu {
+  width: 10rem;
+  min-width: 10rem;
+  max-width: 10rem;
+  box-sizing: border-box;
+}
+
+.context-menu .dropdown-item > i {
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.context-menu .dropdown-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.context-menu .dropdown-item.hidden {
+  display: none;
+}
+
+.lang-dropdown .dropdown-item {
+  justify-content: center;
+  padding: 8px;
+  font-size: 13px;
+}
+
+.lang-dropdown .dropdown-item.active {
+  color: var(--file-color);
+}
+
+.dropdown-trigger:not(.btn) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 8px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  text-align: left;
+  font-size: var(--font-size-md, 14px);
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.dropdown-trigger:not(.btn):hover:not(:disabled) {
+  background: var(--selection-bg);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--common-bg);
+  border: var(--border-style);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--popup-shadow, 0 8px 20px rgba(43, 68, 92, 0.16));
+  z-index: var(--popup-z-overlay, 1000);
+}
+
+.dropdown-menu.hidden {
+  display: none;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--font-size-md, 14px);
+  text-align: left;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+label.dropdown-item {
+  margin: 0;
+}
+
+.dropdown-item:hover:not(:disabled) {
+  background: var(--selection-bg);
+}
+
+/* Поля в модалках */
+.modal-body .dropdown {
+  width: 100%;
+  min-height: var(--modal-control-min-h);
+  margin: 2px 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.modal-body .dropdown .dropdown-trigger {
+  flex: 1;
+  height: calc(var(--modal-control-min-h) - 2px);
+  min-height: calc(var(--modal-control-min-h) - 2px);
+}
+
+.modal-body .dropdown .dropdown-trigger:hover:not(:disabled) {
+  border-radius: var(--radius-lg);
+}
+
+.modal-body .dropdown .dropdown-trigger:has(.dropdown-trigger-search:not(.hidden)):hover:not(:disabled) {
+  background: transparent;
+}
+
+.modal-body .dropdown .dropdown-trigger span {
+  color: var(--text-secondary);
+}
+
+.modal-body .dropdown .dropdown-trigger span.has-selection {
+  color: var(--text-primary);
+}
+
+.modal-body .dropdown .dropdown-menu {
+  max-height: min(320px, calc(100vh - 7rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
+  max-height: min(320px, calc(100dvh - 7rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.modal-body .dropdown .dropdown-item {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modal-body .dropdown .dropdown-item > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-body .dropdown .dropdown-item.selected {
+  background: var(--selection-bg);
+}
+
+.modal-body .dropdown .dropdown-item.hidden,
+.modal-body .dropdown .dropdown-search-empty.hidden {
+  display: none;
+}
+
+.modal-body .dropdown .dropdown-search-empty {
+  padding: 10px 14px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+

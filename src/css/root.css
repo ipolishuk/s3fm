@@ -1,0 +1,220 @@
+:root {
+  color-scheme: light;
+  --common-bg: #ffffff;
+  --common-box-shadow: 0 1px 2px #2b445c14;
+  --light-bg: #f6f9fc;
+  --selection-bg: #ecf4fc;
+  --border-color: #d9e4eec5;
+  --border-checkbox-color: #a9b7c4c7;
+  --border-style: 1px solid var(--border-color);
+  --border-checkbox: 1px solid var(--border-checkbox-color);
+  --text-primary: #385068;
+  --text-secondary: #70879d;
+  --text-muted: #5a6d81a6;
+  --gray: #666;
+  --gray-light: #bdc3c7;
+  --success: #27ae60;
+  --success-hover: #229954;
+  --success-bg: #e8f5e8;
+  --success-border-light: #c8e6c9;
+  --error: #e74c3c;
+  --error-bg: #fee;
+  --error-border: #f5c6cb;
+  --error-text: #721c24;
+  --warning: #f39c12;
+  --warning-text: #856404;
+  --warning-bg: #fff3cd;
+  --warning-border: #ffeaa7;
+  --warning-accent: #ffc107;
+  --info: #426c92;
+  --focus-ring: #c7d2dc;
+  --input-focus-shadow: 0 0 0 3px #8ca8c433;
+  --folder-color: var(--warning);
+  --file-color: #2985cf;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  --font-size-sm: 12px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --icon-size: 14px;
+  --popup-shadow: 0 8px 24px #2b445c29;
+  --popup-radius: var(--radius-lg);
+  --popup-backdrop: #03080c4a;
+  --popup-z-overlay: 1000;
+  --popup-z-toast: 1001;
+  --toolbar-item-height: 38px;
+  --brand-accent: #246a9e;
+  --brand-accent-start: #3d93d0;
+  --brand-accent-contrast: #ffffff;
+}
+
+/* Анимируемые theme-токены — одна интерполяция вместо скачков color на каждом элементе */
+@property --common-bg { syntax: '<color>'; inherits: true; initial-value: #ffffff; }
+@property --light-bg { syntax: '<color>'; inherits: true; initial-value: #f6f9fc; }
+@property --selection-bg { syntax: '<color>'; inherits: true; initial-value: #ecf4fc; }
+@property --border-color { syntax: '<color>'; inherits: true; initial-value: #d9e4eec5; }
+@property --border-checkbox-color { syntax: '<color>'; inherits: true; initial-value: #a9b7c4; }
+@property --text-primary { syntax: '<color>'; inherits: true; initial-value: #385068; }
+@property --text-secondary { syntax: '<color>'; inherits: true; initial-value: #70879d; }
+@property --text-muted { syntax: '<color>'; inherits: true; initial-value: #5a6d81a6; }
+@property --gray { syntax: '<color>'; inherits: true; initial-value: #666666; }
+@property --gray-light { syntax: '<color>'; inherits: true; initial-value: #bdc3c7; }
+@property --info { syntax: '<color>'; inherits: true; initial-value: #426c92; }
+@property --file-color { syntax: '<color>'; inherits: true; initial-value: #2985cf; }
+@property --success-bg { syntax: '<color>'; inherits: true; initial-value: #e8f5e8; }
+@property --error-bg { syntax: '<color>'; inherits: true; initial-value: #ffeeee; }
+@property --error-border { syntax: '<color>'; inherits: true; initial-value: #f5c6cb; }
+@property --error-text { syntax: '<color>'; inherits: true; initial-value: #721c24; }
+@property --warning-text { syntax: '<color>'; inherits: true; initial-value: #856404; }
+@property --warning-bg { syntax: '<color>'; inherits: true; initial-value: #fff3cd; }
+@property --warning-border { syntax: '<color>'; inherits: true; initial-value: #ffeaa7; }
+@property --focus-ring { syntax: '<color>'; inherits: true; initial-value: #c7d2dc; }
+@property --popup-backdrop { syntax: '<color>'; inherits: true; initial-value: #03080c4a; }
+
+.lables {
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --common-bg: #161e26;
+  --light-bg: #101821;
+  --selection-bg: #233241;
+  --border-color: #2f405282;
+  --border-checkbox-color: #627384b0;
+  --text-primary: #c1cfdc;
+  --text-secondary: #93a9bf;
+  --gray: #90a4b8;
+  --gray-light: #5f7488;
+  --success-bg: #27ae6029;
+  --error-bg: #e74c3c24;
+  --error-border: #e74c3c59;
+  --error-text: #ffb9b2;
+  --warning-text: #f5d37c;
+  --warning-bg: #f39c125c;
+  --warning-border: #f39d127a;
+  --info: #78a6d6;
+  --brand-accent: #2c6f96;
+  --brand-accent-start: #4a94c9;
+  --focus-ring: #5f748878;
+  --input-focus-shadow: 0 0 0 3px #5f84a847;
+  --popup-shadow: 0 14px 34px #00000073;
+}
+
+body {
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  margin: 0;
+  background: var(--light-bg);
+  cursor: default;
+}
+
+/*
+ * Курсор: везде default (body). Pointer — только у кликабельного;
+ * не задаём default повторно — наследуется от body.
+ */
+.btn:not(:disabled),
+.dropdown-trigger:not(:disabled),
+.dropdown-item:not(:disabled),
+label.dropdown-item,
+.checkbox:not(:disabled),
+.bucket-list-item,
+body:not(.selection-mode) .folder-item,
+.select-all-header .lables,
+.breadcrumb-link,
+.search-clear,
+.settings-search-index-all-btn,
+.content-table tr.settings-user-row,
+.progressbar-toggle,
+.progressbar-cancel:not(:disabled),
+.modal-body .form-group-checkbox .lables,
+.role-permissions-panel .role-perm-option,
+.role-permissions-panel .role-perm-option input,
+.notification-close {
+  cursor: pointer;
+}
+
+/* Early placeholder style to avoid first-paint color shift */
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+/* Одна интерполяция токенов на html; у потомков глушим свои color/bg transition (иначе 2 скачка) */
+html.theme-changing {
+  transition:
+    --common-bg 0.4s ease,
+    --light-bg 0.4s ease,
+    --selection-bg 0.4s ease,
+    --border-color 0.4s ease,
+    --border-checkbox-color 0.4s ease,
+    --text-primary 0.4s ease,
+    --text-secondary 0.4s ease,
+    --text-muted 0.4s ease,
+    --gray 0.4s ease,
+    --gray-light 0.4s ease,
+    --info 0.4s ease,
+    --file-color 0.4s ease,
+    --success-bg 0.4s ease,
+    --error-bg 0.4s ease,
+    --error-border 0.4s ease,
+    --error-text 0.4s ease,
+    --warning-text 0.4s ease,
+    --warning-bg 0.4s ease,
+    --warning-border 0.4s ease,
+    --focus-ring 0.4s ease,
+    --popup-backdrop 0.4s ease;
+}
+
+/* color-scheme сразу даёт UA-border (белый→dark / чёрный→light) — держим прежнюю схему до конца анимации */
+html.theme-changing[data-theme="dark"] {
+  color-scheme: light;
+}
+
+html.theme-changing[data-theme="light"] {
+  color-scheme: dark;
+}
+
+html.theme-changing *,
+html.theme-changing *::before,
+html.theme-changing *::after {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.theme-changing {
+    transition: none;
+  }
+}
+
+/* Скроллбар на токенах темы — без скачка от смены color-scheme */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-light) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--gray-light);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--gray);
+}

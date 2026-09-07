@@ -1,0 +1,237 @@
+/* Centralized icon styles */
+
+i.fa-solid.empty-state-icon {
+  margin: 0 auto 20px;
+  color: var(--gray-light);
+  font-size: 40px;
+}
+
+i.fa-solid.empty-state-icon-warning {
+  color: var(--warning);
+}
+
+i.fa-solid.empty-state-icon-error {
+  color: var(--error);
+}
+
+.drop-overlay-content i {
+  display: block;
+  font-size: 2.5rem;
+  margin-bottom: 10px;
+}
+
+.bucket-db-icon-ok, #settingsItemBuckets {
+  color: var(--file-color);
+}
+
+.bucket-db-icon-error {
+  color: var(--error);
+}
+
+.file-icon,
+.folder-icon {
+  flex-shrink: 0;
+}
+
+.file-icon, .fa-life-ring {
+  color: var(--file-color);
+}
+
+.folder-icon, .fa-magnifying-glass {
+  color: var(--folder-color);
+}
+
+.fa-book {
+  color: brown;
+}
+
+.fa-hdd, .fa-user-astronaut, .fa-user-group {
+  color: #0d94b2;
+}
+
+.fa-user-astronaut {
+  --fa: "\f4fb";
+  font-size: 15px;
+}
+
+.fa-shield-halved {
+  color: var(--error);
+}
+
+.fa-rotate.fa-spin {
+  animation: settings-reindex-spin 0.85s linear infinite;
+}
+
+@keyframes settings-reindex-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+#settingsMeiliStatusBtn.status-connected #settingsMeiliStatusIcon {
+  color: var(--success);
+}
+
+#settingsMeiliStatusBtn.status-disconnected #settingsMeiliStatusIcon {
+  color: var(--error);
+}
+
+#settingsMeiliStatusBtn.status-enabled.status-disconnected #settingsMeiliStatusIcon {
+  color: var(--warning);
+}
+
+.progressbar-status.success .fa-solid,
+.progressbar-status.pending .fa-solid {
+  color: inherit;
+}
+
+.modal-icon {
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.modal-icon-warning {
+  color: var(--warning);
+}
+
+.modal-icon-info {
+  color: var(--info);
+}
+
+.notification-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.notification.success .notification-icon {
+  color: var(--success);
+}
+
+.notification.error .notification-icon {
+  color: var(--error);
+}
+
+.notification.warning .notification-icon {
+  color: var(--warning);
+}
+
+.notification.info .notification-icon {
+  color: var(--info);
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+}
+
+.search-container-disabled .search-icon {
+  color: var(--text-secondary);
+}
+
+.search-results-header i {
+  color: var(--warning);
+}
+
+.dropdown-icon {
+  flex-shrink: 0;
+  margin-left: auto;
+  transition: transform 0.2s;
+}
+
+.dropdown-trigger:has(.dropdown-icon) {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dropdown-trigger:has(.dropdown-icon) > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdown.open .dropdown-icon {
+  transform: rotate(180deg);
+}
+
+.icon-btn:has(.fa-folder-open):hover:not(:disabled) {
+  color: var(--file-color);
+}
+
+/* Icon action buttons */
+.icon-btn {
+  background: none;
+  border: none;
+  border-radius: var(--radius-lg);
+  transition: all 0.2s ease;
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  height: auto;
+}
+
+.icon-btn:hover:not(:disabled),
+.icon-btn:active:not(:disabled) {
+  background: none;
+  transform: none;
+  box-shadow: none;
+}
+
+.icon-btn.delete:hover:not(:disabled) { color: var(--error); }
+.icon-btn.download:hover:not(:disabled) { color: var(--success); }
+.icon-btn.edit:hover:not(:disabled) { color: var(--file-color); }
+.icon-btn.copy:hover:not(:disabled) { color: var(--info); }
+
+#themeToggleBtn > .fa-solid,
+#themeToggleBtn > .fa-regular {
+  line-height: 1;
+}
+
+#themeToggleIcon.fa-moon,
+#themeToggleIcon.fa-sun {
+  font-size: 15px;
+  width: 1.15em;
+  text-align: center;
+}
+
+/* Moon только на light: фиксированный цвет, иначе наследует ещё светлый --text-primary с анимации dark→light */
+#themeToggleIcon.fa-moon {
+  color: #385068;
+}
+
+.fa-check-square,
+.fa-square-check {
+  font-size: 16px;
+}
+
+.fa-key {
+  font-size: 13px;
+}
+
+.fa-cloud {
+  transform: translateX(-2px);
+}
+
+.fa-close,
+.fa-multiply,
+.fa-remove,
+.fa-times,
+.fa-xmark {
+  font-size: 16px;
+}
+
+/* Header icon-only buttons should match toolbar button geometry */
+#themeToggleBtn,
+.lang-dropdown > #langDropdownTrigger,
+.lang-dropdown > #loginLangTrigger {
+  width: var(--toolbar-item-height);
+  min-width: var(--toolbar-item-height);
+  padding-left: 0;
+  padding-right: 0;
+  justify-content: center;
+}

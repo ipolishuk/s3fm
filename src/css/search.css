@@ -1,0 +1,218 @@
+/* Единые стили полей поиска: search-input / search-input-disabled */
+
+.search-container {
+  position: relative;
+  flex: 1;
+  min-height: var(--toolbar-item-height);
+  display: flex;
+  align-items: center;
+}
+
+.search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--common-bg);
+  border: none;
+  color: var(--text-muted);
+  padding: 0;
+  border-radius: var(--radius-lg);
+  transition: background-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.search-clear:hover {
+  background: var(--selection-bg);
+  color: var(--text-primary) !important;
+  transform: translateY(-50%) scale(1.1);
+}
+
+.toolbar .search-container {
+  flex: 1;
+  min-width: 200px;
+}
+
+.search-input {
+  width: 100%;
+  height: var(--toolbar-item-height);
+  min-height: var(--toolbar-item-height);
+  padding: 0 10px 0 34px;
+  background: var(--common-bg);
+  border: var(--border-style);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary) !important;
+  font-size: var(--font-size-md);
+  font-family: inherit;
+  line-height: normal;
+  box-sizing: border-box;
+  transition: background-color 0.24s ease, color 0.24s ease, border-color 0.24s ease, box-shadow 0.24s ease, opacity 0.16s ease;
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-input:focus:not(.search-input-disabled):not(:disabled) {
+  outline: none;
+  background: var(--common-bg);
+  border-color: var(--focus-ring);
+}
+
+/* Выключено — как у .btn:disabled */
+.search-container-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.search-container-disabled .search-input,
+.search-container-disabled .search-input-disabled {
+  background: var(--common-bg) !important;
+  color: var(--text-secondary) !important;
+  border: var(--border-style);
+  transform: none !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+}
+
+/* form-control в meili settings с тем же disabled-классом, что у поиска */
+.search-container-disabled .form-control.search-input-disabled,
+.search-container-disabled .form-control:disabled {
+  background: var(--common-bg) !important;
+  color: var(--text-secondary) !important;
+  border: var(--border-style);
+  transform: none !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.search-input-disabled,
+.search-input:disabled {
+  transform: none !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+  pointer-events: none;
+  background: var(--common-bg) !important;
+  color: var(--text-secondary) !important;
+  border: var(--border-style);
+}
+
+.search-input-disabled::placeholder,
+.search-input:disabled::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.search-input-disabled:focus,
+.search-input:disabled:focus {
+  outline: none;
+  border: var(--border-style);
+  box-shadow: none !important;
+}
+
+.search-input:-webkit-autofill,
+.search-input:-webkit-autofill:hover,
+.search-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text-primary) !important;
+  box-shadow: 0 0 0 1000px var(--common-bg) inset !important;
+  -webkit-box-shadow: 0 0 0 1000px var(--common-bg) inset !important;
+  border: var(--border-style);
+  transition: background-color 5000s ease-in-out 0s;
+  caret-color: var(--text-primary) !important;
+  background: var(--common-bg);
+}
+
+.search-input:autofill,
+.search-input:autofill:hover,
+.search-input:autofill:focus {
+  background-color: var(--common-bg) !important;
+  color: var(--text-primary) !important;
+  border: var(--border-style);
+  box-shadow: 0 0 0 1000px var(--common-bg) inset !important;
+}
+
+.search-input:-moz-autofill,
+.search-input:-moz-autofill-preview {
+  filter: none;
+  background-color: var(--common-bg) !important;
+  color: var(--text-primary) !important;
+  border: var(--border-style);
+  box-shadow: none !important;
+}
+
+/* Поиск внутри выпадающего триггера (модалки настроек) */
+.search-input.search-input-in-trigger {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  line-height: inherit;
+  padding: 0;
+  margin: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+}
+
+/* Поиск в выпадающей панели */
+.search-input.search-input-panel {
+  min-height: 32px;
+  height: auto;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: none;
+  border-radius: var(--radius-lg);
+}
+
+.search-results-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--warning);
+  flex-wrap: wrap;
+  padding: 2px;
+}
+
+.search-results-header .search-results-value {
+  color: inherit;
+}
+
+.search-results-header .btn {
+  margin-left: auto;
+}
+
+@media (max-width: 768px) {
+  .search-container {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  #primaryToolbar > .search-container {
+    flex: 1 1 0%;
+    min-width: 0;
+    max-width: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .search-results-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .search-results-header .btn {
+    margin-left: 0;
+    align-self: flex-end;
+  }
+
+  .search-container {
+    order: 0;
+    margin-top: 0;
+  }
+}

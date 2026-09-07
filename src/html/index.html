@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="{{ locale }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <title>{{ _('app.title') }}</title>
+    <script>
+        (function() {
+            var key = 's3fm-theme';
+            var saved = null;
+            try { saved = localStorage.getItem(key); } catch (e) {}
+            var theme = (saved === 'dark' || saved === 'light')
+                ? saved
+                : ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+    <style>
+        .search-input::placeholder {
+            color: #5a6d81a6;
+            opacity: 1;
+        }
+    </style>
+    <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☁️</text></svg>">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css">
+    <link rel="stylesheet" href="/css/root.css">
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/dropdown.css">
+    <link rel="stylesheet" href="/css/button.css">
+    <link rel="stylesheet" href="/css/icon.css">
+    <link rel="stylesheet" href="/css/search.css">
+    <link rel="stylesheet" href="/css/modal.css">
+    <link rel="stylesheet" href="/css/mobile.css">
+</head>
+<body>
+    <div class="container">
+    <!-- Header теперь внутри container -->
+        <div class="main-header">
+            <div class="app-title">
+                <a href="/" title="{{ _('nav.home') }}">
+                    <span class="app-title-logo" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" focusable="false">
+                            <defs>
+                                <linearGradient id="appTitleLogoGrad" x1="16" y1="0" x2="16" y2="32" gradientUnits="userSpaceOnUse">
+                                    <stop offset="0" stop-color="var(--brand-accent-start)"></stop>
+                                    <stop offset="1" stop-color="var(--brand-accent)"></stop>
+                                </linearGradient>
+                            </defs>
+                            <rect width="32" height="32" rx="8" fill="url(#appTitleLogoGrad)"></rect>
+                            <g transform="rotate(-11 12.8 11)">
+                                <rect class="app-title-logo-muted" x="9.6" y="6.6" width="6.4" height="8.6" rx="1.15"></rect>
+                            </g>
+                            <g transform="rotate(9 19.2 10.8)">
+                                <rect class="app-title-logo-fg" x="16" y="6.4" width="6.4" height="8.8" rx="1.15"></rect>
+                                <rect class="app-title-logo-cut" x="17.35" y="8.35" width="3.7" height="0.95" rx="0.48"></rect>
+                                <rect class="app-title-logo-cut" x="17.35" y="10.05" width="2.55" height="0.95" rx="0.48"></rect>
+                            </g>
+                            <path class="app-title-logo-fg" d="M7.35 14.35h5.35l1.2-1.4c.22-.26.55-.4.9-.4h8.85c.83 0 1.5.67 1.5 1.5v9.55c0 .97-.79 1.75-1.75 1.75H8.6c-.97 0-1.75-.78-1.75-1.75v-7.9c0-.72.58-1.35 1.3-1.35z"></path>
+                            <path class="app-title-logo-pocket" d="M8.55 16.05h14.9c.45 0 .8.4.75.85l-.85 6.35c-.08.6-.6 1.05-1.2 1.05H10.7c-.6 0-1.12-.45-1.2-1.05l-.85-6.35c-.05-.45.3-.85.75-.85z"></path>
+                        </svg>
+                    </span>
+                    <span class="app-title-divider" aria-hidden="true"></span>
+                    {{ _('app.title') }}
+                </a>
+            </div>
+            <div class="user-section hidden" id="userSection">
+                <button type="button" class="btn" id="themeToggleBtn" aria-label="{{ _('nav.theme_dark') }}" title="{{ _('nav.theme_dark') }}">
+                    <i class="fa-solid fa-moon" id="themeToggleIcon" aria-hidden="true"></i>
+                </button>
+                <div class="lang-dropdown dropdown">
+                    <button type="button" class="btn" id="langDropdownTrigger" aria-haspopup="true" aria-expanded="false" title="{{ _('nav.language') }}">
+                        <i class="fa-solid fa-globe"></i>
+                        <!-- <i class="fa-solid fa-chevron-down lang-dropdown-icon dropdown-icon"></i> -->
+                    </button>
+                    <div class="dropdown-menu hidden" id="langDropdownMenu">
+                        {% for loc in SUPPORTED_LOCALES %}
+                        <button type="button" class="lang-dropdown-item dropdown-item{% if locale == loc %} active{% endif %}" data-lang="{{ loc }}">{{ loc | upper }}</button>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="dropdown" id="userMenuDropdown">
+                    <button type="button" class="btn" id="userInfoBtn" aria-haspopup="true" aria-expanded="false">
+                        <i class="fa-solid fa-user-astronaut"></i>
+                        <span id="usernameDisplay"></span>
+                        <!-- <i class="fa-solid fa-chevron-down dropdown-icon"></i> -->
+                    </button>
+                    <div class="dropdown-menu context-menu hidden" id="userMenuDropdownMenu">
+                        <button type="button" class="dropdown-item" id="userInfoMenuItem"><i class="fa-solid fa-info"></i><span>{{ _('notification.info') }}</span></button>
+                        <button type="button" class="dropdown-item hidden" id="settingsMenuItem" title="{{ _('nav.settings') }}" aria-label="{{ _('nav.settings') }}"><i class="fa-solid fa-gear"></i><span>{{ _('nav.settings') }}</span></button>
+                        <button type="button" class="dropdown-item" id="helpMenuItem" title="{{ _('nav.help') }}" aria-label="{{ _('nav.help') }}"><i class="fa-solid fa-question"></i><span>{{ _('nav.help') }}</span></button>
+                        <button type="button" class="dropdown-item" id="logoutMenuItem"><i class="fa-solid fa-right-from-bracket"></i><span>{{ _('nav.logout') }}</span></button>
+                    </div>
+                </div>
+            </div>
+    </div>
+
+    <!-- Основное содержимое (боковая панель + контент; пагинация — в content-footer под content-panel) -->
+    <div class="container-content">
+        <div class="content-row">
+        <!-- Боковая панель с бакетами -->
+        <div class="menu">
+            <div>
+                <div class="buckets-menu-toolbar">
+                    <div class="search-container buckets-search-container">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" class="search-input" id="bucketSearchInput" placeholder="{{ _('buckets.search_placeholder') }}" title="{{ _('buckets.search_title') }}" autocomplete="off" />
+                        <button type="button" class="search-clear hidden" onclick="window.clearBucketSearch()" id="clearBucketSearchBtn" title="{{ _('toolbar.search_clear') }}">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="menu-list" id="bucketsList">
+                <div class="no-buckets-message">
+                    <i class="fa-solid fa-spinner fa-spin empty-state-icon"></i>
+                    <div>{{ _('buckets.loading') }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Основная область контента -->
+        <div class="content-area">
+            <div class="toolbar hidden" id="primaryToolbar">
+                <div class="dropdown" id="uploadDropdown">
+                    <button type="button" class="btn" id="uploadBtn" title="{{ _('settings.add') }}" aria-haspopup="true" aria-expanded="false" aria-label="{{ _('settings.add') }}">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>{{ _('settings.add') }}</span>
+                    </button>
+                    <div class="dropdown-menu context-menu hidden" id="uploadDropdownMenu">
+                        <button type="button" class="dropdown-item hidden" id="addBucketOption" data-action="add-bucket"><i class="fa-solid fa-database"></i><span>{{ _('buckets.add') }}</span></button>
+                        <button type="button" class="dropdown-item" id="createFolderOption" data-action="create-folder"><i class="fa-solid fa-folder-plus"></i><span>{{ _('toolbar.create_folder') }}</span></button>
+                        <button type="button" class="dropdown-item" id="uploadFilesOption" data-action="files"><i class="fa-solid fa-file-arrow-up"></i><span>{{ _('toolbar.upload') }}</span></button>
+                        <button type="button" class="dropdown-item" id="uploadFolderOption" data-action="folder"><i class="fa-solid fa-folder"></i><span>{{ _('toolbar.upload_folder') }}</span></button>
+                    </div>
+                </div>
+
+                <div class="selection-buttons hidden" id="selectionButtons" aria-hidden="true">
+                    <button type="button" class="btn hidden" id="aclSelectedBtn" disabled title="{{ _('toolbar.acl_selected') }}">
+                        <i class="fa-solid fa-user-shield"></i>
+                        {{ _('files.info_acl') }}
+                    </button>
+                    <button class="btn" onclick="downloadSelected()" id="downloadSelectedBtn" disabled>
+                        <i class="fa-solid fa-download"></i>
+                        {{ _('toolbar.download') }}
+                    </button>
+                    <button type="button" class="btn" onclick="showCopyObjectsModal()" id="copySelectedBtn" disabled title="{{ _('toolbar.copy') }}">
+                        <i class="fa-solid fa-copy"></i>
+                        {{ _('toolbar.copy') }}
+                    </button>
+                    <button type="button" class="btn" onclick="showMoveObjectsModal()" id="moveSelectedBtn" disabled title="{{ _('toolbar.move') }}">
+                        <i class="fa-solid fa-right-left"></i>
+                        {{ _('toolbar.move') }}
+                    </button>
+                    <button class="btn" onclick="deleteSelected()" id="deleteSelectedBtn" disabled>
+                        <i class="fa-solid fa-trash-can"></i>
+                        {{ _('toolbar.delete') }}
+                    </button>
+                </div>
+
+                <button type="button" class="btn" onclick="toggleSelectionMode()" id="selectModeBtn"
+                    title="{{ _('toolbar.select') }}" aria-label="{{ _('toolbar.select') }}">
+                    <i class="fa-solid fa-square-check" id="selectModeIcon"></i>
+                    <span id="selectModeText">{{ _('toolbar.select') }}</span>
+                </button>
+
+                <div class="search-container">
+                    <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                    <input
+                        type="text"
+                        id="searchInput"
+                        class="search-input"
+                        placeholder="{{ _('toolbar.search_placeholder') }}"
+                        autocomplete="off"
+                        onkeyup="handleSearchKeyup(event)"
+                        oninput="handleSearchInput(event)"
+                    >
+                    <button class="search-clear hidden" onclick="clearSearchNow()" id="clearSearchBtn" title="{{ _('toolbar.search_clear') }}">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <div class="bucket-info hidden" id="bucketInfo">
+                    <div class="bucket-size" id="bucketSize">
+                        <i class="fa-solid fa-hdd"></i>
+                        <span id="sizeText">{{ _('bucket.size_calculating') }}</span>
+                    </div>
+                    <div class="bucket-objects" id="bucketObjects">
+                        <i class="fa-solid fa-file file-icon"></i>
+                        <span id="objectsText">...</span>
+                    </div>
+                    <button class="btn refresh-size-btn" onclick="loadBucketSize()" title="{{ _('bucket.refresh_size') }}">
+                        <i class="fa-solid fa-arrows-rotate"></i>
+                    </button>
+                </div>
+
+                <input type="file" id="fileInput" class="hidden" onchange="uploadFile()" multiple>
+                <input type="file" id="folderInput" class="hidden" webkitdirectory multiple directory onchange="uploadFolder()">
+            </div>
+
+            <div class="content-scroll-wrap">
+            <div id="userPermissionHint" class="permission-hint hidden">
+                <i class="fa-solid fa-info"></i>
+                {{ _('permission_hint') }}
+            </div>
+
+            <div class="hidden" id="selectionToolbar"></div>
+
+            <div class="breadcrumb hidden" id="breadcrumb"></div>
+
+            <!-- filesHeader + content-panel в едином контейнере -->
+            <div class="content-area content-panel" id="filesPanel">
+                <div class="drop-overlay hidden" id="dropOverlay" aria-hidden="true">
+                    <div class="drop-overlay-content">
+                        <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>
+                        <div class="drop-overlay-text" id="dropOverlayText">{{ _('drop.hint') }}</div>
+                    </div>
+                </div>
+                <div class="content-header hidden" id="filesHeader">
+                    <div class="header-name">
+                        <div id="headerTitle">
+                            {{ _('files.name') }}
+                        </div>
+                        <div id="selectionHeader" class="select-all-header hidden">
+                            <input type="checkbox" id="selectAllCheckbox" class="checkbox" onchange="toggleSelectAll()">
+                            <label class="lables" for="selectAllCheckbox">{{ _('files.select_all') }}</label>
+                            <span class="selection-counter">[{{ _('files.selected_count') }} <span id="selectedCount">0</span> ]</span>
+                            <span id="selectAllScopeInline" class="hidden"></span>
+                        </div>
+                    </div>
+                    <div class="header-size">{{ _('files.size') }}</div>
+                    <div class="header-modified">{{ _('files.modified') }}</div>
+                </div>
+
+                <div class="content-body" id="fileList">
+                    <div class="empty-state">
+                        <i class="fa-solid fa-database empty-state-icon"></i>
+                        <div class="empty-state-title">{{ _('files.empty_select_bucket') }}</div>
+                    </div>
+                </div>
+            </div>
+
+            </div>
+
+            <footer class="content-footer hidden" id="appFooter">
+                <div class="files-pagination" id="filesPaginationContainer">
+                    <button type="button" class="btn" id="filesPagePrev" disabled
+                            aria-label="{{ _('files.page_prev') }}" title="{{ _('files.page_prev') }}">
+                        <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+                    </button>
+                    <span class="files-pagination-info breadcrumb-text" id="filesPageInfo">{{ _('files.page').replace('{page}', '1') }}</span>
+                    <button type="button" class="btn" id="filesPageNext" disabled
+                            aria-label="{{ _('files.page_next') }}" title="{{ _('files.page_next') }}">
+                        <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </footer>
+
+        </div>
+        </div>
+    </div>
+
+    <!-- Контекстное меню файла/папки (ПКМ) -->
+    <div class="dropdown context-menu-dropdown" id="fileContextDropdown">
+        <button type="button" class="btn context-menu-trigger" id="fileContextTrigger" aria-haspopup="true" aria-expanded="false" tabindex="-1"></button>
+        <div class="dropdown-menu context-menu hidden" id="fileContextMenu" role="menu">
+            <button type="button" class="dropdown-item" id="fileContextPreview" data-action="preview" role="menuitem"><i class="fa-solid fa-eye"></i><span>{{ _('menu.preview') }}</span></button>
+            <button type="button" class="dropdown-item" id="fileContextDownload" data-action="download" role="menuitem"><i class="fa-solid fa-download"></i><span>{{ _('menu.download') }}</span></button>
+            <button type="button" class="dropdown-item" id="fileContextCopy" data-action="copy" role="menuitem"><i class="fa-solid fa-copy"></i><span>{{ _('menu.copy') }}</span></button>
+            <button type="button" class="dropdown-item" id="fileContextMove" data-action="move" role="menuitem"><i class="fa-solid fa-right-left"></i><span>{{ _('menu.move') }}</span></button>
+            <button type="button" class="dropdown-item" id="fileContextDelete" data-action="delete" role="menuitem"><i class="fa-solid fa-trash-can"></i><span>{{ _('menu.delete') }}</span></button>
+            <button type="button" class="dropdown-item" id="fileContextEditAcl" data-action="edit-acl" role="menuitem"><i class="fa-solid fa-user-shield"></i><span>{{ _('files.info_acl_edit') }}</span></button>
+            <button type="button" class="dropdown-item" id="fileContextProperties" data-action="properties" role="menuitem"><i class="fa-solid fa-info"></i><span>{{ _('menu.properties') }}</span></button>
+        </div>
+    </div>
+
+    <!-- Контекстное меню строки настроек (ПКМ) -->
+    <div class="dropdown context-menu-dropdown" id="settingsContextDropdown">
+        <button type="button" class="btn context-menu-trigger" id="settingsContextTrigger" aria-haspopup="true" aria-expanded="false" tabindex="-1"></button>
+        <div class="dropdown-menu context-menu hidden" id="settingsContextMenu" role="menu">
+            <button type="button" class="dropdown-item" id="settingsContextCopy" data-action="copy" role="menuitem"><i class="fa-solid fa-clone"></i><span>{{ _('menu.copy') }}</span></button>
+            <button type="button" class="dropdown-item" id="settingsContextEdit" data-action="edit" role="menuitem"><i class="fa-solid fa-pen-to-square"></i><span>{{ _('menu.edit') }}</span></button>
+            <button type="button" class="dropdown-item" id="settingsContextDelete" data-action="delete" role="menuitem"><i class="fa-solid fa-trash-can"></i><span>{{ _('menu.delete') }}</span></button>
+        </div>
+    </div>
+
+    <!-- Окно настроек (тот же дизайн: слева список пунктов, справа контент из БД) -->
+    <div class="container-content hidden" id="settingsView">
+        <div class="content-row">
+            <div class="menu">
+                <div>
+                    <div>
+                        <button type="button" class="btn menu-list-header" id="settingsBackBtn" title="{{ _('nav.back') }}" aria-label="{{ _('nav.back') }}"><i class="fa-solid fa-arrow-left"></i> {{ _('nav.back') }}</button>
+                    </div>
+                </div>
+                <div class="menu-list" id="settingsList">
+                    <button type="button" class="btn menu-list-header active" data-settings="buckets" id="settingsItemBuckets">
+                        <i class="fa-solid fa-database"></i>
+                        <span>{{ _('settings.buckets') }}</span>
+                        <span class="count hidden" id="settingsCountBuckets"></span>
+                    </button>
+                    <button type="button" class="btn menu-list-header" data-settings="clouds" id="settingsItemClouds">
+                        <i class="fa-solid fa-cloud"></i>
+                        <span>{{ _('settings.clouds') }}</span>
+                        <span class="count hidden" id="settingsCountClouds"></span>
+                    </button>
+                    <button type="button" class="btn menu-list-header" data-settings="users" id="settingsItemUsers">
+                        <i class="fa-solid fa-user-group"></i>
+                        <span>{{ _('settings.users') }}</span>
+                        <span class="count hidden" id="settingsCountUsers"></span>
+                    </button>
+                    <button type="button" class="btn menu-list-header" data-settings="roles" id="settingsItemRoles">
+                        <i class="fa-solid fa-shield-halved"></i>
+                        <span>{{ _('settings.roles') }}</span>
+                        <span class="count hidden" id="settingsCountRoles"></span>
+                    </button>
+                    <button type="button" class="btn menu-list-header" data-settings="search" id="settingsItemSearch">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <span>{{ _('settings.search') }}</span>
+                        <span class="count hidden" id="settingsCountSearch"></span>
+                    </button>
+                    <button type="button" class="btn menu-list-header" data-settings="status" id="settingsItemStatus">
+                        <i class="fa-solid fa-heart-pulse"></i>
+                        <span>{{ _('settings.status') }}</span>
+                        <span class="count hidden" id="settingsCountStatus"></span>
+                    </button>
+                </div>
+            </div>
+            <div class="content-area">
+                <div class="toolbar hidden" id="secondaryToolbar">
+                    <button type="button" class="btn" id="settingsAddBtn"
+                        title="{{ _('settings.add') }}" aria-label="{{ _('settings.add') }}">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>{{ _('settings.add') }}</span>
+                    </button>
+                    <div class="search-container">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" class="search-input" id="settingsSearchInput" placeholder="{{ _('settings.search_placeholder') }}" autocomplete="off">
+                        <button type="button" class="search-clear hidden" id="settingsSearchClear" title="{{ _('toolbar.search_clear') }}">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <button type="button" class="btn hidden" id="settingsStatusRefreshBtn"
+                        title="{{ _('settings.status.refresh') }}" aria-label="{{ _('settings.status.refresh') }}">
+                        <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+                        <span>{{ _('settings.status.refresh') }}</span>
+                    </button>
+                    <div class="settings-search-toolbar-actions hidden" id="settingsSearchToolbarActions">
+                        <div class="bucket-size" id="settingsMeiliIndexSize" title="{{ _('settings.search.index_size') }}">
+                            <i class="fa-solid fa-hdd" aria-hidden="true"></i>
+                            <span id="settingsMeiliIndexSizeText">{{ _('bucket.size_calculating') }}</span>
+                        </div>
+                        <button type="button" class="btn status-disconnected" id="settingsMeiliStatusBtn" title="{{ _('settings.search.status_btn_title') }}" aria-label="{{ _('settings.search.status_btn_title') }}">
+                            <i class="fa-solid fa-plug" id="settingsMeiliStatusIcon" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="btn" id="settingsMeiliInfoBtn" title="{{ _('settings.search.settings_modal_title') }}" aria-label="{{ _('settings.search.settings_modal_title') }}">
+                            <i class="fa-solid fa-gear"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="content-scroll-wrap">
+                    <div class="content-area content-panel" id="settingsPanel">
+                        <div class="content-body" id="settingsContentInner">
+                            <div class="content-empty" id="settingsEmpty">{{ _('settings.select_item') }}</div>
+                        </div>
+                    </div>
+                </div>
+                <footer class="content-footer hidden" id="settingsFooter">
+                    <div class="files-pagination" id="settingsPaginationContainer">
+                        <button type="button" class="btn" id="settingsPagePrev" disabled
+                                aria-label="{{ _('files.page_prev') }}" title="{{ _('files.page_prev') }}">
+                            <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+                        </button>
+                        <span class="files-pagination-info breadcrumb-text" id="settingsPageInfo">{{ _('files.page').replace('{page}', '1') }}</span>
+                            <button type="button" class="btn" id="settingsPageNext" disabled
+                                    aria-label="{{ _('files.page_next') }}" title="{{ _('files.page_next') }}">
+                                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                </footer>
+            </div>
+        </div>
+    </div>
+
+    <!-- Справка: документация и поддержка -->
+    <div class="container-content hidden" id="helpView">
+        <div class="content-row">
+            <div class="menu">
+                <div>
+                    <div>
+                        <button type="button" class="btn menu-list-header" id="helpBackBtn" title="{{ _('nav.back') }}" aria-label="{{ _('nav.back') }}"><i class="fa-solid fa-arrow-left"></i> {{ _('nav.back') }}</button>
+                    </div>
+                </div>
+                <div class="menu-list" id="helpList">
+                    <button type="button" class="btn menu-list-header active" data-help="documentation" id="helpItemDocumentation">
+                        <i class="fa-solid fa-book"></i>
+                        <span>{{ _('help.documentation') }}</span>
+                    </button>
+                    <button type="button" class="btn menu-list-header" data-help="support" id="helpItemSupport">
+                        <i class="fa-solid fa-life-ring"></i>
+                        <span>{{ _('help.support') }}</span>
+                    </button>
+                </div>
+            </div>
+            <div class="content-area">
+                <div class="toolbar hidden" id="helpToolbar">
+                    <div class="search-container">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" class="search-input" id="helpDocSearchInput" placeholder="{{ _('help.doc_search_placeholder') }}" autocomplete="off">
+                        <button type="button" class="search-clear hidden" id="helpDocSearchClear" title="{{ _('toolbar.search_clear') }}" aria-label="{{ _('toolbar.search_clear') }}">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="content-scroll-wrap">
+                    <div class="content-body hidden" id="helpContentInner"></div>
+                    <div class="content-empty hidden" id="helpNoResults">{{ _('help.doc_no_results') }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    </div>
+
+    <!-- Модальные окна -->
+    <div class="modal-overlay" id="confirmModal">
+        <div class="modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-triangle-exclamation modal-icon modal-icon-warning"></i>
+                <h3 class="modal-title">{{ _('modal.confirm') }}</h3>
+            </div>
+            <div class="modal-body" id="ConfirmModal">
+                <p class="modal-message" id="confirmMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn confirm-action-btn" onclick="hideConfirmModal(true)">{{ _('modal.delete') }}</button>
+                <button type="button" class="btn" onclick="hideConfirmModal(false)">{{ _('modal.cancel') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="createFolderModal">
+        <div class="modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-folder-plus modal-icon modal-icon-info"></i>
+                <h3 class="modal-title">{{ _('modal.create_folder') }}</h3>
+            </div>
+            <div class="modal-body" id="CreateFolderModal">
+                <div class="form-group">
+                    <label class="lables" for="folderNameInput">{{ _('modal.folder_name') }}</label>
+                    <input type="text" id="folderNameInput" class="form-control" placeholder="{{ _('modal.folder_name_placeholder') }}" autofocus autocomplete="off">
+                    <div class="error-message" id="folderNameError"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" onclick="createFolderSubmit()">{{ _('modal.create') }}</button>
+                <button type="button" class="btn" onclick="hideCreateFolderModal()">{{ _('modal.cancel') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="copyObjectsModal" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-copy modal-icon modal-icon-info"></i>
+                <h3 class="modal-title">{{ _('modal.copy_objects') }}</h3>
+            </div>
+            <div class="modal-body" id="CopyObjectsModal">
+                <div class="form-group">
+                    <label class="lables">{{ _('copy.src') }}</label>
+                    <div class="user-info-content">
+                        <div class="modal-field">
+                            <span class="lables">{{ _('copy.src_bucket') }}</span>
+                            <span class="user-info-value" id="copySrcBucketValue">—</span>
+                        </div>
+                        <div class="modal-field">
+                            <span class="lables">{{ _('copy.src_path') }}</span>
+                            <span class="user-info-value" id="copySrcPathValue">—</span>
+                        </div>
+                        <div class="modal-field">
+                            <span class="lables">{{ _('copy.items') }}</span>
+                            <span class="user-info-value" id="copySrcItemsValue">—</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="lables" for="copyDstBucketTrigger">{{ _('copy.dst_bucket') }}</label>
+                    <div class="dropdown" id="copyDstBucketWrap">
+                        <button type="button" class="dropdown-trigger" id="copyDstBucketTrigger" aria-haspopup="listbox">
+                            <span id="copyDstBucketLabel">{{ _('copy.dst_select_bucket') }}</span>
+                            <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                        </button>
+                        <div class="dropdown-menu hidden" id="copyDstBucketPanel" role="listbox"></div>
+                    </div>
+                    <input type="hidden" id="copyDstBucketValue" value="">
+                </div>
+                <div class="form-group">
+                    <label class="lables">{{ _('copy.dst_path') }}</label>
+                    <div class="copy-dst-browser">
+                        <div class="copy-dst-breadcrumb" id="copyDstBreadcrumb"></div>
+                        <div class="copy-dst-folder-list" id="copyDstFolderList"></div>
+                    </div>
+                </div>
+                <div class="error-message" id="copyObjectsError" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" onclick="submitCopyObjects()">{{ _('modal.copy') }}</button>
+                <button type="button" class="btn" onclick="hideCopyObjectsModal()">{{ _('modal.cancel') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="moveObjectsModal" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-right-left modal-icon modal-icon-info"></i>
+                <h3 class="modal-title">{{ _('modal.move_objects') }}</h3>
+            </div>
+            <div class="modal-body" id="MoveObjectsModal">
+                <div class="form-group">
+                    <label class="lables">{{ _('move.src') }}</label>
+                    <div class="user-info-content">
+                        <div class="modal-field">
+                            <span class="lables">{{ _('move.src_bucket') }}</span>
+                            <span class="user-info-value" id="moveSrcBucketValue">—</span>
+                        </div>
+                        <div class="modal-field">
+                            <span class="lables">{{ _('move.src_path') }}</span>
+                            <span class="user-info-value" id="moveSrcPathValue">—</span>
+                        </div>
+                        <div class="modal-field">
+                            <span class="lables">{{ _('move.items') }}</span>
+                            <span class="user-info-value" id="moveSrcItemsValue">—</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="lables" for="moveDstBucketTrigger">{{ _('move.dst_bucket') }}</label>
+                    <div class="dropdown" id="moveDstBucketWrap">
+                        <button type="button" class="dropdown-trigger" id="moveDstBucketTrigger" aria-haspopup="listbox">
+                            <span id="moveDstBucketLabel">{{ _('move.dst_select_bucket') }}</span>
+                            <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                        </button>
+                        <div class="dropdown-menu hidden" id="moveDstBucketPanel" role="listbox"></div>
+                    </div>
+                    <input type="hidden" id="moveDstBucketValue" value="">
+                </div>
+                <div class="form-group">
+                    <label class="lables">{{ _('move.dst_path') }}</label>
+                    <div class="copy-dst-browser">
+                        <div class="copy-dst-breadcrumb" id="moveDstBreadcrumb"></div>
+                        <div class="copy-dst-folder-list" id="moveDstFolderList"></div>
+                    </div>
+                </div>
+                <div class="error-message" id="moveObjectsError" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" onclick="submitMoveObjects()">{{ _('modal.move') }}</button>
+                <button type="button" class="btn" onclick="hideMoveObjectsModal()">{{ _('modal.cancel') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="meiliSettingsModal" style="display: none;">
+        <div class="modal meili-settings-modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-gear modal-icon modal-icon-info"></i>
+                <h3 class="modal-title">{{ _('settings.search.settings_modal_title') }}</h3>
+            </div>
+            <form id="meiliSettingsForm" autocomplete="off">
+                <p class="form-hint meili-settings-config-error hidden" id="meiliSettingsConfigError"></p>
+            </form>
+            <div class="modal-footer">
+                <button type="button" class="btn" id="meiliSettingsSaveBtn">{{ _('settings.search.settings_save') }}</button>
+                <button type="button" class="btn" id="meiliSettingsCloseBtn">{{ _('modal.cancel') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="fileInfoModal" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-file-lines modal-icon modal-icon-info"></i>
+                <h3 class="modal-title" id="fileInfoModalTitle">{{ _('files.info_title') }}</h3>
+            </div>
+            <div class="modal-body file-info-modal-body" id="FileInfoModal">
+                <div class="file-info-acl-group file-info-details-group">
+                    <label class="lables" for="fileInfoName" id="fileInfoDetailsHeading">{{ _('files.info_section') }}</label>
+                    <div class="user-info-content" aria-labelledby="fileInfoDetailsHeading">
+                    <div class="modal-field">
+                        <span class="lables">{{ _('files.info_name') }}</span>
+                        <span class="user-info-value file-info-value-wrap" id="fileInfoName">—</span>
+                    </div>
+                    <div class="modal-field">
+                        <span class="lables">{{ _('files.info_size') }}</span>
+                        <span class="user-info-value" id="fileInfoSize">—</span>
+                    </div>
+                    <div class="modal-field">
+                        <span class="lables">{{ _('files.info_content_type') }}</span>
+                        <span class="user-info-value" id="fileInfoContentType">—</span>
+                    </div>
+                    <div class="modal-field">
+                        <span class="lables">{{ _('files.info_created') }}</span>
+                        <span class="user-info-value" id="fileInfoCreated">—</span>
+                    </div>
+                    <div class="modal-field">
+                        <span class="lables">{{ _('files.info_modified') }}</span>
+                        <span class="user-info-value" id="fileInfoModified">—</span>
+                    </div>
+                    <div class="modal-field">
+                        <span class="lables">{{ _('files.info_modified_by') }}</span>
+                        <span class="user-info-value" id="fileInfoModifiedBy">—</span>
+                    </div>
+                    <div class="modal-field">
+                        <span class="lables">{{ _('files.info_source_url') }}</span>
+                        <span class="user-info-value file-info-value-wrap" id="fileInfoUrl">—</span>
+                    </div>
+                    </div>
+                </div>
+                <div class="file-info-acl-group">
+                    <label class="lables" for="fileInfoAclGrants" id="fileInfoAclHeading">{{ _('files.info_acl') }}</label>
+                    <section class="file-info-acl-block" aria-labelledby="fileInfoAclHeading">
+                    <div class="file-info-acl-panel">
+                        <div class="file-info-acl-table">
+                            <div class="file-info-acl-head modal-field">
+                                <span class="lables file-info-acl-col-user">{{ _('files.info_acl_col_user') }}</span>
+                                <span class="lables file-info-acl-col-perm">{{ _('files.info_acl_col_permission') }}</span>
+                            </div>
+                            <div id="fileInfoAclGrants" class="file-info-acl-grants"></div>
+                        </div>
+                    </div>
+                    </section>
+                </div>
+            </div>
+            <div class="modal-footer file-info-modal-footer">
+                <button type="button" class="btn hidden modal-footer-left" id="fileInfoAclAddRow">{{ _('files.info_acl_add_acl') }}</button>
+                <button type="button" class="btn hidden" id="fileInfoPreviewBtn">{{ _('files.preview') }}</button>
+                <button type="button" class="btn hidden" id="fileInfoEditAclBtn">{{ _('files.info_acl_edit') }}</button>
+                <button type="button" class="btn hidden" id="fileInfoApplyAclBtn">{{ _('files.info_acl_apply') }}</button>
+                <button type="button" class="btn hidden" id="fileInfoCancelAclBtn">{{ _('files.info_acl_cancel') }}</button>
+                <button type="button" class="btn" id="fileInfoCloseBtn" onclick="hideFileInfoModal()">{{ _('user_info.close') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="bulkAclModal" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-user-shield modal-icon modal-icon-info"></i>
+                <h3 class="modal-title" id="bulkAclModalTitle">{{ _('files.bulk_acl_title') }}</h3>
+            </div>
+            <div class="modal-body file-info-modal-body" id="BulkAclModal">
+                <p class="bulk-acl-summary" id="bulkAclSummary"></p>
+                <div class="file-info-acl-group">
+                    <label class="lables" for="bulkAclGrants" id="bulkAclHeading">{{ _('files.info_acl') }}</label>
+                    <section class="file-info-acl-block" aria-labelledby="bulkAclHeading">
+                    <div class="file-info-acl-panel">
+                        <div class="file-info-acl-table">
+                            <div class="file-info-acl-head modal-field">
+                                <span class="lables file-info-acl-col-user">{{ _('files.info_acl_col_user') }}</span>
+                                <span class="lables file-info-acl-col-perm">{{ _('files.info_acl_col_permission') }}</span>
+                            </div>
+                            <div id="bulkAclGrants" class="file-info-acl-grants"></div>
+                        </div>
+                    </div>
+                    </section>
+                </div>
+            </div>
+            <div class="modal-footer file-info-modal-footer">
+                <button type="button" class="btn modal-footer-left" id="bulkAclAddRow">{{ _('files.info_acl_add') }}</button>
+                <button type="button" class="btn" id="bulkAclApplyBtn">{{ _('files.info_acl_apply') }}</button>
+                <button type="button" class="btn" id="bulkAclCloseBtn">{{ _('modal.cancel') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="userInfoModal">
+        <div class="modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-user modal-icon modal-icon-info"></i>
+                <h3 class="modal-title">{{ _('user_info.title') }}</h3>
+            </div>
+            <div class="modal-body" id="UserInfoModal">
+                <div class="modal-field">
+                    <span class="lables">{{ _('user_info.username') }}</span>
+                    <span class="user-info-value" id="modalUserDisplayName">—</span>
+                </div>
+                <div class="modal-field">
+                    <span class="lables">{{ _('user_info.login') }}</span>
+                    <span class="user-info-value" id="modalUserLogin"></span>
+                </div>
+                <div class="modal-field">
+                    <span class="lables">{{ _('user_info.email') }}</span>
+                    <span class="user-info-value" id="modalUserEmail">—</span>
+                </div>
+                <div class="modal-field">
+                    <span class="lables">{{ _('user_info.role') }}</span>
+                    <span class="user-info-value" id="modalUserRole"></span>
+                </div>
+                <div class="modal-field" id="modalUserCreatedAtRow" hidden>
+                    <span class="lables">{{ _('user_info.created_at') }}</span>
+                    <span class="user-info-value" id="modalUserCreatedAt">—</span>
+                </div>
+                <div class="modal-field" id="modalUserLastLoginAtRow" hidden>
+                    <span class="lables">{{ _('user_info.last_login_at') }}</span>
+                    <span class="user-info-value" id="modalUserLastLoginAt">—</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" onclick="hideUserInfoModal()">{{ _('user_info.close') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="addUserModal">
+        <div class="modal add-user-modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-user-plus modal-icon modal-icon-info" id="addUserModalIcon"></i>
+                <h3 class="modal-title" id="addUserModalTitle">{{ _('modal.add_user') }}</h3>
+            </div>
+            <div class="modal-body add-user-modal-body" id="AddUserModal">
+                <form id="addUserForm" autocomplete="off">
+                <div class="form-group">
+                    <label class="lables" for="addUserUsername">{{ _('modal.user_username') }}</label>
+                    <div class="form-control-reveal add-user-username-search">
+                        <input type="text" id="addUserUsername" class="form-control" autocomplete="off" required>
+                        <button type="button" class="add-user-ldap-search-btn" id="addUserLdapSearchBtn"
+                            aria-label="{{ _('modal.user_ldap_search') }}" title="{{ _('modal.user_ldap_search') }}">
+                            <i class="fa-solid fa-magnifying-glass search-icon" aria-hidden="true"></i>
+                        </button>
+                        <div class="add-user-ldap-results dropdown-menu hidden" id="addUserLdapResults"
+                            role="listbox" aria-label="{{ _('modal.user_ldap_search') }}"></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="lables" for="addUserFullName">{{ _('modal.user_full_name') }}</label>
+                    <input type="text" id="addUserFullName" class="form-control" autocomplete="name">
+                </div>
+                <div class="form-group">
+                    <label class="lables" for="addUserEmail">{{ _('modal.user_email') }}</label>
+                    <input type="email" id="addUserEmail" class="form-control" autocomplete="email" inputmode="email">
+                </div>
+                <div class="form-group">
+                    <label class="lables" for="addUserPassword">{{ _('modal.user_password') }}</label>
+                    <div class="form-control-reveal">
+                        <input type="password" id="addUserPassword" class="form-control" autocomplete="new-password">
+                        <button type="button" class="btn icon-btn form-control-reveal-btn" id="addUserPasswordToggle"
+                            aria-label="{{ _('modal.password_show') }}" title="{{ _('modal.password_show') }}"
+                            aria-pressed="false">
+                            <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+                <input type="hidden" id="addUserEditUsername" value="">
+                <div class="form-group">
+                    <label class="lables" for="addUserRoleTrigger">{{ _('modal.user_role') }}</label>
+                    <div class="dropdown" id="addUserRoleWrap">
+                        <button type="button" class="dropdown-trigger" id="addUserRoleTrigger" aria-expanded="false" aria-haspopup="listbox">
+                            <span id="addUserRoleLabel">—</span>
+                            <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                        </button>
+                        <div class="dropdown-menu hidden" id="addUserRolePanel" role="listbox"></div>
+                    </div>
+                    <input type="hidden" id="addUserRoleValue" value="storage_viewer">
+                </div>
+                <div class="form-group">
+                    <label class="lables" for="addUserCloudsTrigger">{{ _('modal.user_clouds') }}</label>
+                    <div class="dropdown" id="addUserCloudsWrap">
+                        <button type="button" class="dropdown-trigger" id="addUserCloudsTrigger" aria-expanded="false" aria-haspopup="listbox">
+                            <span id="addUserCloudsLabel">—</span>
+                            <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                        </button>
+                        <div class="dropdown-menu hidden" id="addUserCloudsPanel" role="listbox"></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="lables" for="addUserBucketsTrigger">{{ _('modal.user_buckets') }}</label>
+                    <div class="dropdown" id="addUserBucketsWrap">
+                        <button type="button" class="dropdown-trigger" id="addUserBucketsTrigger" aria-expanded="false" aria-haspopup="listbox">
+                            <span id="addUserBucketsLabel">—</span>
+                            <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                        </button>
+                        <div class="dropdown-menu hidden" id="addUserBucketsPanel" role="listbox"></div>
+                    </div>
+                </div>
+                <div class="form-group add-user-bucket-roles-group" id="addUserBucketRolesGroup">
+                    <label class="lables" for="addUserBucketRolesGrants">{{ _('modal.user_bucket_roles') }}</label>
+                    <section class="file-info-acl-block">
+                        <div class="file-info-acl-panel">
+                            <div class="file-info-acl-table">
+                                <div class="file-info-acl-head modal-field">
+                                    <span class="lables file-info-acl-col-user">{{ _('settings.table_buckets') }}</span>
+                                    <span class="lables file-info-acl-col-perm">{{ _('settings.table_role') }}</span>
+                                </div>
+                                <div id="addUserBucketRolesGrants" class="file-info-acl-grants"></div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+                <div class="error-message" id="addUserError"></div>
+                </form>
+            </div>
+            <div class="modal-footer add-user-modal-footer">
+                <button type="button" class="btn modal-footer-left" id="addUserEditBucketRolesBtn">{{ _('modal.add_custom_roles') }}</button>
+                <button type="button" class="btn" id="addUserSubmitBtn">{{ _('settings.add') }}</button>
+                <button type="button" class="btn" id="addUserCancelBtn">{{ _('modal.cancel') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="roleEditModal">
+        <div class="modal add-user-modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-user-shield modal-icon modal-icon-info" id="roleEditModalIcon"></i>
+                <h3 class="modal-title" id="roleEditModalTitle">{{ _('modal.add_role') }}</h3>
+            </div>
+            <div class="modal-body" id="RoleEditModal">
+                <div class="form-group">
+                    <label class="lables" for="roleEditNameInput">{{ _('modal.role_name') }}</label>
+                    <input type="text" id="roleEditNameInput" class="form-control" autocomplete="off" maxlength="64">
+                    <input type="hidden" id="roleEditOriginalName" value="">
+                </div>
+                <div class="form-group role-permissions-group">
+                    <label class="lables">{{ _('modal.role_permissions') }}</label>
+                    <div class="role-permissions-panel" id="roleEditPermissionsPanel" role="group"></div>
+                </div>
+                <div class="error-message" id="roleEditError"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" id="roleEditSubmitBtn">{{ _('settings.add') }}</button>
+                <button type="button" class="btn" id="roleEditCancelBtn">{{ _('modal.cancel') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="cloudEditModal">
+        <div class="modal add-user-modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-cloud modal-icon modal-icon-info" id="cloudEditModalIcon"></i>
+                <h3 class="modal-title" id="cloudEditModalTitle">{{ _('modal.add_cloud') }}</h3>
+            </div>
+            <div class="modal-body" id="CloudEditModal">
+                <div class="form-group">
+                    <label class="lables" for="cloudEditIdInput">{{ _('modal.cloud_id') }}</label>
+                    <input type="text" id="cloudEditIdInput" class="form-control" autocomplete="off" maxlength="128">
+                    <input type="hidden" id="cloudEditOriginalId" value="">
+                </div>
+                <div class="form-group">
+                    <label class="lables" for="cloudEditDisplayNameInput">{{ _('modal.cloud_display_name') }}</label>
+                    <input type="text" id="cloudEditDisplayNameInput" class="form-control" autocomplete="off" maxlength="255">
+                </div>
+                <div class="form-group">
+                    <label class="lables" for="cloudEditEndpointInput">{{ _('modal.cloud_endpoint') }}</label>
+                    <div class="cloud-endpoints-list" id="cloudEditEndpointsList">
+                        <div class="cloud-endpoint-row">
+                            <input type="text" id="cloudEditEndpointInput" class="form-control cloud-endpoint-input" autocomplete="off" maxlength="512" placeholder="https://...">
+                            <button type="button" class="btn cloud-endpoint-add-btn" id="cloudEditAddEndpointBtn" aria-label="Add endpoint">+</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group form-group-checkbox">
+                    <input type="checkbox" id="cloudEditPublicUrlEnabled" class="checkbox">
+                    <label class="lables" for="cloudEditPublicUrlEnabled">{{ _('modal.cloud_enable_public_url') }}</label>
+                </div>
+                <div class="error-message" id="cloudEditError"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" id="cloudEditSubmitBtn">{{ _('settings.add') }}</button>
+                <button type="button" class="btn" id="cloudEditCancelBtn">{{ _('modal.cancel') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="addBucketModal">
+        <div class="modal add-user-modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-database modal-icon modal-icon-info"></i>
+                <h3 class="modal-title">{{ _('modal.add_bucket') }}</h3>
+            </div>
+            <div class="modal-body" id="AddBucketModal">
+                <form id="addBucketForm" autocomplete="off">
+                <div class="form-group hidden" id="addBucketCloudAddGroup">
+                    <label class="lables" for="addBucketCloudId">{{ _('modal.bucket_cloud_id') }}</label>
+                    <input type="text" id="addBucketCloudId" class="form-control" autocomplete="off">
+                </div>
+                <div class="form-group" id="addBucketCloudEditGroup">
+                    <label class="lables" for="addBucketEditCloudTrigger">{{ _('modal.user_clouds') }}</label>
+                    <div class="dropdown" id="addBucketEditCloudWrap">
+                        <button type="button" class="dropdown-trigger" id="addBucketEditCloudTrigger" aria-expanded="false" aria-haspopup="listbox">
+                            <span id="addBucketEditCloudLabel">—</span>
+                            <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                        </button>
+                        <div class="dropdown-menu hidden" id="addBucketEditCloudPanel" role="listbox"></div>
+                    </div>
+                    <input type="hidden" id="addBucketEditCloudValue" value="">
+                    <input type="hidden" id="addBucketEditCloudName" value="">
+                </div>
+                <div class="form-group hidden" id="addBucketBucketNameAddGroup">
+                    <label class="lables" for="addBucketBucketName">{{ _('modal.bucket_bucket_name') }}</label>
+                    <input type="text" id="addBucketBucketName" class="form-control" autocomplete="off">
+                    <input type="hidden" id="addBucketBucketNameHidden" value="">
+                </div>
+                <div class="form-group" id="addBucketDisplayAddGroup">
+                    <label class="lables" for="addBucketDisplayName">{{ _('modal.bucket_display_name') }}</label>
+                    <input type="text" id="addBucketDisplayName" class="form-control" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label class="lables" for="addBucketBucketId">{{ _('modal.bucket_bucket_id') }}</label>
+                    <input type="text" id="addBucketBucketId" class="form-control" autocomplete="off" readonly aria-readonly="true">
+                </div>
+                <div class="form-group hidden" id="addBucketEndpointUrlAddGroup">
+                    <label class="lables" for="addBucketEndpointUrl">{{ _('modal.endpoin_url') }}</label>
+                    <input type="text" id="addBucketEndpointUrl" class="form-control" placeholder="https://..." autocomplete="off">
+                </div>
+                <div class="form-group" id="addBucketEndpointUrlEditGroup">
+                    <label class="lables" for="addBucketEditEndpointTrigger">{{ _('modal.endpoin_url') }}</label>
+                    <div class="dropdown" id="addBucketEditEndpointWrap">
+                        <button type="button" class="dropdown-trigger" id="addBucketEditEndpointTrigger" aria-expanded="false" aria-haspopup="listbox">
+                            <span id="addBucketEditEndpointLabel">—</span>
+                            <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                        </button>
+                        <div class="dropdown-menu hidden" id="addBucketEditEndpointPanel" role="listbox"></div>
+                    </div>
+                    <input type="hidden" id="addBucketEndpointUrlHidden" value="">
+                </div>
+                <div class="form-group">
+                    <label class="lables" for="addBucketAccessKey">{{ _('modal.aws_access_key') }}</label>
+                    <div class="form-control-reveal">
+                        <input type="text" id="addBucketAccessKey" class="form-control" autocomplete="off">
+                        <button type="button" class="btn icon-btn copy form-control-reveal-btn" id="addBucketAccessKeyCopy"
+                            aria-label="{{ _('modal.access_key_copy') }}" title="{{ _('modal.access_key_copy') }}">
+                            <i class="fa-solid fa-clone" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="lables" for="addBucketSecretKey">{{ _('modal.aws_secret_key') }}</label>
+                    <div class="form-control-reveal">
+                        <input type="password" id="addBucketSecretKey" class="form-control" autocomplete="off">
+                        <button type="button" class="btn icon-btn form-control-reveal-btn" id="addBucketSecretKeyToggle"
+                            aria-label="{{ _('modal.secret_key_show') }}" title="{{ _('modal.secret_key_show') }}"
+                            aria-pressed="false">
+                            <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="btn icon-btn copy form-control-reveal-btn form-control-reveal-btn-copy" id="addBucketSecretKeyCopy"
+                            aria-label="{{ _('modal.secret_key_copy') }}" title="{{ _('modal.secret_key_copy') }}">
+                            <i class="fa-solid fa-clone" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="lables" for="addBucketCaBundlePath">{{ _('modal.bucket_ca_bundle') }}</label>
+                    <input type="text" id="addBucketCaBundlePath" class="form-control" placeholder="/usr/local/share/ca-certificates/corporate-root-ca.crt" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label class="lables" for="addBucketRegionName">{{ _('modal.bucket_region') }}</label>
+                    <input type="text" id="addBucketRegionName" class="form-control" placeholder="us-east-1" autocomplete="off">
+                </div>
+                <div class="form-group form-group-checkbox">
+                    <input type="checkbox" id="addBucketSkipTlsVerify" class="checkbox">
+                    <label class="lables" for="addBucketSkipTlsVerify">{{ _('modal.bucket_skip_tls') }}</label>
+                </div>
+                <div class="error-message" id="addBucketError"></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn modal-footer-left" id="addBucketTestBtn">{{ _('modal.test_connection') }}</button>
+                <button type="button" class="btn" id="addBucketSubmitBtn">{{ _('settings.add') }}</button>
+                <button type="button" class="btn" id="addBucketCancelBtn">{{ _('modal.cancel') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification">
+        <div class="notification-icon">
+            <i class="fa-solid fa-check" id="notificationIcon"></i>
+        </div>
+        <div class="notification-content">
+            <h4 class="notification-title" id="notificationTitle">{{ _('notification.success') }}</h4>
+            <p class="notification-message" id="notificationMessage">{{ _('notification.operation_ok') }}</p>
+        </div>
+        <button class="notification-close" onclick="hideNotification()">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+    </div>
+
+    <div class="progressbar-floating-host" id="progressbarFloatingHost" aria-live="polite"></div>
+
+    <script>window.I18N = {{ i18n | tojson }};</script>
+    <script>window.__csrfToken = {{ (csrf_token or '') | tojson }};</script>
+    <script src="/js/dom-utils.js"></script>
+    <script src="/js/app-state.js"></script>
+    <script src="/js/auth-ui.js"></script>
+    <script src="/js/permissions-ui.js"></script>
+    <script src="/js/list-row-utils.js"></script>
+    <script src="/js/breadcrumb.js"></script>
+    <script src="/js/selection-actions.js"></script>
+    <script src="/js/selection-mode.js"></script>
+    <script src="/js/csrf.js"></script>
+    <script src="/js/session.js"></script>
+    <script src="/js/create-folder.js"></script>
+    <script src="/js/notifications.js"></script>
+    <script src="/js/progressbar.js"></script>
+    <script src="/js/operation-jobs.js"></script>
+    <script src="/js/theme.js"></script>
+    <script src="/js/chrome-menus.js"></script>
+    <script src="/js/context-menus.js"></script>
+    <script src="/js/upload-ui.js"></script>
+    <script src="/js/toolbar.js"></script>
+    <script src="/js/home-navigation.js"></script>
+    <script src="/js/pagination.js"></script>
+    <script src="/js/files.js"></script>
+    <script src="/js/modal.js"></script>
+    <script src="/js/transfer-objects.js"></script>
+    <script src="/js/buckets.js"></script>
+    <script src="/js/users.js"></script>
+    <script src="/js/help.js"></script>
+    <script src="/js/routing.js"></script>
+    <script src="/js/meilisearch.js"></script>
+    <script src="/js/status.js"></script>
+    <script src="/js/settings-panel.js"></script>
+    <script src="/js/app-init.js"></script>
+    <script src="/js/search.js"></script>
+</body>
+</html>

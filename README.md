@@ -9,6 +9,17 @@
 
 Сервис хранит конфигурацию и ACL в PostgreSQL и отдаёт единый веб-интерфейс на Flask.
 
+## Скриншоты
+
+<p align="center">
+  <img src="docs/images/login1.jpg" alt="Страница входа" width="48%" />
+  <img src="docs/images/login2.jpg" alt="Вход через SSO / локальный логин" width="48%" />
+</p>
+<p align="center">
+  <img src="docs/images/files.jpg" alt="Файловый менеджер" width="48%" />
+  <img src="docs/images/settings.jpg" alt="Настройки — бакеты" width="48%" />
+</p>
+
 ## Быстрый старт (Docker Compose)
 
 ```bash

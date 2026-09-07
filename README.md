@@ -114,7 +114,7 @@
 
 Безопасность и эксплуатация:
 - пароль bind **не** храните в `docker-compose.yml` и не коммитьте — только в локальном `.env` (файл в `.gitignore`);
-- шаблон: [`src/.env.example`](src/.env.example); для `docker compose` скопируйте его в корневой `.env`, если нужны свои секреты;
+- шаблон для запуска Python на хосте: [`src/.env.example`](src/.env.example); в Docker Compose `.env` не обязателен — добавьте туда только LDAP/SSO-переменные, не копируйте файл целиком;
 - учётка bind должна иметь минимальные права чтения в AD (поиск пользователей);
 - используйте `ldaps://`; plain `ldap://` передаёт bind-пароль без шифрования.
 
@@ -486,20 +486,29 @@ curl -b /tmp/s3fm.cookies -X POST http://localhost:3000/api/search/reindex \
 ## Docker Compose
 
 Поднимает PostgreSQL, Meilisearch и web из корневого `docker-compose.yml`.
+Файл `.env` **не нужен**: тестовые значения уже в compose.
 
 ```bash
 docker compose up --build
 ```
 
-Файл `.env` не обязателен: в compose уже тестовые значения для локального запуска. Чтобы переопределить секреты (LDAP, SSO и т.п.), скопируйте [`src/.env.example`](src/.env.example) в корневой `.env`.
-
-После старта:
+После старта (2–5 секунд на инициализацию Postgres и схему):
 - UI: [http://localhost:3000](http://localhost:3000)
 - логин: `admin` / `admin` (`APP_ADMIN_PASSWORD` в compose)
 - PostgreSQL: `localhost:5432`, пользователь / пароль / БД — `postgres`
 - Meilisearch: [http://localhost:7700](http://localhost:7700)
 
-Остановка (тома БД и индекса сохраняются):
+Опциональные секреты (LDAP и т.п.) — переменные в корневом `.env` (файл в `.gitignore`).
+Не копируйте [`src/.env.example`](src/.env.example) целиком: там `DATABASE_URL=...localhost...`, это для запуска Python на хосте, не для контейнера.
+
+Полный сброс томов (как с нуля):
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+Остановка с сохранением БД и индекса:
 
 ```bash
 docker compose down

@@ -355,12 +355,26 @@ def _run_app_startup():
             )
         else:
             log_info('SSO (OIDC): disabled (SSO_ENABLED unset or incomplete configuration)', 'app_info')
-        try:
-            db_init_schema()
-            ensure_startup_admin()
-            log_info('Database schema verified/created', 'app_info')
-        except Exception as e:
-            log_warning(f'Database unavailable or schema not created: {e}', 'app_info')
+        last_db_err = None
+        for attempt in range(1, 31):
+            try:
+                db_init_schema()
+                ensure_startup_admin()
+                log_info('Database schema verified/created', 'app_info')
+                last_db_err = None
+                break
+            except Exception as e:
+                last_db_err = e
+                log_warning(
+                    f'Database unavailable (attempt {attempt}/30): {e}',
+                    'app_info',
+                )
+                time.sleep(2)
+        if last_db_err:
+            log_warning(
+                f'Database unavailable or schema not created: {last_db_err}',
+                'app_info',
+            )
         log_info('Checking bucket configuration...', 'app_info')
 
         total_buckets = 0

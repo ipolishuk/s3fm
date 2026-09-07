@@ -9,6 +9,11 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
 
   meilisearch:
     image: getmeili/meilisearch:v1.11
@@ -27,14 +32,11 @@ services:
       dockerfile: docker/web/Dockerfile
       args:
         BASE: python:3.11.9-bookworm
-    env_file:
-      - path: .env
-        required: false
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
       MEILI_ENABLED: "true"
       MEILI_HOST: http://meilisearch:7700
-      MEILI_API_KEY: test_api_key
+      MEILI_API_KEY: test_master_key
       MEILI_REINDEX_ON_STARTUP: "false"
       APP_SECRET_KEY: test_app_secret_key
       APP_ADMIN_PASSWORD: admin
@@ -47,7 +49,7 @@ services:
       SSO_POST_LOGOUT_REDIRECT_URI: https://s3fm.example.com/login
       OIDC_CLIENT_ID: test_oidc_id
       OIDC_CLIENT_SECRET: test_oidc_secret
-      # LDAP / AD lookup — секреты только из .env (см. .env.example), не хардкодить.
+      # LDAP: значения из корневого .env (${VAR}), файл не обязателен.
       LDAP_URI: ${LDAP_URI:-ldaps://example.com}
       LDAP_BASE_DN: ${LDAP_BASE_DN:-DC=example,DC=com}
       LDAP_DOMAIN: ${LDAP_DOMAIN:-example.com}

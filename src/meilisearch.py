@@ -161,12 +161,18 @@ def editable_settings_payload() -> Dict[str, Any]:
         env_val = _env_raw(key)
         if env_val is not None:
             env_placeholders[key] = env_val
+    version = None
+    if is_configured():
+        client = _get_http_client()
+        if client is not None:
+            version = _pkg_version_from_client(client)
     return {
         'settings': settings,
         'env_placeholders': env_placeholders,
         'defaults': dict(MEILI_SETTING_DEFAULTS),
         'config_error': configuration_error(),
         'env': admin_env_display(),
+        'version': version,
     }
 
 
@@ -674,6 +680,22 @@ def index_uid_for_bucket(bucket_name: str, bucket_id: str) -> str:
     return uid
 
 
+def _pkg_version_from_client(
+    client: '_MeiliHTTPClient',
+    *,
+    timeout: Optional[int] = None,
+) -> Optional[str]:
+    """pkgVersion from GET /version, or None if unavailable."""
+    try:
+        body = client.request('GET', '/version', timeout=timeout) or {}
+        if not isinstance(body, dict):
+            return None
+        return str(body.get('pkgVersion') or '').strip() or None
+    except Exception as exc:
+        logger.warning('Meilisearch /version failed: %s', exc)
+        return None
+
+
 def connection_status(
     *,
     include_stats: bool = True,
@@ -688,6 +710,7 @@ def connection_status(
     host = _meili_host() if configured else (_configured_host() or None)
     available = False
     database_size = None
+    version = None
     probe_error = None
     client: Optional[_MeiliHTTPClient] = None
 
@@ -718,6 +741,10 @@ def connection_status(
             if not available:
                 probe_error = 'Client is not available'
 
+    if client is not None:
+        ver_timeout = timeout if timeout is not None else _request_timeout_sec()
+        version = _pkg_version_from_client(client, timeout=ver_timeout)
+
     if include_stats and client is not None:
         try:
             stats_timeout = timeout if timeout is not None else _request_timeout_sec()
@@ -737,6 +764,7 @@ def connection_status(
         'enabled_from_env': _env_raw('MEILI_ENABLED') is not None,
         'host': host,
         'database_size': database_size,
+        'version': version,
         'config_error': config_error,
         'probe_error': probe_error,
         'env': admin_env_display(),

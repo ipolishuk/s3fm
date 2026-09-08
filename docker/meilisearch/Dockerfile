@@ -1,4 +1,4 @@
-FROM getmeili/meilisearch:v1.10.3
+FROM getmeili/meilisearch:v1.53.2
 
 RUN apk add --no-cache aws-cli
 

@@ -186,7 +186,15 @@ def settings_services_status_impl():
                 meili_detail = ''
             elif meili_available:
                 meili_status = 'ok'
-                meili_detail = f'Connected to {meili_host}' if meili_host else ''
+                meili_version = (meili_raw.get('version') or '').strip()
+                if meili_host and meili_version:
+                    meili_detail = f'Connected to {meili_host} (v{meili_version})'
+                elif meili_host:
+                    meili_detail = f'Connected to {meili_host}'
+                elif meili_version:
+                    meili_detail = f'v{meili_version}'
+                else:
+                    meili_detail = ''
             else:
                 meili_status = 'error'
                 probe_err = (meili_raw.get('probe_error') or meili_raw.get('config_error') or '').strip()
@@ -214,6 +222,7 @@ def settings_services_status_impl():
                     'host': meili_host,
                     'enabled_from_env': bool(meili_raw.get('enabled_from_env')),
                     'database_size': meili_raw.get('database_size'),
+                    'version': meili_raw.get('version'),
                     'config_error': meili_raw.get('config_error'),
                     'probe_error': meili_raw.get('probe_error'),
                 },

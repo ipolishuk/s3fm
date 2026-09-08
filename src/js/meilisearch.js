@@ -297,13 +297,29 @@
         var settings = payload.settings || {};
         var envPlaceholders = payload.env_placeholders || {};
         var configError = payload.config_error || '';
+        var version = payload.version != null ? String(payload.version).trim() : '';
         var errorHtml =
             '<p class="form-hint meili-settings-config-error' + (configError ? '' : ' hidden') +
             '" id="meiliSettingsConfigError">' +
             (configError ? escapeHtml(configError) : '') +
             '</p>';
+        var versionLabel = escapeHtml(t('settings.search.version') || 'Version');
+        var versionHint = String(t('settings.search.version_hint') || '').trim();
+        var versionHintHtml = versionHint
+            ? '<span class="form-hint meili-settings-desc">' + escapeHtml(versionHint) + '</span>'
+            : '';
+        var versionHtml =
+            '<div class="modal-field meili-settings-field">' +
+            '<div class="meili-settings-label-wrap">' +
+            '<label class="lables">' + versionLabel + '</label>' +
+            versionHintHtml +
+            '</div>' +
+            '<div class="meili-settings-value-col">' +
+            '<span class="user-info-value meili-settings-value">' + escapeHtml(version || '—') + '</span>' +
+            '</div>' +
+            '</div>';
 
-        container.innerHTML = errorHtml + MEILI_SETTINGS_ORDER.map(function (key) {
+        container.innerHTML = errorHtml + versionHtml + MEILI_SETTINGS_ORDER.map(function (key) {
             var label = escapeHtml(t(ENV_LABEL_KEYS[key]) || key);
             var hint = ENV_HINT_KEYS[key] ? String(t(ENV_HINT_KEYS[key]) || '').trim() : '';
             var hintHtml = hint

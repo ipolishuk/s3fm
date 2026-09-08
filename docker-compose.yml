@@ -16,7 +16,7 @@ services:
       retries: 15
 
   meilisearch:
-    image: getmeili/meilisearch:v1.11
+    image: getmeili/meilisearch:v1.53.2
     environment:
       MEILI_ENV: development
       MEILI_MASTER_KEY: test_master_key

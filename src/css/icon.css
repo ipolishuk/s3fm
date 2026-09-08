@@ -68,16 +68,8 @@ i.fa-solid.empty-state-icon-error {
   }
 }
 
-#settingsMeiliStatusBtn.status-connected #settingsMeiliStatusIcon {
+#settingsMeiliStatusBtn.status-connected:not(:disabled) #settingsMeiliStatusIcon {
   color: var(--success);
-}
-
-#settingsMeiliStatusBtn.status-disconnected #settingsMeiliStatusIcon {
-  color: var(--error);
-}
-
-#settingsMeiliStatusBtn.status-enabled.status-disconnected #settingsMeiliStatusIcon {
-  color: var(--warning);
 }
 
 .progressbar-status.success .fa-solid,

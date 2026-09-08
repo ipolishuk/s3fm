@@ -549,7 +549,19 @@
         var icon = document.getElementById('settingsMeiliStatusIcon');
         var btn = document.getElementById('settingsMeiliStatusBtn');
         if (!icon || !btn) return;
-        status = status || {};
+
+        var titleBase = t('settings.search.status_toggle_title') || 'Enable / disable Meilisearch';
+        btn.classList.remove('status-connected', 'status-disconnected', 'status-enabled', 'status-pending');
+
+        if (status == null || !Object.prototype.hasOwnProperty.call(status, 'available')) {
+            btn.classList.add('status-pending');
+            btn.disabled = true;
+            btn.title = titleBase;
+            btn.setAttribute('aria-label', titleBase);
+            btn.removeAttribute('aria-pressed');
+            return;
+        }
+
         var enabled = !!status.enabled;
         var connected = !!status.available;
         var label;
@@ -560,8 +572,7 @@
         } else {
             label = capitalizeLabel(t('settings.search.status_disconnected') || 'Disconnected');
         }
-        btn.classList.remove('status-connected', 'status-disconnected', 'status-enabled');
-        if (enabled && connected) {
+        if (connected) {
             btn.classList.add('status-connected');
         } else {
             btn.classList.add('status-disconnected');
@@ -569,8 +580,7 @@
         if (enabled) {
             btn.classList.add('status-enabled');
         }
-        btn.disabled = false;
-        var titleBase = t('settings.search.status_toggle_title') || 'Enable / disable Meilisearch';
+        btn.disabled = !connected;
         btn.title = titleBase + ': ' + label;
         btn.setAttribute('aria-label', btn.title);
         btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
@@ -686,7 +696,7 @@
         }
 
         if (onSearch) {
-            updateMeiliStatusButton(status);
+            updateMeiliStatusButton(status != null ? status : null);
         }
 
         if (reindexBtn) {

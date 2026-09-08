@@ -60,28 +60,10 @@ h6 {
   height: var(--toolbar-item-height);
 }
 
-.app-title-logo svg {
+.app-title-logo img {
   display: block;
   width: 100%;
   height: 100%;
-}
-
-.app-title-logo-fg {
-  fill: var(--brand-accent-contrast);
-}
-
-.app-title-logo-muted {
-  fill: var(--brand-accent-contrast);
-  opacity: 0.62;
-}
-
-.app-title-logo-cut {
-  fill: var(--brand-accent);
-}
-
-.app-title-logo-pocket {
-  fill: var(--brand-accent);
-  opacity: 0.22;
 }
 
 .app-title-divider {

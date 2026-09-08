@@ -192,6 +192,7 @@ PUBLIC_ENDPOINTS = frozenset({
     'health.metrics',
     'pages.serve_css',
     'pages.serve_js',
+    'pages.serve_img',
     'static',
 }) | sso_module.public_endpoint_names()
 
@@ -213,7 +214,7 @@ def _is_public_request():
     p = request.path
     if p in ('/health', '/healthz/live', '/healthz/ready', '/metrics'):
         return True
-    if p.startswith('/css/') or p.startswith('/js/') or p.startswith('/static/'):
+    if p.startswith('/css/') or p.startswith('/js/') or p.startswith('/img/') or p.startswith('/static/'):
         return True
     return False
 
@@ -254,7 +255,7 @@ def before_request_metrics():
 def before_request():
     """Устанавливает имя пользователя для логов и логирует запросы"""
     p = request.path
-    if p.startswith('/css/') or p.startswith('/js/') or p in ('/health', '/healthz/live', '/healthz/ready', '/metrics'):
+    if p.startswith('/css/') or p.startswith('/js/') or p.startswith('/img/') or p in ('/health', '/healthz/live', '/healthz/ready', '/metrics'):
         return None
 
     # Устанавливаем имя пользователя для логов

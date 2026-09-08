@@ -26,6 +26,11 @@ def serve_js(filename):
     return send_from_directory(os.path.join(_APP_DIR, 'js'), filename)
 
 
+@bp.route('/img/<path:filename>')
+def serve_img(filename):
+    return send_from_directory(os.path.join(_APP_DIR, 'img'), filename)
+
+
 @bp.route('/')
 def index():
     """Главная страница с интерфейсом управления."""

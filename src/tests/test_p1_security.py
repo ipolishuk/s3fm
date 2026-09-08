@@ -476,6 +476,7 @@ class TestRemainingBlueprints:
         assert endpoints.get('buckets.get_bucket_size') == '/api/bucket-size/<bucket_id>'
         assert endpoints.get('pages.index') == '/'
         assert endpoints.get('pages.serve_js') == '/js/<path:filename>'
+        assert endpoints.get('pages.serve_img') == '/img/<path:filename>'
         assert any(r.endpoint == 'pages.settings_view' for r in app_module.app.url_map.iter_rules())
         assert any(r.endpoint == 'pages.help_view' for r in app_module.app.url_map.iter_rules())
         # no bare app views left

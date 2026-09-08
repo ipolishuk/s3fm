@@ -59,24 +59,6 @@ body {
   filter: drop-shadow(0 8px 16px #2b445c24);
 }
 
-.logo-img .brand-logo-fg {
-  fill: var(--brand-accent-contrast);
-}
-
-.logo-img .brand-logo-muted {
-  fill: var(--brand-accent-contrast);
-  opacity: 0.62;
-}
-
-.logo-img .brand-logo-cut {
-  fill: var(--brand-accent);
-}
-
-.logo-img .brand-logo-pocket {
-  fill: var(--brand-accent);
-  opacity: 0.22;
-}
-
 .logo h1 {
   margin: 0;
   font-size: 24px;

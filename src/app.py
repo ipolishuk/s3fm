@@ -156,6 +156,9 @@ def _request_log_context(method, path):
             return 'create_objects'
         if path.startswith('/api/settings/bucket-access/'):
             return 'create_objects'
+    if method == 'PUT':
+        if path.startswith('/api/settings/bucket-access/'):
+            return 'create_objects'
     if method == 'GET':
         if path == '/api/buckets':
             return 'list_buckets'

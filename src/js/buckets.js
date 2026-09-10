@@ -292,13 +292,11 @@
     }
 
     function canManageBucketAccessUi() {
+        // Align with server open-settings / add_bucket; API still enforces creator for non-admin.
         if (typeof window.isCurrentUserAdmin === 'function' && window.isCurrentUserAdmin()) return true;
         if (typeof window.isCurrentUserStorageAdmin === 'function' && window.isCurrentUserStorageAdmin()) return true;
-        if (typeof window.canOpenSettings === 'function' && window.canOpenSettings()) return true;
-        var user = window.fileManagerCurrentUser;
-        if (!user) return false;
-        var role = String(user.role || '').toLowerCase();
-        return role === 'admin' || role === 'storage_admin';
+        if (typeof window.userHasPermission === 'function' && window.userHasPermission('add_bucket')) return true;
+        return false;
     }
 
     function skipTlsValueFromRaw(raw) {
@@ -2053,11 +2051,13 @@
     }
 
     function setBucketAccessFooterMode(editing) {
+        var editBtn = document.getElementById('bucketAccessEditBtn');
         var addBtn = document.getElementById('bucketAccessAddUserBtn');
         var applyBtn = document.getElementById('bucketAccessApplyBtn');
         var cancelBtn = document.getElementById('bucketAccessCancelBtn');
         var closeBtn = document.getElementById('bucketAccessCloseBtn');
-        if (addBtn) addBtn.classList.remove('hidden');
+        if (editBtn) editBtn.classList.toggle('hidden', !!editing);
+        if (addBtn) addBtn.classList.toggle('hidden', !editing);
         if (applyBtn) applyBtn.classList.toggle('hidden', !editing);
         if (cancelBtn) cancelBtn.classList.toggle('hidden', !editing);
         if (closeBtn) closeBtn.classList.toggle('hidden', !!editing);
@@ -2094,11 +2094,10 @@
         });
     }
 
-    /** Роль для назначения новым пользователям (не admin). */
+    /** Роль для назначения новым пользователям (только storage_*). */
     function normalizeAssignableBucketAccessRole(role) {
         var r = String(role || '').trim();
         if (r.indexOf('storage_') === 0) return r;
-        if (r === 'admin') return 'storage_admin';
         return 'storage_viewer';
     }
 
@@ -2117,8 +2116,29 @@
         return display || user.username || '—';
     }
 
+    function bucketAccessRowLocked(user) {
+        if (!user) return false;
+        if (user.via_wildcard) return true;
+        var role = String(user.role || '').trim().toLowerCase();
+        var userRole = String(user.user_role || '').trim().toLowerCase();
+        return role === 'admin' || userRole === 'admin';
+    }
+
+    function bucketAccessLockHint(user) {
+        if (!user) return '';
+        if (user.via_wildcard) {
+            return bucketAccessT('modal.bucket_access_wildcard', 'Full access (all buckets)');
+        }
+        var role = String(user.role || '').trim().toLowerCase();
+        var userRole = String(user.user_role || '').trim().toLowerCase();
+        if (role === 'admin' || userRole === 'admin') {
+            return bucketAccessT('modal.bucket_access_locked_admin', 'Administrator — cannot edit from here');
+        }
+        return '';
+    }
+
     function bucketAccessEditableUsers() {
-        return (bucketAccessState.users || []).filter(function (u) { return !u.via_wildcard; });
+        return (bucketAccessState.users || []).filter(function (u) { return !bucketAccessRowLocked(u); });
     }
 
     function bucketAccessUserDropdownOptions(selectedUsername) {
@@ -2477,7 +2497,9 @@
     }
 
     function bucketAccessViewRowHtml(user) {
-        return '<div class="modal-field file-info-acl-row">' +
+        var hint = bucketAccessLockHint(user);
+        var titleAttr = hint ? ' title="' + escapeHtml(hint) + '"' : '';
+        return '<div class="modal-field file-info-acl-row"' + titleAttr + '>' +
             '<span class="user-info-value file-info-acl-col-user">' +
             escapeHtml(bucketAccessUserLabel(user)) +
             '</span>' +
@@ -2497,7 +2519,7 @@
 
     function bucketAccessEditRowHtml(entry, idx, locked) {
         entry = entry || defaultBucketAccessEditRow();
-        locked = !!locked || !!entry.via_wildcard;
+        locked = !!locked || bucketAccessRowLocked(entry);
         var userOpts = locked
             ? [{ value: entry.username, label: bucketAccessUserLabel(entry), role: entry.role || '' }]
             : bucketAccessUserDropdownOptions(entry.username || '');
@@ -2509,14 +2531,25 @@
         if (username && !locked && !userOpts.some(function (o) { return o.value === username; })) {
             username = '';
         }
+        // Keep existing role as-is (e.g. admin). Only new empty rows get storage_viewer.
         var entryRole = String(entry.role || '').trim();
-        if (!locked) entryRole = normalizeAssignableBucketAccessRole(entryRole);
-        var role = entryRole && roleOpts.some(function (o) { return o.value === entryRole; })
-            ? entryRole
-            : ((roleOpts[0] && roleOpts[0].value) || entryRole || '');
+        if (!locked && entryRole && !roleOpts.some(function (o) { return o.value === entryRole; })) {
+            roleOpts = [{ value: entryRole, label: bucketAccessRoleLabel(entryRole) || entryRole }].concat(roleOpts);
+        }
+        var role = entryRole;
+        if (!role && !locked) {
+            role = 'storage_viewer';
+            if (roleOpts.length && !roleOpts.some(function (o) { return o.value === role; })) {
+                role = (roleOpts[0] && roleOpts[0].value) || role;
+            }
+        } else if (role && !roleOpts.some(function (o) { return o.value === role; })) {
+            roleOpts = [{ value: role, label: bucketAccessRoleLabel(role) || role }].concat(roleOpts);
+        }
         var removeTitle = bucketAccessT('files.info_acl_remove_grant', 'Remove');
+        var lockHint = locked ? bucketAccessLockHint(entry) : '';
+        var lockTitle = lockHint ? ' title="' + escapeHtml(lockHint) + '"' : '';
         return '<div class="modal-field file-info-acl-edit-row" data-row="' + idx + '"' +
-            (locked ? ' data-locked="1"' : '') + '>' +
+            (locked ? ' data-locked="1"' : '') + lockTitle + '>' +
             buildBucketAccessUserSearchHtml('bucketAccessUser_' + idx, userOpts, username, locked) +
             buildBucketAccessDropdownHtml('bucketAccessRole_' + idx, 'role', roleOpts, role, locked) +
             '<button type="button" class="btn icon-btn delete file-info-acl-remove" title="' +
@@ -2554,7 +2587,7 @@
         }
         var html = '<div id="bucketAccessEditRows">';
         users.forEach(function (u, idx) {
-            html += bucketAccessEditRowHtml(u, idx, !!u.via_wildcard);
+            html += bucketAccessEditRowHtml(u, idx, bucketAccessRowLocked(u));
         });
         html += '</div>';
         container.innerHTML = html;
@@ -2632,10 +2665,12 @@
             var userDd = row.querySelector('[data-bucket-access="user"]');
             var roleDd = row.querySelector('[data-bucket-access="role"]');
             var username = getBucketAccessDropdownValue(userDd);
-            var role = getBucketAccessDropdownValue(roleDd);
+            var role = String(getBucketAccessDropdownValue(roleDd) || '').trim();
             if (!username || seen[username]) return;
             seen[username] = true;
-            out.push({ username: username, role: normalizeAssignableBucketAccessRole(role) });
+            // Editable rows must use assignable storage_* roles
+            role = normalizeAssignableBucketAccessRole(role);
+            out.push({ username: username, role: role });
         });
         return out;
     }
@@ -2648,6 +2683,23 @@
         renderBucketAccessPanel();
     }
 
+    function reloadBucketAccessFromServer() {
+        var bid = bucketAccessState.bucketId;
+        if (!bid) return Promise.resolve(false);
+        return fetch('/api/settings/bucket-access/' + encodeURIComponent(bid), { credentials: 'include' })
+            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+            .then(function (res) {
+                if (!res.ok) return false;
+                if (res.data && res.data.bucket_name) {
+                    bucketAccessState.bucketName = res.data.bucket_name;
+                    setBucketAccessSummary(res.data.bucket_name);
+                }
+                applyBucketAccessPayload(res.data);
+                return true;
+            })
+            .catch(function () { return false; });
+    }
+
     function applyBucketAccessChanges() {
         if (!bucketAccessState.bucketId || bucketAccessState.busy) return;
         var next = collectBucketAccessEditRows();
@@ -2657,74 +2709,49 @@
         var nextMap = {};
         next.forEach(function (u) { nextMap[u.username] = u.role || ''; });
 
-        var toGrant = next.filter(function (u) {
+        var changed = next.some(function (u) {
             return !Object.prototype.hasOwnProperty.call(prevMap, u.username) || prevMap[u.username] !== u.role;
-        });
-        var toRevoke = prev.filter(function (u) {
+        }) || prev.some(function (u) {
             return !Object.prototype.hasOwnProperty.call(nextMap, u.username);
-        }).map(function (u) { return u.username; });
+        });
 
-        if (!toGrant.length && !toRevoke.length) {
+        if (!changed) {
             exitBucketAccessEdit();
             return;
         }
 
         bucketAccessState.busy = true;
         var bid = bucketAccessState.bucketId;
-        var chain = Promise.resolve();
         var applyBtn = document.getElementById('bucketAccessApplyBtn');
         if (applyBtn) applyBtn.disabled = true;
 
-        toRevoke.forEach(function (username) {
-            chain = chain.then(function () {
-                return fetch('/api/settings/bucket-access/' + encodeURIComponent(bid) +
-                    '?username=' + encodeURIComponent(username), {
-                    method: 'DELETE',
-                    credentials: 'include'
-                }).then(function (r) {
-                    return r.json().then(function (d) { return { ok: r.ok, data: d }; });
-                }).then(function (res) {
-                    if (!res.ok) throw new Error((res.data && res.data.error) || 'Error');
-                    applyBucketAccessPayload(res.data);
-                });
-            });
-        });
-
-        toGrant.forEach(function (entry) {
-            chain = chain.then(function () {
-                return fetch('/api/settings/bucket-access/' + encodeURIComponent(bid), {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: entry.username, role: entry.role || undefined })
-                }).then(function (r) {
-                    return r.json().then(function (d) { return { ok: r.ok, data: d }; });
-                }).then(function (res) {
-                    if (!res.ok) throw new Error((res.data && res.data.error) || 'Error');
-                    applyBucketAccessPayload(res.data);
-                });
-            });
-        });
-
-        chain.then(function () {
-            bucketAccessState.busy = false;
-            if (applyBtn) applyBtn.disabled = false;
+        fetch('/api/settings/bucket-access/' + encodeURIComponent(bid), {
+            method: 'PUT',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ grants: next })
+        }).then(function (r) {
+            return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+        }).then(function (res) {
+            if (!res.ok) throw new Error((res.data && res.data.error) || 'Error');
+            applyBucketAccessPayload(res.data);
+            if (res.data && res.data.bucket_name) {
+                bucketAccessState.bucketName = res.data.bucket_name;
+                setBucketAccessSummary(res.data.bucket_name);
+            }
             exitBucketAccessEdit();
             if (typeof window.showSuccess === 'function') {
                 window.showSuccess(bucketAccessT('notification.operation_ok', 'Success'));
             }
         }).catch(function (err) {
-            bucketAccessState.busy = false;
-            if (applyBtn) applyBtn.disabled = false;
             if (typeof window.showError === 'function') {
                 window.showError((err && err.message) || bucketAccessT('settings.error_load', 'Error'));
             }
+            return reloadBucketAccessFromServer();
+        }).finally(function () {
+            bucketAccessState.busy = false;
+            if (applyBtn) applyBtn.disabled = false;
         });
-    }
-
-    function bucketAccessAddUser() {
-        if (!bucketAccessState.editing) enterBucketAccessEdit();
-        bucketAccessAddRow();
     }
 
     function setBucketAccessSummary(bucketName) {
@@ -2799,15 +2826,21 @@
         if (bucketAccessListenersBound) return;
         bucketAccessListenersBound = true;
         var closeBtn = document.getElementById('bucketAccessCloseBtn');
+        var editBtn = document.getElementById('bucketAccessEditBtn');
         var addBtn = document.getElementById('bucketAccessAddUserBtn');
         var applyBtn = document.getElementById('bucketAccessApplyBtn');
         var cancelBtn = document.getElementById('bucketAccessCancelBtn');
         var grants = document.getElementById('bucketAccessGrants');
         var modal = document.getElementById('bucketAccessModal');
         if (closeBtn) closeBtn.addEventListener('click', hideBucketAccessModal);
-        if (addBtn) addBtn.addEventListener('click', bucketAccessAddUser);
+        if (editBtn) editBtn.addEventListener('click', enterBucketAccessEdit);
+        if (addBtn) addBtn.addEventListener('click', bucketAccessAddRow);
         if (applyBtn) applyBtn.addEventListener('click', applyBucketAccessChanges);
-        if (cancelBtn) cancelBtn.addEventListener('click', exitBucketAccessEdit);
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', function () {
+                reloadBucketAccessFromServer().finally(function () { exitBucketAccessEdit(); });
+            });
+        }
         if (grants && !grants._baRemoveDelegated) {
             grants._baRemoveDelegated = true;
             grants.addEventListener('click', function (e) {

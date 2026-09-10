@@ -1202,6 +1202,7 @@ def list_users_for_bucket_access(bucket_id):
                     'username': username,
                     'display_name': display,
                     'role': bucket_role if (has_explicit or via_wildcard) else default_role,
+                    'user_role': default_role,
                 }
                 if via_wildcard or has_explicit:
                     entry['via_wildcard'] = via_wildcard
@@ -1212,6 +1213,7 @@ def list_users_for_bucket_access(bucket_id):
                         'username': username,
                         'display_name': display,
                         'role': default_role,
+                        'user_role': default_role,
                     })
             return {'users': users, 'candidates': candidates}
         finally:

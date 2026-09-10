@@ -71,13 +71,23 @@ def _is_bucket_access_assignable_role(role):
 
 
 def _normalize_bucket_access_role(role):
-    """Роль для назначения новому пользователю в ACL (не admin)."""
+    """Роль для ACL бакета: только storage_*; иначе storage_viewer."""
     role = normalize_role_name(role or '')
-    if role == ROLE_ADMIN or not role:
-        return ROLE_STORAGE_ADMIN
     if role.startswith('storage_') and _role_valid_for_user(role):
         return role
     return ROLE_STORAGE_VIEWER
+
+
+def _bucket_access_entry_locked(entry):
+    """Строка ACL только для просмотра: wildcard или глобальная/отображаемая роль admin."""
+    if not entry:
+        return True
+    if entry.get('via_wildcard'):
+        return True
+    for key in ('user_role', 'role'):
+        if str(entry.get(key) or '').strip().lower() == 'admin':
+            return True
+    return False
 
 
 def _roles_for_bucket_access():

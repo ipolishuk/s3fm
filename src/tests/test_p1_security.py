@@ -365,9 +365,18 @@ class TestSettingsHelpersModule:
         assert callable(sh._can_add_bucket)
         assert callable(sh._can_manage_bucket_row)
         assert callable(sh._can_manage_bucket_access)
+        assert callable(sh._bucket_access_entry_locked)
         assert callable(sh._can_open_settings)
         assert callable(sh._normalize_role_permissions)
         assert callable(sh._validate_bucket_update_s3_target)
+        assert sh._bucket_access_entry_locked({'via_wildcard': True, 'role': 'storage_viewer'})
+        assert sh._bucket_access_entry_locked({'via_wildcard': False, 'role': 'admin'})
+        assert sh._bucket_access_entry_locked({
+            'via_wildcard': False,
+            'role': 'storage_viewer',
+            'user_role': 'admin',
+        })
+        assert not sh._bucket_access_entry_locked({'via_wildcard': False, 'role': 'storage_viewer'})
         assert sh._normalize_role_permissions(['download_file', 'nope']) == ['download_file']
 
     def test_bucket_by_key_denies_without_existence_leak(self):

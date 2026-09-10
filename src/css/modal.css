@@ -896,10 +896,6 @@
   -ms-overflow-style: none;
 }
 
-#bucketAccessEditRows {
-  padding-bottom: 0;
-}
-
 #fileInfoAclEditRows::-webkit-scrollbar,
 #bulkAclEditRows::-webkit-scrollbar,
 #addUserBucketRolesEditRows::-webkit-scrollbar,
@@ -1003,6 +999,7 @@
   max-height: none;
   height: auto;
   overflow: visible;
+  padding-bottom: 0;
 }
 
 #BucketAccessModalBody .file-info-acl-grants:has(> #bucketAccessEditRows) {
@@ -1074,18 +1071,6 @@
   margin: 0;
   display: block;
   overflow: visible;
-}
-
-#bucketAccessEditRows .bucket-access-user-search > .dropdown-menu {
-  position: absolute;
-  top: calc(100% + 2px);
-  left: 0;
-  right: 0;
-  width: 100%;
-  max-height: min(240px, 40vh);
-  overflow-x: hidden;
-  overflow-y: auto;
-  z-index: calc(var(--popup-z-overlay, 1000) + 2);
 }
 
 #bucketAccessEditRows .bucket-access-user-search .bucket-access-user-input {

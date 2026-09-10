@@ -138,6 +138,8 @@ def _request_log_context(method, path):
             return 'delete_objects'
         if path.startswith('/api/settings/buckets/'):
             return 'delete_objects'
+        if path.startswith('/api/settings/bucket-access/'):
+            return 'delete_objects'
     if method == 'POST':
         if path == '/api/login':
             return 'login'
@@ -151,6 +153,8 @@ def _request_log_context(method, path):
             '/api/settings/buckets',
             '/api/settings/clouds',
         ):
+            return 'create_objects'
+        if path.startswith('/api/settings/bucket-access/'):
             return 'create_objects'
     if method == 'GET':
         if path == '/api/buckets':

@@ -291,6 +291,88 @@
         return !!(user && String(user.role || '').toLowerCase() === 'admin');
     }
 
+    function canManageBucketAccessUi() {
+        if (typeof window.isCurrentUserAdmin === 'function' && window.isCurrentUserAdmin()) return true;
+        if (typeof window.isCurrentUserStorageAdmin === 'function' && window.isCurrentUserStorageAdmin()) return true;
+        if (typeof window.canOpenSettings === 'function' && window.canOpenSettings()) return true;
+        var user = window.fileManagerCurrentUser;
+        if (!user) return false;
+        var role = String(user.role || '').toLowerCase();
+        return role === 'admin' || role === 'storage_admin';
+    }
+
+    function skipTlsValueFromRaw(raw) {
+        return raw === true || raw === 'true' || raw === 1 || raw === '1' || raw === 't';
+    }
+
+    function setAddBucketSkipTls(value) {
+        var on = !!value;
+        var hidden = document.getElementById('addBucketSkipTlsVerify');
+        var label = document.getElementById('addBucketSkipTlsLabel');
+        var panel = document.getElementById('addBucketSkipTlsPanel');
+        if (hidden) hidden.value = on ? 'true' : 'false';
+        if (label) {
+            label.textContent = on ? 'true' : 'false';
+            label.classList.add('has-selection');
+        }
+        if (panel) {
+            panel.querySelectorAll('.dropdown-item').forEach(function (item) {
+                item.classList.toggle('selected', item.getAttribute('data-value') === (on ? 'true' : 'false'));
+            });
+        }
+    }
+
+    function getAddBucketSkipTls() {
+        var hidden = document.getElementById('addBucketSkipTlsVerify');
+        return skipTlsValueFromRaw(hidden ? hidden.value : 'false');
+    }
+
+    function initAddBucketSkipTlsDropdown() {
+        var wrap = document.getElementById('addBucketSkipTlsWrap');
+        var trigger = document.getElementById('addBucketSkipTlsTrigger');
+        var panel = document.getElementById('addBucketSkipTlsPanel');
+        if (!wrap || !trigger || !panel || wrap._skipTlsDdBound) return;
+        wrap._skipTlsDdBound = true;
+        trigger.addEventListener('click', function (ev) {
+            ev.stopPropagation();
+            var willOpen = !wrap.classList.contains('open');
+            wrap.classList.remove('open');
+            if (typeof window.resetDropdownMenuOverlay === 'function') {
+                window.resetDropdownMenuOverlay(wrap);
+            }
+            // close other bucket form dropdowns
+            ['addBucketEditCloudWrap', 'addBucketEditEndpointWrap'].forEach(function (id) {
+                var w = document.getElementById(id);
+                if (!w) return;
+                w.classList.remove('open');
+                if (typeof window.resetDropdownMenuOverlay === 'function') window.resetDropdownMenuOverlay(w);
+            });
+            if (willOpen) {
+                wrap.classList.add('open');
+                trigger.setAttribute('aria-expanded', 'true');
+                panel.classList.remove('hidden');
+                if (typeof window.fitDropdownMenuOverlay === 'function') {
+                    window.fitDropdownMenuOverlay(wrap);
+                }
+            } else {
+                trigger.setAttribute('aria-expanded', 'false');
+                panel.classList.add('hidden');
+            }
+        });
+        panel.querySelectorAll('.dropdown-item').forEach(function (item) {
+            item.addEventListener('click', function (ev) {
+                ev.stopPropagation();
+                setAddBucketSkipTls(item.getAttribute('data-value') === 'true');
+                wrap.classList.remove('open');
+                trigger.setAttribute('aria-expanded', 'false');
+                panel.classList.add('hidden');
+                if (typeof window.resetDropdownMenuOverlay === 'function') {
+                    window.resetDropdownMenuOverlay(wrap);
+                }
+            });
+        });
+    }
+
     function setAddBucketNameFieldForMode(isEdit, bucketNameValue) {
         var bnEl = document.getElementById('addBucketBucketName');
         var bnHidden = document.getElementById('addBucketBucketNameHidden');
@@ -589,10 +671,12 @@
                     var cloudIdAttr = (row.cloud_id || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                     var displayNameAttr = (row.display_name || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                     var bucketIdAttr = (row.bucket_id || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    var bucketNameAttr = (row.bucket_name || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                     var canDelete = (typeof window.isCurrentUserAdmin === 'function')
                         ? window.isCurrentUserAdmin()
                         : false;
-                    html += '<tr data-cloud-id="' + cloudIdAttr + '" data-display-name="' + displayNameAttr + '" data-bucket-id="' + bucketIdAttr + '"'
+                    html += '<tr data-cloud-id="' + cloudIdAttr + '" data-display-name="' + displayNameAttr +
+                        '" data-bucket-id="' + bucketIdAttr + '" data-bucket-name="' + bucketNameAttr + '"'
                         + ' data-can-edit="1" data-can-delete="' + (canDelete ? '1' : '0') + '">'
                         + '<td>' + escapeHtml(row.bucket_name) + '</td>'
                         + '<td class="settings-col-display">' + escapeHtml(row.display_name) + '</td>'
@@ -657,6 +741,15 @@
                 w.classList.remove('open');
                 if (typeof window.resetDropdownMenuOverlay === 'function') window.resetDropdownMenuOverlay(w);
             });
+            var skipWrap = document.getElementById('addBucketSkipTlsWrap');
+            if (skipWrap) {
+                skipWrap.classList.remove('open');
+                if (typeof window.resetDropdownMenuOverlay === 'function') window.resetDropdownMenuOverlay(skipWrap);
+                var skipPanel = document.getElementById('addBucketSkipTlsPanel');
+                var skipTrig = document.getElementById('addBucketSkipTlsTrigger');
+                if (skipPanel) skipPanel.classList.add('hidden');
+                if (skipTrig) skipTrig.setAttribute('aria-expanded', 'false');
+            }
             if (cloudPanel._dropdownSearchSetMode) cloudPanel._dropdownSearchSetMode(false);
             if (epPanel._dropdownSearchSetMode) epPanel._dropdownSearchSetMode(false);
         }
@@ -805,7 +898,7 @@
             document.getElementById('addBucketCaBundlePath').value = (row.ca_bundle_path != null && row.ca_bundle_path !== undefined) ? String(row.ca_bundle_path) : '';
             document.getElementById('addBucketRegionName').value = (row.region_name != null && row.region_name !== undefined) ? String(row.region_name) : '';
             var st = row.skip_tls_verify;
-            document.getElementById('addBucketSkipTlsVerify').checked = (st === true || st === 'true' || st === 1 || st === '1');
+            setAddBucketSkipTls(skipTlsValueFromRaw(st));
         } else {
             // Создание и копирование: новый Bucket ID, поле locked
             setAddBucketIdFieldForMode(false);
@@ -815,7 +908,7 @@
                 document.getElementById('addBucketCaBundlePath').value = (prefillFromRow.ca_bundle_path != null && prefillFromRow.ca_bundle_path !== undefined) ? String(prefillFromRow.ca_bundle_path) : '';
                 document.getElementById('addBucketRegionName').value = (prefillFromRow.region_name != null && prefillFromRow.region_name !== undefined) ? String(prefillFromRow.region_name) : '';
                 var stPf = prefillFromRow.skip_tls_verify;
-                document.getElementById('addBucketSkipTlsVerify').checked = (stPf === true || stPf === 'true' || stPf === 1 || stPf === '1');
+                setAddBucketSkipTls(skipTlsValueFromRaw(stPf));
                 // Не переносим bucket_id источника — ещё раз сгенерировать после prefill
                 setAddBucketIdFieldForMode(false);
             } else {
@@ -823,7 +916,7 @@
                 document.getElementById('addBucketSecretKey').value = '';
                 document.getElementById('addBucketCaBundlePath').value = '';
                 document.getElementById('addBucketRegionName').value = '';
-                document.getElementById('addBucketSkipTlsVerify').checked = false;
+                setAddBucketSkipTls(false);
             }
         }
 
@@ -901,7 +994,7 @@
         if (eplPre) { eplPre.textContent = '—'; eplPre.classList.remove('has-selection'); }
         document.getElementById('addBucketCaBundlePath').value = '';
         document.getElementById('addBucketRegionName').value = '';
-        document.getElementById('addBucketSkipTlsVerify').checked = false;
+        setAddBucketSkipTls(false);
         var cloudIdManual = document.getElementById('addBucketCloudId');
         if (cloudIdManual) cloudIdManual.value = '';
 
@@ -1107,8 +1200,7 @@
         if (cab) cab.value = '';
         var reg = document.getElementById('addBucketRegionName');
         if (reg) reg.value = '';
-        var stx = document.getElementById('addBucketSkipTlsVerify');
-        if (stx) stx.checked = false;
+        setAddBucketSkipTls(false);
         var bidClose = document.getElementById('addBucketBucketId');
         if (bidClose) {
             bidClose.value = '';
@@ -1127,6 +1219,31 @@
         if (titleEl) titleEl.textContent = t['modal.add_bucket'] || 'Add bucket';
         if (typeof window.setModalSubmitBtn === 'function') {
             window.setModalSubmitBtn(document.getElementById('addBucketSubmitBtn'), t['settings.add'] || 'Add', 'add');
+        }
+    }
+
+    function finishBucketSaveSuccess() {
+        hideAddBucketModal();
+        var settingsView = document.getElementById('settingsView');
+        if (settingsView && !settingsView.classList.contains('hidden') && typeof loadSettingsBuckets === 'function') {
+            loadSettingsBuckets();
+        }
+        window.bucketsSidebarLoaded = false;
+        window.availableBuckets = [];
+        var reloadSidebar = function () {
+            if (typeof window.loadBuckets === 'function') {
+                return window.loadBuckets();
+            }
+        };
+        if (typeof window.checkAuthentication === 'function') {
+            Promise.resolve(window.checkAuthentication()).then(reloadSidebar).catch(reloadSidebar);
+        } else {
+            reloadSidebar();
+        }
+        if (typeof showSuccess === 'function') {
+            showSuccess(window.I18N && window.I18N['notification.operation_ok']
+                ? window.I18N['notification.operation_ok']
+                : 'Success');
         }
     }
 
@@ -1174,7 +1291,7 @@
         var method = isEdit ? 'PUT' : 'POST';
         var caBundlePath = (document.getElementById('addBucketCaBundlePath').value || '').trim();
         var regionName = (document.getElementById('addBucketRegionName').value || '').trim();
-        var skipTlsVerify = document.getElementById('addBucketSkipTlsVerify').checked;
+        var skipTlsVerify = getAddBucketSkipTls();
         var payload = {
             cloud_id: cloudId, display_name: displayName, bucket_name: bucketName,
             bucket_id: bucketId || null, endpoint_url: endpointUrl || null,
@@ -1199,30 +1316,16 @@
             body: JSON.stringify(payload)
         }).then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
             .then(function (res) {
-                if (res.ok) {
-                    hideAddBucketModal();
-                    var settingsView = document.getElementById('settingsView');
-                    if (settingsView && !settingsView.classList.contains('hidden') && typeof loadSettingsBuckets === 'function') {
-                        loadSettingsBuckets();
-                    }
-                    window.bucketsSidebarLoaded = false;
-                    window.availableBuckets = [];
-                    var reloadSidebar = function () {
-                        if (typeof window.loadBuckets === 'function') {
-                            return window.loadBuckets();
-                        }
-                    };
-                    // Refresh session ACL (created bucket is auto-granted to creator)
-                    if (typeof window.checkAuthentication === 'function') {
-                        Promise.resolve(window.checkAuthentication()).then(reloadSidebar).catch(reloadSidebar);
-                    } else {
-                        reloadSidebar();
-                    }
-                    if (typeof showSuccess === 'function') showSuccess(window.I18N && window.I18N['notification.operation_ok'] ? window.I18N['notification.operation_ok'] : 'Success');
-                } else {
+                if (!res.ok) {
                     toastBucketFormError((res.data && res.data.error) || (t['error.unexpected'] || 'Error'));
+                    return null;
                 }
-            }).catch(function () {
+                return true;
+            })
+            .then(function (ok) {
+                if (ok) finishBucketSaveSuccess();
+            })
+            .catch(function () {
                 toastBucketFormError(t['msg.network_error'] || 'Network error');
             });
     }
@@ -1239,7 +1342,7 @@
         var secretKey = (document.getElementById('addBucketSecretKey').value || '').trim();
         var caBundlePath = (document.getElementById('addBucketCaBundlePath').value || '').trim();
         var regionName = (document.getElementById('addBucketRegionName').value || '').trim();
-        var skipTlsVerify = document.getElementById('addBucketSkipTlsVerify').checked;
+        var skipTlsVerify = getAddBucketSkipTls();
         var errEl = document.getElementById('addBucketError');
         var t = window.I18N || {};
         function showTestError(message) {
@@ -1908,6 +2011,831 @@
     window.openCopyBucketModal = openCopyBucketModal;
     window.confirmDeleteBucket = confirmDeleteBucket;
     window.hideAddBucketModal = hideAddBucketModal;
+    window.canManageBucketAccessUi = canManageBucketAccessUi;
+
+    // --- Bucket access modal (Settings → Buckets context menu) ---
+    var bucketAccessState = {
+        bucketId: '',
+        displayName: '',
+        bucketName: '',
+        users: [],
+        candidates: [],
+        roles: [],
+        editing: false,
+        editShowRows: false,
+        busy: false
+    };
+    var bucketAccessListenersBound = false;
+    var BUCKET_ACCESS_USER_QUERY_MIN = 3;
+
+    function bucketAccessT(key, fallback) {
+        var t = window.I18N || {};
+        return t[key] || fallback || key;
+    }
+
+    function closeBucketAccessDropdowns() {
+        var modal = document.getElementById('bucketAccessModal');
+        if (!modal) return;
+        modal.querySelectorAll('.dropdown-acl.open').forEach(function (wrap) {
+            if (wrap.classList.contains('bucket-access-user-search')) {
+                closeBucketAccessUserMenu(wrap);
+                return;
+            }
+            wrap.classList.remove('open');
+            var trigger = wrap.querySelector('.dropdown-trigger');
+            if (trigger) trigger.setAttribute('aria-expanded', 'false');
+            var menu = wrap.querySelector('.dropdown-menu');
+            if (menu) menu.classList.add('hidden');
+            if (typeof window.resetDropdownMenuOverlay === 'function') {
+                window.resetDropdownMenuOverlay(wrap);
+            }
+        });
+    }
+
+    function setBucketAccessFooterMode(editing) {
+        var addBtn = document.getElementById('bucketAccessAddUserBtn');
+        var applyBtn = document.getElementById('bucketAccessApplyBtn');
+        var cancelBtn = document.getElementById('bucketAccessCancelBtn');
+        var closeBtn = document.getElementById('bucketAccessCloseBtn');
+        if (addBtn) addBtn.classList.remove('hidden');
+        if (applyBtn) applyBtn.classList.toggle('hidden', !editing);
+        if (cancelBtn) cancelBtn.classList.toggle('hidden', !editing);
+        if (closeBtn) closeBtn.classList.toggle('hidden', !!editing);
+    }
+
+    function hideBucketAccessModal() {
+        var modal = document.getElementById('bucketAccessModal');
+        if (!modal) return;
+        closeBucketAccessDropdowns();
+        bucketAccessState.editing = false;
+        bucketAccessState.editShowRows = false;
+        bucketAccessState.busy = false;
+        setBucketAccessFooterMode(false);
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+        bucketAccessState.bucketId = '';
+        bucketAccessState.displayName = '';
+        bucketAccessState.bucketName = '';
+        bucketAccessState.users = [];
+        bucketAccessState.candidates = [];
+        bucketAccessState.roles = [];
+        var grants = document.getElementById('bucketAccessGrants');
+        if (grants) grants.innerHTML = '';
+        var summary = document.getElementById('bucketAccessSummary');
+        if (summary) summary.textContent = '';
+    }
+
+    function bucketAccessRoleOptions() {
+        return (bucketAccessState.roles || []).map(function (r) {
+            var id = (r && (r.id || r.name)) || '';
+            return { value: id, label: id };
+        }).filter(function (o) {
+            return o.value && String(o.value).indexOf('storage_') === 0;
+        });
+    }
+
+    /** Роль для назначения новым пользователям (не admin). */
+    function normalizeAssignableBucketAccessRole(role) {
+        var r = String(role || '').trim();
+        if (r.indexOf('storage_') === 0) return r;
+        if (r === 'admin') return 'storage_admin';
+        return 'storage_viewer';
+    }
+
+    function bucketAccessRoleLabel(role) {
+        var r = String(role || '').trim();
+        var opts = bucketAccessRoleOptions();
+        for (var i = 0; i < opts.length; i++) {
+            if (opts[i].value === r) return opts[i].label;
+        }
+        return r || '—';
+    }
+
+    function bucketAccessUserLabel(user) {
+        if (!user) return '—';
+        var display = (user.display_name || '').trim();
+        return display || user.username || '—';
+    }
+
+    function bucketAccessEditableUsers() {
+        return (bucketAccessState.users || []).filter(function (u) { return !u.via_wildcard; });
+    }
+
+    function bucketAccessUserDropdownOptions(selectedUsername) {
+        var used = {};
+        if (bucketAccessState.editing) {
+            document.querySelectorAll('#bucketAccessEditRows .file-info-acl-edit-row').forEach(function (row) {
+                var dd = row.querySelector('[data-bucket-access="user"]');
+                var val = getBucketAccessDropdownValue(dd);
+                if (val) used[val] = true;
+            });
+        }
+        var opts = [];
+        var seen = {};
+        function pushUser(u) {
+            if (!u || !u.username || seen[u.username]) return;
+            if (used[u.username] && u.username !== selectedUsername) return;
+            seen[u.username] = true;
+            opts.push({
+                value: u.username,
+                label: bucketAccessUserLabel(u),
+                role: u.role || ''
+            });
+        }
+        bucketAccessEditableUsers().forEach(pushUser);
+        (bucketAccessState.candidates || []).forEach(pushUser);
+        if (selectedUsername && !seen[selectedUsername]) {
+            opts.unshift({ value: selectedUsername, label: selectedUsername, role: '' });
+        }
+        return opts;
+    }
+
+    function buildBucketAccessDropdownHtml(id, field, options, value, locked) {
+        var label = '—';
+        (options || []).forEach(function (opt) {
+            if (opt.value === value) label = opt.label;
+        });
+        if (value && label === '—') label = value;
+        var items = (options || []).map(function (opt) {
+            var sel = opt.value === value ? ' selected' : '';
+            return '<button type="button" class="dropdown-item' + sel + '" data-value="' +
+                escapeHtml(opt.value) + '" data-role="' + escapeHtml(opt.role || '') +
+                '" role="option"' + (locked ? ' disabled' : '') + '>' + escapeHtml(opt.label) + '</button>';
+        }).join('');
+        if (value && !(options || []).some(function (o) { return o.value === value; })) {
+            items += '<button type="button" class="dropdown-item selected" data-value="' +
+                escapeHtml(value) + '" role="option"' + (locked ? ' disabled' : '') + '>' +
+                escapeHtml(value) + '</button>';
+        }
+        return '<div class="dropdown dropdown-acl' + (locked ? ' disabled' : '') + '" id="' + escapeHtml(id) +
+            '" data-bucket-access="' + escapeHtml(field) + '">' +
+            '<button type="button" class="dropdown-trigger" aria-expanded="false" aria-haspopup="listbox"' +
+            (locked ? ' disabled' : '') + '>' +
+            '<span class="has-selection">' + escapeHtml(label) + '</span>' +
+            '<i class="fa-solid fa-chevron-down dropdown-icon"></i></button>' +
+            '<div class="dropdown-menu hidden" role="listbox">' + items + '</div>' +
+            '<input type="hidden" class="dropdown-value" value="' + escapeHtml(value || '') + '">' +
+            '</div>';
+    }
+
+    function buildBucketAccessUserSearchHtml(id, options, value, locked) {
+        var label = '';
+        var role = '';
+        (options || []).forEach(function (opt) {
+            if (opt.value === value) {
+                label = opt.label;
+                role = opt.role || '';
+            }
+        });
+        if (value && !label) label = value;
+        var placeholder = bucketAccessT('modal.bucket_access_search_placeholder', 'Login');
+        var items = (options || []).map(function (opt) {
+            var sel = opt.value === value ? ' selected' : '';
+            return '<button type="button" class="dropdown-item' + sel + '" data-value="' +
+                escapeHtml(opt.value) + '" data-label="' + escapeHtml(opt.label) +
+                '" data-role="' + escapeHtml(opt.role || '') +
+                '" role="option"' + (locked ? ' disabled' : '') + '>' + escapeHtml(opt.label) + '</button>';
+        }).join('');
+        if (value && !(options || []).some(function (o) { return o.value === value; })) {
+            items += '<button type="button" class="dropdown-item selected" data-value="' +
+                escapeHtml(value) + '" data-label="' + escapeHtml(label) +
+                '" role="option"' + (locked ? ' disabled' : '') + '>' +
+                escapeHtml(label) + '</button>';
+        }
+        return '<div class="dropdown dropdown-acl bucket-access-user-search' + (locked ? ' disabled' : '') +
+            '" id="' + escapeHtml(id) + '" data-bucket-access="user">' +
+            '<input type="text" class="form-control search-input bucket-access-user-input" value="' +
+            escapeHtml(label) + '" placeholder="' + escapeHtml(placeholder) + '" autocomplete="off"' +
+            ' aria-autocomplete="list" aria-expanded="false" aria-haspopup="listbox"' +
+            (locked ? ' readonly disabled' : '') + '>' +
+            '<div class="dropdown-menu hidden" role="listbox">' +
+            '<div class="dropdown-search-empty hidden">' +
+            escapeHtml(bucketAccessT('modal.bucket_access_no_matches', 'User not found')) +
+            '</div>' + items + '</div>' +
+            '<input type="hidden" class="dropdown-value" value="' + escapeHtml(value || '') + '" data-role="' +
+            escapeHtml(role) + '">' +
+            '</div>';
+    }
+
+    function getBucketAccessDropdownValue(wrap) {
+        if (!wrap) return '';
+        var hidden = wrap.querySelector('.dropdown-value');
+        return hidden ? hidden.value : '';
+    }
+
+    function setBucketAccessDropdownValue(wrap, value, label, role) {
+        if (!wrap) return;
+        var hidden = wrap.querySelector('.dropdown-value');
+        var labelEl = wrap.querySelector('.dropdown-trigger span');
+        var inputEl = wrap.querySelector('.bucket-access-user-input');
+        if (hidden) {
+            hidden.value = value || '';
+            if (role != null) hidden.setAttribute('data-role', role || '');
+        }
+        if (labelEl) {
+            labelEl.textContent = label || value || '—';
+            labelEl.classList.add('has-selection');
+        }
+        if (inputEl) {
+            inputEl.value = label || value || '';
+        }
+        wrap.querySelectorAll('.dropdown-item').forEach(function (item) {
+            item.classList.toggle('selected', item.getAttribute('data-value') === value);
+        });
+    }
+
+    function filterBucketAccessUserMenu(wrap, query) {
+        var menu = wrap && wrap.querySelector('.dropdown-menu');
+        if (!menu) return 0;
+        var q = String(query || '').trim().toLowerCase();
+        var visible = 0;
+        menu.querySelectorAll('.dropdown-item').forEach(function (item) {
+            var value = (item.getAttribute('data-value') || '').toLowerCase();
+            var match = q.length >= BUCKET_ACCESS_USER_QUERY_MIN && value.indexOf(q) >= 0;
+            item.classList.toggle('hidden', !match);
+            if (match) visible += 1;
+        });
+        var empty = menu.querySelector('.dropdown-search-empty');
+        if (empty) {
+            empty.classList.toggle('hidden', q.length < BUCKET_ACCESS_USER_QUERY_MIN || visible > 0);
+        }
+        return visible;
+    }
+
+    function clearBucketAccessUserMenuInlineStyles(menu) {
+        if (!menu) return;
+        menu.style.position = '';
+        menu.style.left = '';
+        menu.style.width = '';
+        menu.style.minWidth = '';
+        menu.style.maxWidth = '';
+        menu.style.right = '';
+        menu.style.top = '';
+        menu.style.bottom = '';
+        menu.style.marginTop = '';
+        menu.style.maxHeight = '';
+        menu.style.overflowY = '';
+        menu.style.zIndex = '';
+    }
+
+    function bucketAccessUserQueryReady(value) {
+        return String(value || '').trim().length >= BUCKET_ACCESS_USER_QUERY_MIN;
+    }
+
+    function openBucketAccessUserMenu(wrap) {
+        if (!wrap || wrap.classList.contains('disabled')) return;
+        var input = wrap.querySelector('.bucket-access-user-input');
+        var menu = wrap.querySelector('.dropdown-menu');
+        if (!input || !menu) return;
+        if (!bucketAccessUserQueryReady(input.value)) {
+            closeBucketAccessUserMenu(wrap);
+            return;
+        }
+        var modal = document.getElementById('bucketAccessModal');
+        if (modal) {
+            modal.querySelectorAll('.dropdown-acl.open').forEach(function (other) {
+                if (other === wrap) return;
+                if (other.classList.contains('bucket-access-user-search')) {
+                    closeBucketAccessUserMenu(other);
+                    return;
+                }
+                other.classList.remove('open');
+                var otherTrigger = other.querySelector('.dropdown-trigger');
+                if (otherTrigger) otherTrigger.setAttribute('aria-expanded', 'false');
+                var otherMenu = other.querySelector('.dropdown-menu');
+                if (otherMenu) otherMenu.classList.add('hidden');
+                if (typeof window.resetDropdownMenuOverlay === 'function') {
+                    window.resetDropdownMenuOverlay(other);
+                }
+            });
+        }
+        filterBucketAccessUserMenu(wrap, input.value);
+        wrap.classList.add('open');
+        input.setAttribute('aria-expanded', 'true');
+        menu.classList.remove('hidden');
+        // Fixed overlay escapes .file-info-acl-block overflow:hidden
+        if (typeof window.fitDropdownMenuOverlay === 'function') {
+            window.fitDropdownMenuOverlay(wrap);
+        }
+    }
+
+    function closeBucketAccessUserMenu(wrap) {
+        if (!wrap) return;
+        var input = wrap.querySelector('.bucket-access-user-input');
+        var menu = wrap.querySelector('.dropdown-menu');
+        wrap.classList.remove('open');
+        if (input) input.setAttribute('aria-expanded', 'false');
+        if (menu) menu.classList.add('hidden');
+        if (typeof window.resetDropdownMenuOverlay === 'function') {
+            window.resetDropdownMenuOverlay(wrap);
+        } else if (menu) {
+            clearBucketAccessUserMenuInlineStyles(menu);
+        }
+    }
+
+    function setupBucketAccessUserSearch(wrap) {
+        var input = wrap.querySelector('.bucket-access-user-input');
+        var menu = wrap.querySelector('.dropdown-menu');
+        if (!input || !menu || wrap._baUserSearchBound) return;
+        wrap._baUserSearchBound = true;
+        if (wrap.classList.contains('disabled') || input.disabled || input.readOnly) return;
+
+        input.addEventListener('focus', function () {
+            if (bucketAccessUserQueryReady(input.value)) openBucketAccessUserMenu(wrap);
+        });
+        input.addEventListener('click', function (ev) {
+            ev.stopPropagation();
+            if (bucketAccessUserQueryReady(input.value) && !wrap.classList.contains('open')) {
+                openBucketAccessUserMenu(wrap);
+            }
+        });
+        input.addEventListener('input', function () {
+            var hidden = wrap.querySelector('.dropdown-value');
+            if (hidden) {
+                hidden.value = '';
+                hidden.setAttribute('data-role', '');
+            }
+            menu.querySelectorAll('.dropdown-item.selected').forEach(function (item) {
+                item.classList.remove('selected');
+            });
+            if (!bucketAccessUserQueryReady(input.value)) {
+                closeBucketAccessUserMenu(wrap);
+                return;
+            }
+            if (!wrap.classList.contains('open')) {
+                openBucketAccessUserMenu(wrap);
+            } else {
+                filterBucketAccessUserMenu(wrap, input.value);
+                if (typeof window.fitDropdownMenuOverlay === 'function') {
+                    window.fitDropdownMenuOverlay(wrap);
+                }
+            }
+        });
+        input.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Escape') {
+                closeBucketAccessUserMenu(wrap);
+                input.blur();
+            }
+        });
+
+        menu.querySelectorAll('.dropdown-item').forEach(function (item) {
+            item.addEventListener('mousedown', function (ev) {
+                // mousedown before blur so selection sticks
+                ev.preventDefault();
+                ev.stopPropagation();
+                if (item.disabled || item.classList.contains('hidden')) return;
+                var value = item.getAttribute('data-value') || '';
+                var itemLabel = item.getAttribute('data-label') || (item.textContent || '').trim();
+                var itemRole = item.getAttribute('data-role') || '';
+                setBucketAccessDropdownValue(wrap, value, itemLabel, itemRole);
+                closeBucketAccessUserMenu(wrap);
+                var roleDd = wrap.closest('.file-info-acl-edit-row');
+                roleDd = roleDd && roleDd.querySelector('[data-bucket-access="role"]');
+                var defaultRole = normalizeAssignableBucketAccessRole(itemRole);
+                if (roleDd && defaultRole && !getBucketAccessDropdownValue(roleDd)) {
+                    setBucketAccessDropdownValue(roleDd, defaultRole, bucketAccessRoleLabel(defaultRole));
+                }
+            });
+        });
+
+        input.addEventListener('blur', function () {
+            setTimeout(function () {
+                if (wrap.contains(document.activeElement)) return;
+                closeBucketAccessUserMenu(wrap);
+                var hidden = wrap.querySelector('.dropdown-value');
+                var selected = hidden ? hidden.value : '';
+                if (!selected) {
+                    // exact match by login only
+                    var typed = String(input.value || '').trim().toLowerCase();
+                    var matched = null;
+                    menu.querySelectorAll('.dropdown-item').forEach(function (item) {
+                        if (matched) return;
+                        var value = (item.getAttribute('data-value') || '').toLowerCase();
+                        if (typed && value === typed) matched = item;
+                    });
+                    if (matched) {
+                        setBucketAccessDropdownValue(
+                            wrap,
+                            matched.getAttribute('data-value') || '',
+                            matched.getAttribute('data-label') || (matched.textContent || '').trim(),
+                            matched.getAttribute('data-role') || ''
+                        );
+                    } else {
+                        input.value = '';
+                    }
+                } else {
+                    var keepLabel = '';
+                    menu.querySelectorAll('.dropdown-item').forEach(function (item) {
+                        if (item.getAttribute('data-value') === selected) {
+                            keepLabel = item.getAttribute('data-label') || (item.textContent || '').trim();
+                        }
+                    });
+                    if (keepLabel) input.value = keepLabel;
+                }
+            }, 120);
+        });
+    }
+
+    function setupBucketAccessDropdown(wrap) {
+        var trigger = wrap.querySelector('.dropdown-trigger');
+        var menu = wrap.querySelector('.dropdown-menu');
+        if (!trigger || !menu || wrap._baDdBound) return;
+        wrap._baDdBound = true;
+        trigger.addEventListener('click', function (ev) {
+            ev.stopPropagation();
+            if (trigger.disabled || wrap.classList.contains('disabled')) return;
+            var willOpen = !wrap.classList.contains('open');
+            closeBucketAccessDropdowns();
+            if (willOpen) {
+                wrap.classList.add('open');
+                trigger.setAttribute('aria-expanded', 'true');
+                menu.classList.remove('hidden');
+                if (typeof window.fitDropdownMenuOverlay === 'function') {
+                    window.fitDropdownMenuOverlay(wrap);
+                }
+            }
+        });
+        menu.querySelectorAll('.dropdown-item').forEach(function (item) {
+            item.addEventListener('click', function (ev) {
+                ev.stopPropagation();
+                if (item.disabled) return;
+                var value = item.getAttribute('data-value') || '';
+                var itemLabel = (item.textContent || '').trim();
+                setBucketAccessDropdownValue(wrap, value, itemLabel);
+                wrap.classList.remove('open');
+                if (typeof window.resetDropdownMenuOverlay === 'function') {
+                    window.resetDropdownMenuOverlay(wrap);
+                }
+            });
+        });
+    }
+
+    function initBucketAccessDropdowns(root) {
+        if (!root) return;
+        root.querySelectorAll('.dropdown-acl[data-bucket-access="user"]').forEach(setupBucketAccessUserSearch);
+        root.querySelectorAll('.dropdown-acl[data-bucket-access="role"]').forEach(setupBucketAccessDropdown);
+    }
+
+    function bucketAccessViewRowHtml(user) {
+        return '<div class="modal-field file-info-acl-row">' +
+            '<span class="user-info-value file-info-acl-col-user">' +
+            escapeHtml(bucketAccessUserLabel(user)) +
+            '</span>' +
+            '<span class="user-info-value file-info-acl-col-perm">' +
+            escapeHtml(bucketAccessRoleLabel(user.role)) +
+            '</span></div>';
+    }
+
+    function defaultBucketAccessEditRow() {
+        var roleOpts = bucketAccessRoleOptions();
+        var role = 'storage_viewer';
+        if (roleOpts.length && !roleOpts.some(function (o) { return o.value === role; })) {
+            role = normalizeAssignableBucketAccessRole(roleOpts[0].value);
+        }
+        return { username: '', role: role };
+    }
+
+    function bucketAccessEditRowHtml(entry, idx, locked) {
+        entry = entry || defaultBucketAccessEditRow();
+        locked = !!locked || !!entry.via_wildcard;
+        var userOpts = locked
+            ? [{ value: entry.username, label: bucketAccessUserLabel(entry), role: entry.role || '' }]
+            : bucketAccessUserDropdownOptions(entry.username || '');
+        var roleOpts = locked
+            ? [{ value: entry.role || '', label: entry.role || '—' }]
+            : bucketAccessRoleOptions();
+        // New rows stay empty — do not auto-pick the next candidate
+        var username = entry.username || '';
+        if (username && !locked && !userOpts.some(function (o) { return o.value === username; })) {
+            username = '';
+        }
+        var entryRole = String(entry.role || '').trim();
+        if (!locked) entryRole = normalizeAssignableBucketAccessRole(entryRole);
+        var role = entryRole && roleOpts.some(function (o) { return o.value === entryRole; })
+            ? entryRole
+            : ((roleOpts[0] && roleOpts[0].value) || entryRole || '');
+        var removeTitle = bucketAccessT('files.info_acl_remove_grant', 'Remove');
+        return '<div class="modal-field file-info-acl-edit-row" data-row="' + idx + '"' +
+            (locked ? ' data-locked="1"' : '') + '>' +
+            buildBucketAccessUserSearchHtml('bucketAccessUser_' + idx, userOpts, username, locked) +
+            buildBucketAccessDropdownHtml('bucketAccessRole_' + idx, 'role', roleOpts, role, locked) +
+            '<button type="button" class="btn icon-btn delete file-info-acl-remove" title="' +
+            escapeHtml(removeTitle) + '" aria-label="' + escapeHtml(removeTitle) + '"' +
+            (locked ? ' disabled' : '') + '>' +
+            '<i class="fa-solid fa-trash-can"></i></button></div>';
+    }
+
+    function renderBucketAccessView() {
+        var container = document.getElementById('bucketAccessGrants');
+        if (!container) return;
+        var users = bucketAccessState.users || [];
+        if (!users.length) {
+            container.innerHTML = '<div class="file-info-acl-message">' +
+                escapeHtml(bucketAccessT('modal.bucket_access_empty', 'No users have explicit access to this bucket.')) +
+                '</div>';
+            return;
+        }
+        var html = '';
+        users.forEach(function (u) {
+            html += bucketAccessViewRowHtml(u);
+        });
+        container.innerHTML = html;
+    }
+
+    function renderBucketAccessEdit() {
+        var container = document.getElementById('bucketAccessGrants');
+        if (!container) return;
+        var users = bucketAccessState.users || [];
+        if (!users.length && !bucketAccessState.editShowRows) {
+            container.innerHTML = '<div class="file-info-acl-message">' +
+                escapeHtml(bucketAccessT('modal.bucket_access_empty', 'No users have explicit access to this bucket.')) +
+                '</div>';
+            return;
+        }
+        var html = '<div id="bucketAccessEditRows">';
+        users.forEach(function (u, idx) {
+            html += bucketAccessEditRowHtml(u, idx, !!u.via_wildcard);
+        });
+        html += '</div>';
+        container.innerHTML = html;
+        initBucketAccessDropdowns(container);
+    }
+
+    function renderBucketAccessPanel() {
+        if (bucketAccessState.editing) {
+            renderBucketAccessEdit();
+        } else {
+            renderBucketAccessView();
+        }
+    }
+
+    function enterBucketAccessEdit() {
+        bucketAccessState.editing = true;
+        bucketAccessState.editShowRows = (bucketAccessState.users || []).length > 0;
+        setBucketAccessFooterMode(true);
+        renderBucketAccessEdit();
+    }
+
+    function exitBucketAccessEdit() {
+        bucketAccessState.editing = false;
+        bucketAccessState.editShowRows = false;
+        closeBucketAccessDropdowns();
+        setBucketAccessFooterMode(false);
+        renderBucketAccessView();
+    }
+
+    function removeBucketAccessEditRow(row) {
+        var rows = document.getElementById('bucketAccessEditRows');
+        if (!row || !rows || row.getAttribute('data-locked') === '1') return;
+        row.remove();
+        if (!rows.querySelectorAll('.file-info-acl-edit-row:not([data-locked="1"])').length &&
+            !rows.querySelectorAll('.file-info-acl-edit-row[data-locked="1"]').length) {
+            bucketAccessState.editShowRows = false;
+            renderBucketAccessEdit();
+        }
+    }
+
+    function bucketAccessAddRow() {
+        if (!bucketAccessState.editing) enterBucketAccessEdit();
+        var container = document.getElementById('bucketAccessGrants');
+        if (!bucketAccessState.editShowRows) {
+            bucketAccessState.editShowRows = true;
+            renderBucketAccessEdit();
+        }
+        if (!document.getElementById('bucketAccessEditRows') && container) {
+            var wrap = document.createElement('div');
+            wrap.id = 'bucketAccessEditRows';
+            container.appendChild(wrap);
+        }
+        var rows = document.getElementById('bucketAccessEditRows');
+        if (!rows) return;
+        var userOpts = bucketAccessUserDropdownOptions('');
+        if (!userOpts.length) {
+            if (typeof window.showInfo === 'function') {
+                window.showInfo(bucketAccessT('modal.bucket_access_no_candidates', 'No users available to add'));
+            }
+            return;
+        }
+        var idx = rows.querySelectorAll('.file-info-acl-edit-row').length;
+        var div = document.createElement('div');
+        div.innerHTML = bucketAccessEditRowHtml(defaultBucketAccessEditRow(), idx, false);
+        var row = div.firstElementChild;
+        rows.appendChild(row);
+        initBucketAccessDropdowns(row);
+    }
+
+    function collectBucketAccessEditRows() {
+        var out = [];
+        var seen = {};
+        document.querySelectorAll('#bucketAccessEditRows .file-info-acl-edit-row').forEach(function (row) {
+            if (row.getAttribute('data-locked') === '1') return;
+            var userDd = row.querySelector('[data-bucket-access="user"]');
+            var roleDd = row.querySelector('[data-bucket-access="role"]');
+            var username = getBucketAccessDropdownValue(userDd);
+            var role = getBucketAccessDropdownValue(roleDd);
+            if (!username || seen[username]) return;
+            seen[username] = true;
+            out.push({ username: username, role: normalizeAssignableBucketAccessRole(role) });
+        });
+        return out;
+    }
+
+    function applyBucketAccessPayload(data) {
+        if (!data) return;
+        bucketAccessState.users = data.users || [];
+        bucketAccessState.candidates = data.candidates || [];
+        if (data.roles) bucketAccessState.roles = data.roles;
+        renderBucketAccessPanel();
+    }
+
+    function applyBucketAccessChanges() {
+        if (!bucketAccessState.bucketId || bucketAccessState.busy) return;
+        var next = collectBucketAccessEditRows();
+        var prev = bucketAccessEditableUsers();
+        var prevMap = {};
+        prev.forEach(function (u) { prevMap[u.username] = u.role || ''; });
+        var nextMap = {};
+        next.forEach(function (u) { nextMap[u.username] = u.role || ''; });
+
+        var toGrant = next.filter(function (u) {
+            return !Object.prototype.hasOwnProperty.call(prevMap, u.username) || prevMap[u.username] !== u.role;
+        });
+        var toRevoke = prev.filter(function (u) {
+            return !Object.prototype.hasOwnProperty.call(nextMap, u.username);
+        }).map(function (u) { return u.username; });
+
+        if (!toGrant.length && !toRevoke.length) {
+            exitBucketAccessEdit();
+            return;
+        }
+
+        bucketAccessState.busy = true;
+        var bid = bucketAccessState.bucketId;
+        var chain = Promise.resolve();
+        var applyBtn = document.getElementById('bucketAccessApplyBtn');
+        if (applyBtn) applyBtn.disabled = true;
+
+        toRevoke.forEach(function (username) {
+            chain = chain.then(function () {
+                return fetch('/api/settings/bucket-access/' + encodeURIComponent(bid) +
+                    '?username=' + encodeURIComponent(username), {
+                    method: 'DELETE',
+                    credentials: 'include'
+                }).then(function (r) {
+                    return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+                }).then(function (res) {
+                    if (!res.ok) throw new Error((res.data && res.data.error) || 'Error');
+                    applyBucketAccessPayload(res.data);
+                });
+            });
+        });
+
+        toGrant.forEach(function (entry) {
+            chain = chain.then(function () {
+                return fetch('/api/settings/bucket-access/' + encodeURIComponent(bid), {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: entry.username, role: entry.role || undefined })
+                }).then(function (r) {
+                    return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+                }).then(function (res) {
+                    if (!res.ok) throw new Error((res.data && res.data.error) || 'Error');
+                    applyBucketAccessPayload(res.data);
+                });
+            });
+        });
+
+        chain.then(function () {
+            bucketAccessState.busy = false;
+            if (applyBtn) applyBtn.disabled = false;
+            exitBucketAccessEdit();
+            if (typeof window.showSuccess === 'function') {
+                window.showSuccess(bucketAccessT('notification.operation_ok', 'Success'));
+            }
+        }).catch(function (err) {
+            bucketAccessState.busy = false;
+            if (applyBtn) applyBtn.disabled = false;
+            if (typeof window.showError === 'function') {
+                window.showError((err && err.message) || bucketAccessT('settings.error_load', 'Error'));
+            }
+        });
+    }
+
+    function bucketAccessAddUser() {
+        if (!bucketAccessState.editing) enterBucketAccessEdit();
+        bucketAccessAddRow();
+    }
+
+    function setBucketAccessSummary(bucketName) {
+        var summary = document.getElementById('bucketAccessSummary');
+        if (!summary) return;
+        var label = bucketAccessT('modal.bucket_bucket_name', 'Bucket name');
+        var name = String(bucketName || '').trim() || '—';
+        summary.textContent = label + ': ' + name;
+    }
+
+    function openBucketAccessModal(bucketId, displayName, bucketName) {
+        var bid = (bucketId || '').trim();
+        if (!bid) {
+            if (typeof window.showError === 'function') {
+                window.showError(bucketAccessT('error.bucket_not_found', 'Bucket not found'));
+            }
+            return;
+        }
+        if (!canManageBucketAccessUi()) {
+            if (typeof window.showError === 'function') {
+                window.showError(bucketAccessT('files.admin_only', 'Access denied'));
+            }
+            return;
+        }
+        initBucketAccessModal();
+        bucketAccessState.bucketId = bid;
+        bucketAccessState.displayName = displayName || bid;
+        bucketAccessState.bucketName = (bucketName || '').trim();
+        bucketAccessState.editing = false;
+        bucketAccessState.editShowRows = false;
+        bucketAccessState.busy = false;
+        setBucketAccessFooterMode(false);
+        var title = document.getElementById('bucketAccessModalTitle');
+        if (title) {
+            title.textContent = bucketAccessT('modal.bucket_access_title', 'Access');
+        }
+        setBucketAccessSummary(bucketAccessState.bucketName || bucketAccessState.displayName);
+        var grants = document.getElementById('bucketAccessGrants');
+        if (grants) {
+            grants.innerHTML = '<div class="file-info-acl-message">…</div>';
+        }
+        var modal = document.getElementById('bucketAccessModal');
+        if (modal) {
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+        }
+        fetch('/api/settings/bucket-access/' + encodeURIComponent(bid), { credentials: 'include' })
+            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+            .then(function (res) {
+                if (!res.ok) {
+                    if (typeof window.showError === 'function') {
+                        window.showError((res.data && res.data.error) || bucketAccessT('settings.error_load', 'Error'));
+                    }
+                    hideBucketAccessModal();
+                    return;
+                }
+                if (res.data && res.data.bucket_name) {
+                    bucketAccessState.bucketName = res.data.bucket_name;
+                    setBucketAccessSummary(res.data.bucket_name);
+                }
+                applyBucketAccessPayload(res.data);
+            })
+            .catch(function () {
+                if (typeof window.showError === 'function') {
+                    window.showError(bucketAccessT('msg.network_error', 'Network error'));
+                }
+                hideBucketAccessModal();
+            });
+    }
+
+    function initBucketAccessModal() {
+        if (bucketAccessListenersBound) return;
+        bucketAccessListenersBound = true;
+        var closeBtn = document.getElementById('bucketAccessCloseBtn');
+        var addBtn = document.getElementById('bucketAccessAddUserBtn');
+        var applyBtn = document.getElementById('bucketAccessApplyBtn');
+        var cancelBtn = document.getElementById('bucketAccessCancelBtn');
+        var grants = document.getElementById('bucketAccessGrants');
+        var modal = document.getElementById('bucketAccessModal');
+        if (closeBtn) closeBtn.addEventListener('click', hideBucketAccessModal);
+        if (addBtn) addBtn.addEventListener('click', bucketAccessAddUser);
+        if (applyBtn) applyBtn.addEventListener('click', applyBucketAccessChanges);
+        if (cancelBtn) cancelBtn.addEventListener('click', exitBucketAccessEdit);
+        if (grants && !grants._baRemoveDelegated) {
+            grants._baRemoveDelegated = true;
+            grants.addEventListener('click', function (e) {
+                var btn = e.target.closest('.file-info-acl-remove');
+                if (!btn || btn.disabled || !bucketAccessState.editing) return;
+                e.preventDefault();
+                e.stopPropagation();
+                var row = btn.closest('.file-info-acl-edit-row');
+                if (row) removeBucketAccessEditRow(row);
+            });
+        }
+        if (modal && !modal._baOverlayClose) {
+            modal._baOverlayClose = true;
+            modal.addEventListener('click', function (e) {
+                if (e.target === modal) hideBucketAccessModal();
+            });
+        }
+        document.addEventListener('click', function (e) {
+            var accessModal = document.getElementById('bucketAccessModal');
+            if (!accessModal || accessModal.style.display !== 'flex') return;
+            if (!e.target.closest('.dropdown-acl')) {
+                closeBucketAccessDropdowns();
+            }
+        });
+    }
+
+    window.openBucketAccessModal = openBucketAccessModal;
+    window.hideBucketAccessModal = hideBucketAccessModal;
 
     window.initBucketSettingsModal = function () {
         if (bucketModalListenersBound) return;
@@ -1938,6 +2866,7 @@
                 if (typeof onAddBucketSubmit === 'function') onAddBucketSubmit();
             });
         }
+        initAddBucketSkipTlsDropdown();
     };
 
     if (document.readyState === 'loading') {

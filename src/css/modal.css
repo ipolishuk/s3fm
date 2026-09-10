@@ -130,6 +130,14 @@
   margin-right: auto;
 }
 
+.modal-footer-start {
+  margin-right: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
 /* Поля формы внутри модалок */
 .modal-body .form-group {
   margin: 0 0 var(--modal-label-gap) 0;
@@ -146,7 +154,7 @@
   width: 100%;
   min-height: var(--modal-control-min-h);
   padding: 8px;
-  margin: 2px 0;
+  margin: 0;
   box-sizing: border-box;
   border: var(--border-style);
   border-radius: var(--radius-lg);
@@ -168,7 +176,7 @@
 
 .form-control-reveal {
   position: relative;
-  margin: 2px 0;
+  margin: 0;
   width: 100%;
 }
 
@@ -323,14 +331,87 @@
 .modal-body .form-group-checkbox {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .modal-body .form-group-checkbox .lables {
   margin: 0;
   flex: 1;
   min-width: 0;
+}
+
+.modal-body .form-group-checkbox .checkbox {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/*
+ * Add / Edit / Copy form modals: ровные колонки label | control (60%),
+ * как Meilisearch settings, но value-колонка 60%.
+ */
+#addBucketForm > .form-group:not(.hidden),
+#addUserForm > .form-group:not(.add-user-bucket-roles-group),
+#CloudEditModal > .form-group,
+#CreateFolderModal > .form-group,
+#CopyObjectsModal > .form-group:has(> .dropdown),
+#MoveObjectsModal > .form-group:has(> .dropdown) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 60%;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 0;
+}
+
+#addBucketForm > .form-group > .lables,
+#addUserForm > .form-group:not(.add-user-bucket-roles-group) > .lables,
+#CloudEditModal > .form-group > .lables,
+#CreateFolderModal > .form-group > .lables,
+#CopyObjectsModal > .form-group:has(> .dropdown) > .lables,
+#MoveObjectsModal > .form-group:has(> .dropdown) > .lables {
+  grid-column: 1;
+  margin: 0;
+  min-width: 0;
+  max-width: none;
+  line-height: 1.3;
+}
+
+#addBucketForm > .form-group > .form-control,
+#addBucketForm > .form-group > .form-control-reveal,
+#addBucketForm > .form-group > .dropdown,
+#addUserForm > .form-group:not(.add-user-bucket-roles-group) > .form-control,
+#addUserForm > .form-group:not(.add-user-bucket-roles-group) > .form-control-reveal,
+#addUserForm > .form-group:not(.add-user-bucket-roles-group) > .dropdown,
+#CloudEditModal > .form-group > .form-control,
+#CloudEditModal > .form-group > .cloud-endpoints-list,
+#CloudEditModal > .form-group > .dropdown,
+#CreateFolderModal > .form-group > .form-control,
+#CopyObjectsModal > .form-group > .dropdown,
+#MoveObjectsModal > .form-group > .dropdown {
+  grid-column: 2;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  justify-self: stretch;
+}
+
+#addBucketForm > .form-group > .dropdown .dropdown-trigger,
+#addUserForm > .form-group:not(.add-user-bucket-roles-group) > .dropdown .dropdown-trigger,
+#CloudEditModal > .form-group > .dropdown .dropdown-trigger,
+#CopyObjectsModal > .form-group > .dropdown .dropdown-trigger,
+#MoveObjectsModal > .form-group > .dropdown .dropdown-trigger {
+  width: 100%;
+}
+
+#CreateFolderModal > .form-group > .error-message,
+#addBucketForm > .error-message,
+#addUserForm > .add-user-bucket-roles-group,
+#addUserForm > .error-message,
+#CloudEditModal > .error-message,
+#CopyObjectsModal > .error-message,
+#MoveObjectsModal > .error-message {
+  grid-column: 1 / -1;
 }
 
 /* Ошибки формы */
@@ -366,14 +447,17 @@
 
 .role-permissions-panel .role-perm-form-group {
   margin-bottom: 0;
+  justify-content: flex-start;
 }
 
 .role-permissions-panel .role-perm-form-group:not(:last-child) {
   border-bottom: var(--border-style);
 }
 
-.role-permissions-panel .role-perm-option input {
+.role-permissions-panel .role-perm-option input,
+.role-permissions-panel .role-perm-form-group .checkbox {
   flex-shrink: 0;
+  margin-left: 0;
 }
 
 .role-permissions-group {
@@ -450,7 +534,6 @@
 .add-user-bucket-roles-group > .lables,
 .file-info-acl-group > .lables {
   flex-shrink: 0;
-  padding: 4px;
 }
 
 .add-user-bucket-roles-group > .file-info-acl-block,
@@ -790,7 +873,8 @@
 /* Редактирование: прокрутка только в списке строк */
 .file-info-acl-grants:has(> #fileInfoAclEditRows),
 .file-info-acl-grants:has(> #bulkAclEditRows),
-.file-info-acl-grants:has(> #addUserBucketRolesEditRows) {
+.file-info-acl-grants:has(> #addUserBucketRolesEditRows),
+.file-info-acl-grants:has(> #bucketAccessEditRows) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -798,7 +882,8 @@
 
 #fileInfoAclEditRows,
 #bulkAclEditRows,
-#addUserBucketRolesEditRows {
+#addUserBucketRolesEditRows,
+#bucketAccessEditRows {
   flex: 1 1 auto;
   min-height: 0;
   overflow-x: hidden;
@@ -811,16 +896,22 @@
   -ms-overflow-style: none;
 }
 
+#bucketAccessEditRows {
+  padding-bottom: 0;
+}
+
 #fileInfoAclEditRows::-webkit-scrollbar,
 #bulkAclEditRows::-webkit-scrollbar,
-#addUserBucketRolesEditRows::-webkit-scrollbar {
+#addUserBucketRolesEditRows::-webkit-scrollbar,
+#bucketAccessEditRows::-webkit-scrollbar {
   display: none;
 }
 
 .file-info-acl-grants .file-info-acl-row:last-child,
 #fileInfoAclEditRows .file-info-acl-edit-row:last-child,
 #bulkAclEditRows .file-info-acl-edit-row:last-child,
-#addUserBucketRolesEditRows .file-info-acl-edit-row:last-child {
+#addUserBucketRolesEditRows .file-info-acl-edit-row:last-child,
+#bucketAccessEditRows .file-info-acl-edit-row:last-child {
   border-bottom: none;
   border-radius: 0 0 var(--radius-md) var(--radius-md);
 }
@@ -874,7 +965,14 @@
   display: block;
 }
 
-.add-user-modal-body > form > .add-user-bucket-roles-group > .file-info-acl-block,
+.add-user-modal-body > form > .add-user-bucket-roles-group > .file-info-acl-block {
+  flex: none;
+  min-height: 0;
+  max-height: none;
+  height: auto;
+  /* keep overflow:hidden from .file-info-acl-block — clips children to border-radius */
+}
+
 .add-user-modal-body > form > .add-user-bucket-roles-group > .file-info-acl-block > .file-info-acl-panel,
 .add-user-modal-body > form > .add-user-bucket-roles-group > .file-info-acl-block > .file-info-acl-panel > .file-info-acl-table,
 .add-user-modal-body > form > .add-user-bucket-roles-group .file-info-acl-grants,
@@ -888,6 +986,33 @@
 
 .add-user-modal-body > form > .add-user-bucket-roles-group .file-info-acl-grants:has(> #addUserBucketRolesEditRows) {
   display: block;
+}
+
+/* Bucket access modal: ACL grows with content, modal-body scrolls */
+#BucketAccessModalBody > .file-info-acl-group,
+#BucketAccessModalBody > .file-info-acl-group > .file-info-acl-block {
+  flex: 0 0 auto;
+}
+
+#BucketAccessModalBody .file-info-acl-panel,
+#BucketAccessModalBody .file-info-acl-table,
+#BucketAccessModalBody .file-info-acl-grants,
+#BucketAccessModalBody #bucketAccessEditRows {
+  flex: none;
+  min-height: 0;
+  max-height: none;
+  height: auto;
+  overflow: visible;
+}
+
+#BucketAccessModalBody .file-info-acl-grants:has(> #bucketAccessEditRows) {
+  display: block;
+}
+
+#bucketAccessSummary {
+  margin: 0;
+  padding: 2px;
+  color: var(--text-primary);
 }
 
 .file-info-acl-message {
@@ -931,6 +1056,49 @@
   /* gap: 12px; */
   align-items: start;
   min-width: 0;
+}
+
+#bucketAccessEditRows .file-info-acl-edit-row .file-info-acl-col-user {
+  align-self: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#bucketAccessEditRows .bucket-access-user-search {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  margin: 0;
+  display: block;
+  overflow: visible;
+}
+
+#bucketAccessEditRows .bucket-access-user-search > .dropdown-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-height: min(240px, 40vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  z-index: calc(var(--popup-z-overlay, 1000) + 2);
+}
+
+#bucketAccessEditRows .bucket-access-user-search .bucket-access-user-input {
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+#bucketAccessEditRows .bucket-access-user-search.disabled .bucket-access-user-input,
+#bucketAccessEditRows .bucket-access-user-search .bucket-access-user-input:disabled {
+  background: var(--light-bg);
+  color: var(--text-secondary);
+  cursor: default;
 }
 
 .file-info-acl-grantee-cell {
@@ -1058,12 +1226,12 @@
 .cloud-endpoints-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 
 .cloud-endpoint-row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 }
 

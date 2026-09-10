@@ -364,6 +364,7 @@ class TestSettingsHelpersModule:
         assert callable(sh._is_settings_admin)
         assert callable(sh._can_add_bucket)
         assert callable(sh._can_manage_bucket_row)
+        assert callable(sh._can_manage_bucket_access)
         assert callable(sh._can_open_settings)
         assert callable(sh._normalize_role_permissions)
         assert callable(sh._validate_bucket_update_s3_target)

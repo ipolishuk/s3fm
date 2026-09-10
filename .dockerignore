@@ -26,3 +26,4 @@ LICENSE
 README.md
 src/__pycache__
 src/path
+.pytest_cache

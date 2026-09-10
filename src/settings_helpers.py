@@ -18,15 +18,18 @@ from db import (
     get_role,
     get_user,
     list_buckets_rows,
+    list_roles,
     update_user,
 )
 from logs import log_info, log_warning
 from roles import (
     ROLE_ADMIN,
     ROLE_STORAGE_ADMIN,
+    ROLE_STORAGE_VIEWER,
     VALID_ROLES,
     is_reserved_role_name,
     KNOWN_PERMISSION_IDS,
+    normalize_role_name,
     role_add_bucket,
 )
 from security import validate_endpoint_url
@@ -53,11 +56,37 @@ def _role_valid_for_user(role):
         return False
     if is_reserved_role_name(role):
         return False
-    from roles import normalize_role_name
     role = normalize_role_name(role)
     if role in VALID_ROLES:
         return True
     return get_role(role) is not None
+
+
+def _is_bucket_access_assignable_role(role):
+    """В ACL бакета можно назначать только роли storage_*."""
+    role = normalize_role_name(role or '')
+    if not role.startswith('storage_'):
+        return False
+    return _role_valid_for_user(role)
+
+
+def _normalize_bucket_access_role(role):
+    """Роль для назначения новому пользователю в ACL (не admin)."""
+    role = normalize_role_name(role or '')
+    if role == ROLE_ADMIN or not role:
+        return ROLE_STORAGE_ADMIN
+    if role.startswith('storage_') and _role_valid_for_user(role):
+        return role
+    return ROLE_STORAGE_VIEWER
+
+
+def _roles_for_bucket_access():
+    """Список ролей для dropdown ACL бакета — только storage_*."""
+    return [
+        {'id': r['name']}
+        for r in list_roles()
+        if _is_bucket_access_assignable_role(r.get('name'))
+    ]
 
 
 def _parse_user_email_field(data):
@@ -165,6 +194,15 @@ def _can_manage_bucket_row(row):
     if _is_settings_admin():
         return True
     return _is_bucket_creator(row)
+
+
+def _can_manage_bucket_access(row):
+    """ACL пользователей бакета: global admin или создатель с правом add_bucket."""
+    if _is_settings_admin():
+        return True
+    if not row or not _can_add_bucket():
+        return False
+    return _can_manage_bucket_row(row)
 
 
 def _session_allowed_cloud_ids():
@@ -276,15 +314,66 @@ def _grant_created_bucket_to_current_user(bucket_id, cloud_id):
         return False
 
     role = (user.get('role') or session.get('role') or '').strip()
-    buckets = list(_session_allowed_list(user.get('allowed_buckets', [])))
-    clouds = list(_session_allowed_list(user.get('allowed_clouds', [])))
+    ok = grant_user_bucket_access(username, bid, cloud_id=cid, role=role, skip_wildcard=True)
+    if not ok:
+        return False
+    sync_logged_in_session_from_db()
+    log_info(f'Granted bucket {bid} to {username} with role {role or "(default)"}', 'grant_created_bucket')
+    return True
 
-    # Полный доступ — отдельный grant не нужен
-    if '*' in buckets and (not cid or '*' in clouds or cid in clouds):
+
+def grant_user_bucket_access(username, bucket_id, cloud_id=None, role=None, skip_wildcard=False):
+    """Выдать пользователю доступ к бакету (ACL + user_roles).
+
+    skip_wildcard=True — не добавлять grant пользователям с buckets=['*']
+    (но cloud_id при необходимости всё равно добавляется).
+    Возвращает True, если запись обновлена.
+    """
+    username = (username or '').strip()
+    bid = (bucket_id or '').strip()
+    cid = (cloud_id or '').strip()
+    if not username or not bid:
+        return False
+    user = get_user(username)
+    if not user:
         return False
 
+    default_role = (user.get('role') or '').strip()
+    grant_role = (role or '').strip() or default_role
+    if grant_role and not _role_valid_for_user(grant_role):
+        return False
+
+    buckets = list(_session_allowed_list(user.get('allowed_buckets', [])))
+    clouds = list(_session_allowed_list(user.get('allowed_clouds', [])))
+    email = user.get('email')
+    full_name = user.get('full_name')
+
+    if '*' in buckets:
+        changed = False
+        if cid and '*' not in clouds and cid not in clouds:
+            clouds.append(cid)
+            changed = True
+        if skip_wildcard:
+            if not changed:
+                return False
+            return update_user(
+                username, default_role, buckets, clouds,
+                bucket_roles=None, email=email, full_name=full_name,
+            )
+        grants = dict(_bucket_roles_map_from_user(user))
+        if grant_role and grants.get(bid) != grant_role:
+            grants[bid] = grant_role
+            changed = True
+        if not changed:
+            return False
+        payload = [{'bucket_id': k, 'role': v} for k, v in grants.items()]
+        return update_user(
+            username, default_role, buckets, clouds,
+            bucket_roles=payload, email=email, full_name=full_name,
+        )
+
     changed = False
-    if '*' not in buckets and bid not in buckets:
+    if bid not in buckets:
         buckets.append(bid)
         changed = True
     if cid and '*' not in clouds and cid not in clouds:
@@ -292,19 +381,60 @@ def _grant_created_bucket_to_current_user(bucket_id, cloud_id):
         changed = True
 
     grants = dict(_bucket_roles_map_from_user(user))
-    if role and grants.get(bid) != role:
-        grants[bid] = role
+    if grant_role and grants.get(bid) != grant_role:
+        grants[bid] = grant_role
         changed = True
 
     if not changed:
         return False
 
-    bucket_roles_payload = [{'bucket_id': k, 'role': v} for k, v in grants.items()]
-    if not update_user(username, role or user.get('role') or '', buckets, clouds, bucket_roles=bucket_roles_payload):
-        log_warning(f'Failed to grant created bucket {bid} to {username}', 'grant_created_bucket')
+    payload = [{'bucket_id': k, 'role': v} for k, v in grants.items()]
+    return update_user(
+        username, default_role, buckets, clouds,
+        bucket_roles=payload, email=email, full_name=full_name,
+    )
+
+
+def revoke_user_bucket_access(username, bucket_id):
+    """Забрать у пользователя явный доступ к бакету. Wildcard ('*') не трогаем."""
+    username = (username or '').strip()
+    bid = (bucket_id or '').strip()
+    if not username or not bid:
         return False
-    sync_logged_in_session_from_db()
-    log_info(f'Granted bucket {bid} to {username} with role {role or "(default)"}', 'grant_created_bucket')
-    return True
+    user = get_user(username)
+    if not user:
+        return False
+
+    buckets = list(_session_allowed_list(user.get('allowed_buckets', [])))
+    clouds = list(_session_allowed_list(user.get('allowed_clouds', [])))
+    if '*' in buckets:
+        return False
+
+    changed = False
+    if bid in buckets:
+        buckets = [b for b in buckets if b != bid]
+        changed = True
+
+    grants = dict(_bucket_roles_map_from_user(user))
+    if bid in grants:
+        del grants[bid]
+        changed = True
+
+    if not changed:
+        return False
+
+    payload = [{'bucket_id': k, 'role': v} for k, v in grants.items()]
+    return update_user(
+        username,
+        (user.get('role') or '').strip(),
+        buckets,
+        clouds,
+        bucket_roles=payload,
+        email=user.get('email'),
+        full_name=user.get('full_name'),
+    )
+
+
+
 
 

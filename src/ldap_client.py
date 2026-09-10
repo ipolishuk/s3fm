@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover
     _LDAP3_AVAILABLE = False
 
 
-LDAP_QUERY_MIN_LENGTH = 6
+LDAP_QUERY_MIN_LENGTH = 5
 LDAP_LOOKUP_RESULT_LIMIT = 25
 # LDAP_URI часто резолвится в несколько DC; из k8s доступны не все —
 # ldap3 перебирает A-записи и «висит» десятки секунд. Кэшируем живой IP.

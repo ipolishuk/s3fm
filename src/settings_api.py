@@ -20,6 +20,7 @@ from db import (
     delete_user,
     ensure_cloud,
     get_bucket_row,
+    get_bucket_row_by_id,
     get_cloud_row,
     get_role,
     get_user,
@@ -34,6 +35,7 @@ from db import (
     list_endpoints,
     list_roles,
     list_users,
+    list_users_for_bucket_access,
     update_bucket,
     update_cloud,
     update_role,
@@ -52,21 +54,27 @@ from settings_helpers import (
     _ROLE_NAME_RE,
     _accessible_bucket_ids,
     _can_add_bucket,
+    _can_manage_bucket_access,
     _can_manage_bucket_row,
     _current_username,
     _dt_iso,
     _grant_created_bucket_to_current_user,
+    _is_bucket_access_assignable_role,
     _is_settings_admin,
     _list_buckets_for_add_form,
+    _normalize_bucket_access_role,
     _normalize_bucket_roles_payload,
     _normalize_role_permissions,
     _parse_user_email_field,
     _resolve_bucket_form_endpoint_url,
     _role_valid_for_user,
+    _roles_for_bucket_access,
     _validate_bucket_create_payload,
     _validate_bucket_endpoint_for_form,
     _validate_bucket_roles_list,
     _validate_bucket_update_s3_target,
+    grant_user_bucket_access,
+    revoke_user_bucket_access,
 )
 from users import (
     _session_allowed_list,
@@ -437,7 +445,7 @@ def settings_services_status_impl():
 
 
 def settings_users_ldap_lookup_impl():
-    """Частичный поиск пользователей в LDAP/AD (только admin). Минимум 6 символов."""
+    """Частичный поиск пользователей в LDAP/AD (только admin). Минимум 5 символов."""
     if session.get('role') != ROLE_ADMIN:
         return jsonify({'error': _('error.access_denied')}), 403
     username = (request.args.get('username') or '').strip()
@@ -1049,3 +1057,138 @@ def settings_bucket_search_index_enabled_impl():
     if not set_bucket_search_index_enabled(bucket_id, enabled):
         return jsonify({'error': _('error.bucket_not_found')}), 404
     return jsonify({'ok': True, 'bucket_id': bucket_id, 'search_index_enabled': enabled})
+
+
+def settings_bucket_access_impl(bucket_id):
+    """Список / выдача / отзыв доступа пользователей к бакету (admin или создатель)."""
+    bid = (bucket_id or '').strip()
+    if not bid:
+        return jsonify({'error': _('error.bucket_not_found')}), 404
+    row = get_bucket_row_by_id(bid)
+    if not row:
+        return jsonify({'error': _('error.bucket_not_found')}), 404
+    if not _can_manage_bucket_access(row):
+        return jsonify({'error': _('error.access_denied')}), 403
+
+    if request.method == 'GET':
+        try:
+            payload = list_users_for_bucket_access(bid)
+            roles = _roles_for_bucket_access()
+            return jsonify({
+                'bucket_id': bid,
+                'cloud_id': row.get('cloud_id'),
+                'display_name': row.get('display_name'),
+                'bucket_name': row.get('bucket_name'),
+                'users': payload.get('users') or [],
+                'candidates': payload.get('candidates') or [],
+                'roles': roles,
+            })
+        except Exception as e:
+            log_error('Failed to list bucket access', 'settings_bucket_access', e, LOG_CONFIG['show_traceback'])
+            return jsonify({'error': _('error.unexpected')}), 500
+
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or request.args.get('username') or '').strip()
+    if not username:
+        return jsonify({'error': _('error.username_required')}), 400
+    if not get_user(username):
+        return jsonify({'error': _('error.bucket_not_found')}), 404
+
+    if request.method == 'POST':
+        try:
+            role = (data.get('role') or '').strip() or None
+            if role and not _is_bucket_access_assignable_role(role):
+                return jsonify({'error': _('error.role_not_found')}), 400
+            if role:
+                role = _normalize_bucket_access_role(role)
+            cloud_id = (row.get('cloud_id') or '').strip()
+            if not grant_user_bucket_access(username, bid, cloud_id=cloud_id, role=role):
+                # Уже есть доступ / без изменений — не ошибка
+                pass
+            if username == session.get('username'):
+                sync_logged_in_session_from_db()
+            log_info(f'Granted bucket {bid} access to {username}', 'settings_bucket_access')
+            payload = list_users_for_bucket_access(bid)
+            return jsonify({
+                'ok': True,
+                'users': payload.get('users') or [],
+                'candidates': payload.get('candidates') or [],
+            })
+        except Exception as e:
+            log_error('Failed to grant bucket access', 'settings_bucket_access_post', e, LOG_CONFIG['show_traceback'])
+            return jsonify({'error': _('error.unexpected')}), 500
+
+    # DELETE
+    try:
+        target = get_user(username) or {}
+        buckets = _session_allowed_list(target.get('allowed_buckets', []))
+        if '*' in buckets:
+            return jsonify({'error': _('error.bucket_access_wildcard')}), 400
+        if not revoke_user_bucket_access(username, bid):
+            return jsonify({'error': _('error.bucket_not_found')}), 404
+        if username == session.get('username'):
+            sync_logged_in_session_from_db()
+        log_info(f'Revoked bucket {bid} access from {username}', 'settings_bucket_access')
+        payload = list_users_for_bucket_access(bid)
+        return jsonify({
+            'ok': True,
+            'users': payload.get('users') or [],
+            'candidates': payload.get('candidates') or [],
+        })
+    except Exception as e:
+        log_error('Failed to revoke bucket access', 'settings_bucket_access_delete', e, LOG_CONFIG['show_traceback'])
+        return jsonify({'error': _('error.unexpected')}), 500
+
+
+def settings_bucket_access_draft_impl():
+    """Черновик ACL для Add/Copy bucket (admin / storage_admin / add_bucket)."""
+    if not _can_add_bucket():
+        return jsonify({'error': _('error.access_denied')}), 403
+    try:
+        payload = list_users_for_bucket_access('__bucket_access_draft__')
+        users = list(payload.get('users') or [])
+        candidates = list(payload.get('candidates') or [])
+        me = _current_username()
+        me_l = me.lower() if me else ''
+        if me_l and not any((u.get('username') or '').strip().lower() == me_l for u in users):
+            user = get_user(me)
+            if user:
+                role = (user.get('role') or session.get('role') or '').strip()
+                candidates = [
+                    c for c in candidates
+                    if (c.get('username') or '').strip().lower() != me_l
+                ]
+                users.append({
+                    'username': me,
+                    'display_name': user_display_name(user) or me,
+                    'role': role,
+                    'via_wildcard': False,
+                })
+        if not any((u.get('username') or '').strip().lower() == 'admin' for u in users):
+            admin_u = get_user('admin')
+            if admin_u:
+                admin_buckets = _session_allowed_list(admin_u.get('allowed_buckets', []))
+                users.insert(0, {
+                    'username': 'admin',
+                    'display_name': user_display_name(admin_u) or 'admin',
+                    'role': (admin_u.get('role') or 'admin').strip() or 'admin',
+                    'via_wildcard': '*' in admin_buckets,
+                })
+                candidates = [
+                    c for c in candidates
+                    if (c.get('username') or '').strip().lower() != 'admin'
+                ]
+        users.sort(
+            key=lambda u: (
+                0 if (u.get('username') or '').strip().lower() == 'admin' else 1,
+                (u.get('username') or '').lower(),
+            )
+        )
+        return jsonify({
+            'users': users,
+            'candidates': candidates,
+            'roles': _roles_for_bucket_access(),
+        })
+    except Exception as e:
+        log_error('Failed to build bucket access draft', 'settings_bucket_access_draft', e, LOG_CONFIG['show_traceback'])
+        return jsonify({'error': _('error.unexpected')}), 500

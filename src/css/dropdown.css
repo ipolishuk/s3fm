@@ -178,7 +178,7 @@ label.dropdown-item {
 .modal-body .dropdown {
   width: 100%;
   min-height: var(--modal-control-min-h);
-  margin: 2px 0;
+  margin: 0;
   display: flex;
   align-items: stretch;
 }

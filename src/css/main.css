@@ -844,7 +844,7 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
 }
 
 .bulk-acl-summary {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: var(--font-size-md, 14px);
   color: var(--text-secondary);
 }

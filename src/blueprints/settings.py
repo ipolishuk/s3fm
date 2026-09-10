@@ -58,6 +58,16 @@ def settings_options_role_permissions():
 def settings_buckets():
     return _settings_api().settings_buckets_impl()
 
+@bp.route('/api/settings/bucket-access/<path:bucket_id>', methods=['GET', 'POST', 'DELETE'])
+@login_required
+def settings_bucket_access(bucket_id):
+    return _settings_api().settings_bucket_access_impl(bucket_id)
+
+@bp.route('/api/settings/bucket-access-draft', methods=['GET'])
+@login_required
+def settings_bucket_access_draft():
+    return _settings_api().settings_bucket_access_draft_impl()
+
 @bp.route('/api/settings/buckets/<cloud_id>/<path:display_name>', methods=['GET', 'PUT', 'DELETE'])
 @login_required
 def settings_bucket_by_key(cloud_id, display_name):

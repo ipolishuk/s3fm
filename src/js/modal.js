@@ -317,12 +317,16 @@
         var menu = getDropdownMenu(dropdownWrap);
         var child = dropdownWrap.firstElementChild;
         while (child) {
-            if (child !== menu && child.matches && child.matches('button, [aria-haspopup], .dropdown-trigger')) {
+            if (child !== menu && child.matches && child.matches(
+                'button.dropdown-trigger, .dropdown-trigger, [aria-haspopup], input.bucket-access-user-input, input.search-input'
+            )) {
                 return child;
             }
             child = child.nextElementSibling;
         }
-        return dropdownWrap.querySelector('.dropdown-trigger, [aria-haspopup], button');
+        return dropdownWrap.querySelector(
+            ':scope > .dropdown-trigger, :scope > [aria-haspopup], :scope > input.bucket-access-user-input, :scope > input.search-input'
+        );
     }
 
     function isDropdownOverlayOpen(dropdownWrap) {

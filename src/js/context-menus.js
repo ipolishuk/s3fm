@@ -496,6 +496,7 @@ function setupSettingsContextMenu() {
     const menu = document.getElementById('settingsContextMenu');
     const copyItem = document.getElementById('settingsContextCopy');
     const editItem = document.getElementById('settingsContextEdit');
+    const accessItem = document.getElementById('settingsContextAccess');
     const deleteItem = document.getElementById('settingsContextDelete');
     const settingsInner = document.getElementById('settingsContentInner');
     if (!container || !trigger || !menu || !settingsInner) return;
@@ -528,8 +529,10 @@ function setupSettingsContextMenu() {
     function updateMenuForRow(row) {
         setItemLabel(copyItem, I18N['menu.copy'] || 'Copy');
         setItemLabel(editItem, I18N['menu.edit'] || 'Edit');
+        setItemLabel(accessItem, I18N['menu.access'] || 'Access');
         setItemLabel(deleteItem, I18N['menu.delete'] || 'Delete');
 
+        const tab = currentSettingsTab();
         const canEdit = row.getAttribute('data-can-edit') !== '0';
         const canDelete = row.getAttribute('data-can-delete') !== '0';
         if (editItem) {
@@ -545,6 +548,20 @@ function setupSettingsContextMenu() {
                 : (row.getAttribute('data-delete-denied-title') || I18N['files.admin_only'] || '');
         }
         if (copyItem) copyItem.disabled = false;
+        if (accessItem) {
+            const showAccess = tab === 'buckets';
+            accessItem.classList.toggle('hidden', !showAccess);
+            if (showAccess) {
+                const hasBid = !!(row.getAttribute('data-bucket-id') || '').trim();
+                const canAccess = typeof window.canManageBucketAccessUi === 'function'
+                    ? window.canManageBucketAccessUi()
+                    : false;
+                accessItem.disabled = !canAccess || !hasBid;
+                accessItem.title = accessItem.disabled
+                    ? (I18N['files.admin_only'] || '')
+                    : (I18N['menu.access'] || '');
+            }
+        }
     }
 
     function openMenu(e, row) {
@@ -598,9 +615,17 @@ function setupSettingsContextMenu() {
         if (tab === 'buckets') {
             const cloudId = row.getAttribute('data-cloud-id');
             const displayName = row.getAttribute('data-display-name');
+            const bucketId = row.getAttribute('data-bucket-id');
             if (!cloudId || displayName === null) return;
             if (action === 'edit' && typeof window.openEditBucketModal === 'function') window.openEditBucketModal(cloudId, displayName);
             else if (action === 'copy' && typeof window.openCopyBucketModal === 'function') window.openCopyBucketModal(cloudId, displayName);
+            else if (action === 'access' && typeof window.openBucketAccessModal === 'function') {
+                window.openBucketAccessModal(
+                    bucketId,
+                    displayName,
+                    row.getAttribute('data-bucket-name')
+                );
+            }
             else if (action === 'delete' && typeof window.confirmDeleteBucket === 'function') window.confirmDeleteBucket(cloudId, displayName);
         }
     }
@@ -616,7 +641,7 @@ function setupSettingsContextMenu() {
         function (until) { ignoreOutsideClickUntil = until; }
     );
 
-    [copyItem, editItem, deleteItem].forEach(function(item) {
+    [copyItem, editItem, accessItem, deleteItem].forEach(function(item) {
         if (!item) return;
         item.addEventListener('click', function() {
             if (item.disabled || item.classList.contains('hidden')) return;

@@ -104,6 +104,7 @@ document.addEventListener('keydown', function(e) {
         const moveObjectsModal = document.getElementById('moveObjectsModal');
         const addUserModal = document.getElementById('addUserModal');
         const addBucketModal = document.getElementById('addBucketModal');
+        const bucketAccessModal = document.getElementById('bucketAccessModal');
         const cloudEditModal = document.getElementById('cloudEditModal');
         const userInfoModal = document.getElementById('userInfoModal');
         const fileInfoModal = document.getElementById('fileInfoModal');
@@ -138,6 +139,16 @@ document.addEventListener('keydown', function(e) {
                 addUserModal.style.display = 'none';
             }
             // Снимаем фокус с активного элемента
+            if (document.activeElement && document.activeElement.blur) {
+                document.activeElement.blur();
+            }
+        } else if (bucketAccessModal && bucketAccessModal.style.display === 'flex') {
+            if (typeof window.hideBucketAccessModal === 'function') {
+                window.hideBucketAccessModal();
+            } else {
+                bucketAccessModal.style.display = 'none';
+                bucketAccessModal.classList.add('hidden');
+            }
             if (document.activeElement && document.activeElement.blur) {
                 document.activeElement.blur();
             }

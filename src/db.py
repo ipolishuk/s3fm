@@ -1122,6 +1122,104 @@ def get_bucket_row(cloud_id, display_name):
         return None
 
 
+def get_bucket_row_by_id(bucket_id):
+    """Один бакет по bucket_id или None."""
+    bid = (bucket_id or '').strip()
+    if not bid:
+        return None
+    try:
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT cloud_id, cloud_name, cloud_icon, endpoint_url,
+                           display_name, bucket_name, bucket_id,
+                           aws_access_key_id, aws_secret_access_key, ca_bundle_path,
+                           region_name, skip_tls_verify, created_by
+                    FROM buckets
+                    WHERE bucket_id = %s
+                    LIMIT 1
+                """, (bid,))
+                row = cur.fetchone()
+                return _decrypt_bucket_secret_fields(dict(row)) if row else None
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+
+def list_users_for_bucket_access(bucket_id):
+    """
+    Пользователи с доступом к бакету и кандидаты для выдачи.
+
+    Возвращает:
+      {
+        'users': [{username, display_name, role, via_wildcard}, ...],
+        'candidates': [{username, display_name, role}, ...],
+      }
+    role для users — роль из user_roles для этого бакета, иначе users.role.
+    via_wildcard — доступ через buckets=['*'] (явный revoke невозможен).
+    """
+    bid = (bucket_id or '').strip()
+    empty = {'users': [], 'candidates': []}
+    if not bid:
+        return empty
+    try:
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT u.username, u.role, u.buckets, u.full_name,
+                           u.given_name, u.family_name, u.middle_name,
+                           ur.role_name AS bucket_role
+                    FROM users u
+                    LEFT JOIN user_roles ur
+                      ON ur.username = u.username AND ur.bucket_id = %s
+                    ORDER BY LOWER(u.username)
+                    """,
+                    (bid,),
+                )
+                rows = cur.fetchall()
+            users = []
+            candidates = []
+            for r in rows:
+                username = r['username']
+                buckets = _jsonb_bucket_cloud_list(r.get('buckets'))
+                via_wildcard = '*' in buckets
+                has_explicit = bid in buckets or bool(r.get('bucket_role'))
+                display = _normalize_user_text(r.get('full_name'))
+                if not display:
+                    parts = [
+                        _normalize_user_text(r.get('family_name')) or '',
+                        _normalize_user_text(r.get('given_name')) or '',
+                        _normalize_user_text(r.get('middle_name')) or '',
+                    ]
+                    display = ' '.join(p for p in parts if p) or None
+                default_role = (r.get('role') or '').strip()
+                bucket_role = (r.get('bucket_role') or '').strip() or default_role
+                entry = {
+                    'username': username,
+                    'display_name': display,
+                    'role': bucket_role if (has_explicit or via_wildcard) else default_role,
+                }
+                if via_wildcard or has_explicit:
+                    entry['via_wildcard'] = via_wildcard
+                    entry['role'] = bucket_role
+                    users.append(entry)
+                if not via_wildcard and not has_explicit:
+                    candidates.append({
+                        'username': username,
+                        'display_name': display,
+                        'role': default_role,
+                    })
+            return {'users': users, 'candidates': candidates}
+        finally:
+            conn.close()
+    except Exception:
+        return empty
+
+
 def update_bucket(cloud_id, display_name, bucket_name, bucket_id=None,
                   aws_access_key_id=None, aws_secret_access_key=None, cloud_name=None,
                   cloud_icon=None, endpoint_url=None,

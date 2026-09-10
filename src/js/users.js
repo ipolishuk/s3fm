@@ -1376,11 +1376,85 @@ function hideCloudEditModal() {
     if (nameEl) nameEl.value = '';
     var epEl = document.getElementById('cloudEditEndpointInput');
     if (epEl) epEl.value = '';
-    var pubUrlEl = document.getElementById('cloudEditPublicUrlEnabled');
-    if (pubUrlEl) pubUrlEl.checked = false;
+    setCloudEditPublicUrl(false);
     resetCloudEndpointsInputs(['']);
     var err = document.getElementById('cloudEditError');
     if (err) err.textContent = '';
+}
+
+function cloudPublicUrlValueFromRaw(raw) {
+    return raw === true || raw === 'true' || raw === 1 || raw === '1' || raw === 't';
+}
+
+function setCloudEditPublicUrl(value) {
+    var on = !!value;
+    var hidden = document.getElementById('cloudEditPublicUrlEnabled');
+    var label = document.getElementById('cloudEditPublicUrlLabel');
+    var panel = document.getElementById('cloudEditPublicUrlPanel');
+    if (hidden) hidden.value = on ? 'true' : 'false';
+    if (label) {
+        label.textContent = on ? 'true' : 'false';
+        label.classList.add('has-selection');
+    }
+    if (panel) {
+        panel.querySelectorAll('.dropdown-item').forEach(function (item) {
+            item.classList.toggle('selected', item.getAttribute('data-value') === (on ? 'true' : 'false'));
+        });
+    }
+}
+
+function getCloudEditPublicUrl() {
+    var hidden = document.getElementById('cloudEditPublicUrlEnabled');
+    return cloudPublicUrlValueFromRaw(hidden ? hidden.value : 'false');
+}
+
+function initCloudEditPublicUrlDropdown() {
+    var wrap = document.getElementById('cloudEditPublicUrlWrap');
+    var trigger = document.getElementById('cloudEditPublicUrlTrigger');
+    var panel = document.getElementById('cloudEditPublicUrlPanel');
+    if (!wrap || !trigger || !panel || wrap._publicUrlDdBound) return;
+    wrap._publicUrlDdBound = true;
+    trigger.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var willOpen = !wrap.classList.contains('open');
+        wrap.classList.remove('open');
+        if (typeof window.resetDropdownMenuOverlay === 'function') {
+            window.resetDropdownMenuOverlay(wrap);
+        }
+        if (willOpen) {
+            wrap.classList.add('open');
+            trigger.setAttribute('aria-expanded', 'true');
+            panel.classList.remove('hidden');
+            if (typeof window.fitDropdownMenuOverlay === 'function') {
+                window.fitDropdownMenuOverlay(wrap);
+            }
+        } else {
+            trigger.setAttribute('aria-expanded', 'false');
+            panel.classList.add('hidden');
+        }
+    });
+    panel.querySelectorAll('.dropdown-item').forEach(function (item) {
+        item.addEventListener('click', function (ev) {
+            ev.stopPropagation();
+            setCloudEditPublicUrl(item.getAttribute('data-value') === 'true');
+            wrap.classList.remove('open');
+            trigger.setAttribute('aria-expanded', 'false');
+            panel.classList.add('hidden');
+            if (typeof window.resetDropdownMenuOverlay === 'function') {
+                window.resetDropdownMenuOverlay(wrap);
+            }
+        });
+    });
+    document.addEventListener('click', function (e) {
+        if (!wrap.classList.contains('open')) return;
+        if (e.target.closest && e.target.closest('#cloudEditPublicUrlWrap')) return;
+        wrap.classList.remove('open');
+        trigger.setAttribute('aria-expanded', 'false');
+        panel.classList.add('hidden');
+        if (typeof window.resetDropdownMenuOverlay === 'function') {
+            window.resetDropdownMenuOverlay(wrap);
+        }
+    });
 }
 
 function splitCloudEndpoints(value) {
@@ -1484,8 +1558,7 @@ function openAddCloudModal() {
     }
     if (nameEl) nameEl.value = '';
     if (epEl) epEl.value = '';
-    var pubUrlEl = document.getElementById('cloudEditPublicUrlEnabled');
-    if (pubUrlEl) pubUrlEl.checked = false;
+    setCloudEditPublicUrl(false);
     resetCloudEndpointsInputs(['']);
     if (err) err.textContent = '';
     if (title) title.textContent = t['modal.add_cloud'] || 'Add cloud';
@@ -1511,6 +1584,7 @@ function openCopyCloudModal(cloudId) {
     }
     if (nameEl) nameEl.value = '';
     resetCloudEndpointsInputs(['']);
+    setCloudEditPublicUrl(false);
     if (err) err.textContent = '';
     if (title) title.textContent = t['modal.copy_cloud'] || 'Copy cloud';
     if (icon) icon.className = 'fa-solid fa-copy modal-icon modal-icon-info';
@@ -1521,8 +1595,7 @@ function openCopyCloudModal(cloudId) {
             if (nameEl) nameEl.value = row.display_name || row.name || cloudId;
             var endpointList = (row && Array.isArray(row.endpoint_url)) ? row.endpoint_url : splitCloudEndpoints(row && row.endpoint_url);
             resetCloudEndpointsInputs(endpointList.length ? endpointList : ['']);
-            var pubUrlEl = document.getElementById('cloudEditPublicUrlEnabled');
-            if (pubUrlEl) pubUrlEl.checked = !!(row && row.public_url_enabled);
+            setCloudEditPublicUrl(cloudPublicUrlValueFromRaw(row && row.public_url_enabled));
             var modal = document.getElementById('cloudEditModal');
             if (modal) modal.style.display = 'flex';
         })
@@ -1549,6 +1622,7 @@ function openEditCloudModal(cloudId) {
     if (nameEl) nameEl.value = '';
     if (epEl) epEl.value = '';
     resetCloudEndpointsInputs(['']);
+    setCloudEditPublicUrl(false);
     if (err) err.textContent = '';
     if (title) title.textContent = t['modal.edit_cloud'] || 'Edit cloud';
     if (icon) icon.className = 'fa-solid fa-pen-to-square modal-icon modal-icon-info';
@@ -1560,8 +1634,7 @@ function openEditCloudModal(cloudId) {
             var endpointList = (row && Array.isArray(row.endpoint_url)) ? row.endpoint_url : splitCloudEndpoints(row && row.endpoint_url);
             if (epEl) epEl.value = endpointList[0] || '';
             resetCloudEndpointsInputs(endpointList);
-            var pubUrlEl = document.getElementById('cloudEditPublicUrlEnabled');
-            if (pubUrlEl) pubUrlEl.checked = !!(row && row.public_url_enabled);
+            setCloudEditPublicUrl(cloudPublicUrlValueFromRaw(row && row.public_url_enabled));
             var modal = document.getElementById('cloudEditModal');
             if (modal) modal.style.display = 'flex';
         })
@@ -1920,7 +1993,7 @@ function applyAddUserLdapAvailability(modeAllows) {
     }
 }
 
-var ADD_USER_LDAP_QUERY_MIN_LENGTH = 6;
+var ADD_USER_LDAP_QUERY_MIN_LENGTH = 5;
 
 function closeAddUserLdapResults() {
     var panel = document.getElementById('addUserLdapResults');
@@ -2004,7 +2077,7 @@ function lookupAddUserFromLdap() {
     }
     if (username.length < ADD_USER_LDAP_QUERY_MIN_LENGTH) {
         if (typeof showError === 'function') {
-            showError(t['error.ldap_query_too_short'] || 'Enter at least 6 characters for LDAP search');
+            showError(t['error.ldap_query_too_short'] || 'Enter at least 5 characters for LDAP search');
         }
         usernameEl.focus();
         return;
@@ -2797,8 +2870,7 @@ if (cloudEditSubmitBtn) {
         var cloudId = (idEl && idEl.value || '').trim();
         var displayName = (nameEl && nameEl.value || '').trim();
         var endpoints = getCloudEndpointValues();
-        var pubUrlEl = document.getElementById('cloudEditPublicUrlEnabled');
-        var publicUrlEnabled = !!(pubUrlEl && pubUrlEl.checked);
+        var publicUrlEnabled = getCloudEditPublicUrl();
         if (errEl) errEl.textContent = '';
         if (!cloudId) {
             toastFormError(t['error.cloud_id_invalid'] || 'Cloud ID is required');
@@ -2833,6 +2905,7 @@ if (cloudEditSubmitBtn) {
             });
     });
 }
+initCloudEditPublicUrlDropdown();
 }
 
     window.loadSettingsUsers = loadSettingsUsers;

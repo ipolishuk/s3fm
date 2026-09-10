@@ -262,6 +262,7 @@
         <div class="dropdown-menu context-menu hidden" id="settingsContextMenu" role="menu">
             <button type="button" class="dropdown-item" id="settingsContextCopy" data-action="copy" role="menuitem"><i class="fa-solid fa-clone"></i><span>{{ _('menu.copy') }}</span></button>
             <button type="button" class="dropdown-item" id="settingsContextEdit" data-action="edit" role="menuitem"><i class="fa-solid fa-pen-to-square"></i><span>{{ _('menu.edit') }}</span></button>
+            <button type="button" class="dropdown-item hidden" id="settingsContextAccess" data-action="access" role="menuitem"><i class="fa-solid fa-user-shield"></i><span>{{ _('menu.access') }}</span></button>
             <button type="button" class="dropdown-item" id="settingsContextDelete" data-action="delete" role="menuitem"><i class="fa-solid fa-trash-can"></i><span>{{ _('menu.delete') }}</span></button>
         </div>
     </div>
@@ -477,7 +478,6 @@
                     <input type="hidden" id="copyDstBucketValue" value="">
                 </div>
                 <div class="form-group">
-                    <label class="lables">{{ _('copy.dst_path') }}</label>
                     <div class="copy-dst-browser">
                         <div class="copy-dst-breadcrumb" id="copyDstBreadcrumb"></div>
                         <div class="copy-dst-folder-list" id="copyDstFolderList"></div>
@@ -528,7 +528,6 @@
                     <input type="hidden" id="moveDstBucketValue" value="">
                 </div>
                 <div class="form-group">
-                    <label class="lables">{{ _('move.dst_path') }}</label>
                     <div class="copy-dst-browser">
                         <div class="copy-dst-breadcrumb" id="moveDstBreadcrumb"></div>
                         <div class="copy-dst-folder-list" id="moveDstFolderList"></div>
@@ -840,9 +839,19 @@
                         </div>
                     </div>
                 </div>
-                <div class="form-group form-group-checkbox">
-                    <input type="checkbox" id="cloudEditPublicUrlEnabled" class="checkbox">
-                    <label class="lables" for="cloudEditPublicUrlEnabled">{{ _('modal.cloud_enable_public_url') }}</label>
+                <div class="form-group" id="cloudEditPublicUrlGroup">
+                    <label class="lables" for="cloudEditPublicUrlTrigger">{{ _('modal.cloud_enable_public_url') }}</label>
+                    <div class="dropdown" id="cloudEditPublicUrlWrap">
+                        <button type="button" class="dropdown-trigger" id="cloudEditPublicUrlTrigger" aria-expanded="false" aria-haspopup="listbox">
+                            <span id="cloudEditPublicUrlLabel" class="has-selection">false</span>
+                            <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                        </button>
+                        <div class="dropdown-menu hidden" id="cloudEditPublicUrlPanel" role="listbox">
+                            <button type="button" class="dropdown-item selected" data-value="false" role="option">false</button>
+                            <button type="button" class="dropdown-item" data-value="true" role="option">true</button>
+                        </div>
+                    </div>
+                    <input type="hidden" id="cloudEditPublicUrlEnabled" value="false">
                 </div>
                 <div class="error-message" id="cloudEditError"></div>
             </div>
@@ -938,9 +947,19 @@
                     <label class="lables" for="addBucketRegionName">{{ _('modal.bucket_region') }}</label>
                     <input type="text" id="addBucketRegionName" class="form-control" placeholder="us-east-1" autocomplete="off">
                 </div>
-                <div class="form-group form-group-checkbox">
-                    <input type="checkbox" id="addBucketSkipTlsVerify" class="checkbox">
-                    <label class="lables" for="addBucketSkipTlsVerify">{{ _('modal.bucket_skip_tls') }}</label>
+                <div class="form-group form-group-checkbox" id="addBucketSkipTlsGroup">
+                    <label class="lables" for="addBucketSkipTlsTrigger">{{ _('modal.bucket_skip_tls') }}</label>
+                    <div class="dropdown" id="addBucketSkipTlsWrap">
+                        <button type="button" class="dropdown-trigger" id="addBucketSkipTlsTrigger" aria-expanded="false" aria-haspopup="listbox">
+                            <span id="addBucketSkipTlsLabel" class="has-selection">false</span>
+                            <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                        </button>
+                        <div class="dropdown-menu hidden" id="addBucketSkipTlsPanel" role="listbox">
+                            <button type="button" class="dropdown-item selected" data-value="false" role="option">false</button>
+                            <button type="button" class="dropdown-item" data-value="true" role="option">true</button>
+                        </div>
+                    </div>
+                    <input type="hidden" id="addBucketSkipTlsVerify" value="false">
                 </div>
                 <div class="error-message" id="addBucketError"></div>
                 </form>
@@ -949,6 +968,37 @@
                 <button type="button" class="btn modal-footer-left" id="addBucketTestBtn">{{ _('modal.test_connection') }}</button>
                 <button type="button" class="btn" id="addBucketSubmitBtn">{{ _('settings.add') }}</button>
                 <button type="button" class="btn" id="addBucketCancelBtn">{{ _('modal.cancel') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="bucketAccessModal">
+        <div class="modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-user-shield modal-icon modal-icon-info"></i>
+                <h3 class="modal-title" id="bucketAccessModalTitle">{{ _('modal.bucket_access_title') }}</h3>
+            </div>
+            <div class="modal-body file-info-modal-body" id="BucketAccessModalBody">
+                <p class="bulk-acl-summary" id="bucketAccessSummary"></p>
+                <div class="file-info-acl-group">
+                    <section class="file-info-acl-block" aria-label="{{ _('modal.bucket_access_users') }}">
+                        <div class="file-info-acl-panel">
+                            <div class="file-info-acl-table">
+                                <div class="file-info-acl-head modal-field">
+                                    <span class="lables file-info-acl-col-user">{{ _('modal.bucket_access_col_user') }}</span>
+                                    <span class="lables file-info-acl-col-perm">{{ _('modal.bucket_access_col_role') }}</span>
+                                </div>
+                                <div id="bucketAccessGrants" class="file-info-acl-grants"></div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+            <div class="modal-footer file-info-modal-footer">
+                <button type="button" class="btn modal-footer-left" id="bucketAccessAddUserBtn">{{ _('modal.bucket_access_add') }}</button>
+                <button type="button" class="btn hidden" id="bucketAccessApplyBtn">{{ _('files.info_acl_apply') }}</button>
+                <button type="button" class="btn hidden" id="bucketAccessCancelBtn">{{ _('files.info_acl_cancel') }}</button>
+                <button type="button" class="btn" id="bucketAccessCloseBtn">{{ _('user_info.close') }}</button>
             </div>
         </div>
     </div>

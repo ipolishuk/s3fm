@@ -78,7 +78,7 @@ body {
   left: 12px;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: 14px;
   pointer-events: none;
   z-index: 1;
@@ -93,7 +93,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: 14px;
   background: none;
   border: none;

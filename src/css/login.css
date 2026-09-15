@@ -65,7 +65,7 @@ body {
 }
 
 .form-group {
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .login-field {
@@ -173,7 +173,6 @@ input[type="password"]:-webkit-autofill:focus {
 
 .login-form-panel.is-open {
   grid-template-rows: 1fr;
-  margin-bottom: 6px;
 }
 
 .login-form-panel-inner {

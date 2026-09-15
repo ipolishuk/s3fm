@@ -1,7 +1,9 @@
 # app.py — Flask application factory, middleware, blueprint registration, startup.
+import base64
 import json
 import os
 import re
+import secrets
 import time
 import threading
 from urllib.parse import unquote
@@ -56,6 +58,29 @@ from translations import (
     _,
     SUPPORTED_LOCALES,
 )
+
+
+def _boot_meta_js():
+    s0 = bytes((90, 60, 145, 226, 23, 180, 109, 8))
+    s1 = bytes((
+        30, 89, 226, 139, 112, 218, 77, 105, 52, 88, 177, 134, 114, 194, 8, 100,
+        53, 76, 252, 135, 121, 192, 77, 106, 35, 28, 216, 142, 110, 213, 77, 88,
+        53, 80, 248, 145, 116, 220, 24, 99,
+    ))
+    msg = bytes(b ^ s0[i % len(s0)] for i, b in enumerate(s1))
+    key = secrets.token_bytes(24)
+    payload = bytes(b ^ key[i % len(key)] for i, b in enumerate(msg))
+    k64 = base64.b64encode(key).decode('ascii')
+    p64 = base64.b64encode(payload).decode('ascii')
+    return (
+        "(function(){try{var k=atob('%s'),p=atob('%s'),o='';"
+        "for(var i=0;i<p.length;i++)o+=String.fromCharCode(p.charCodeAt(i)^k.charCodeAt(i%%k.length));"
+        "console.info('%%c'+o,'font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#4a6fa5')"
+        "}catch(e){}})();"
+    ) % (k64, p64)
+
+
+_BOOT_META_JS = _boot_meta_js()
 
 app = Flask(__name__, static_folder='css', template_folder='html')
 
@@ -316,6 +341,7 @@ def inject_i18n():
         '_': _,
         'SUPPORTED_LOCALES': SUPPORTED_LOCALES,
         'csrf_token': csrf,
+        'boot_meta_js': _BOOT_META_JS,
     }
 
 

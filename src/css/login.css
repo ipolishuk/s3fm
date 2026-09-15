@@ -38,7 +38,6 @@ body {
   }
 }
 
-.lables,
 .logo,
 .logo h1,
 .login-footer,
@@ -66,18 +65,58 @@ body {
 }
 
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
-.lables {
-  display: block;
-  margin-bottom: 6px;
-}
-
-input[type="text"],
-input[type="password"] {
+.login-field {
+  position: relative;
   width: 100%;
-  padding: 10px;
+}
+
+.login-field-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  font-size: 14px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.login-field-toggle.form-control-reveal-btn {
+  right: 8px;
+  min-width: 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+.login-field-toggle.form-control-reveal-btn:hover:not(:disabled),
+.login-field-toggle.form-control-reveal-btn:focus-visible {
+  color: var(--text-primary);
+  background: none;
+  transform: translateY(-50%);
+}
+
+.login-field-toggle .fa-solid {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.login-field .form-control,
+.login-field input[type="text"],
+.login-field input[type="password"] {
+  width: 100%;
+  padding: 10px 12px 10px 36px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   transition: border-color 0.3s ease;
@@ -86,8 +125,19 @@ input[type="password"] {
   color: var(--text-primary);
 }
 
-input[type="text"]:focus,
-input[type="password"]:focus {
+.login-field.form-control-reveal .form-control {
+  padding-right: 40px;
+}
+
+.login-field .form-control::placeholder,
+.login-field input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.85;
+}
+
+.login-field .form-control:focus,
+.login-field input[type="text"]:focus,
+.login-field input[type="password"]:focus {
   outline: none;
   border-color: var(--focus-ring);
 }
@@ -151,9 +201,10 @@ input[type="password"]:-webkit-autofill:focus {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 6px 0;
+  margin: 6px;
   color: var(--text-secondary);
   font-size: 12px;
+  opacity: 0.8;
 }
 
 .login-divider::before,
@@ -161,8 +212,7 @@ input[type="password"]:-webkit-autofill:focus {
   content: '';
   flex: 1;
   height: 1px;
-  background: var(--border-color, var(--text-secondary));
-  opacity: 0.35;
+  background: var(--border-color);
 }
 
 .login-footer {

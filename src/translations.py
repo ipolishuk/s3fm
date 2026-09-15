@@ -8,8 +8,8 @@ TRANSLATIONS = {
     'en': {
         # Login
         'login.title': 'Login - S3 File Manager',
-        'login.username': 'Login:',
-        'login.password': 'Password:',
+        'login.username': 'Login',
+        'login.password': 'Password',
         'login.submit': 'Log in',
         'login.footer': 'Sign in to access the file manager',
         'login.brand_title': 'S3 File Manager',
@@ -753,8 +753,8 @@ TRANSLATIONS = {
     'ru': {
         # Login
         'login.title': 'Вход - S3 File Manager',
-        'login.username': 'Логин:',
-        'login.password': 'Пароль:',
+        'login.username': 'Логин',
+        'login.password': 'Пароль',
         'login.submit': 'Вход',
         'login.footer': 'Войдите в систему для доступа к файловому менеджеру',
         'login.brand_title': 'S3 File Manager',

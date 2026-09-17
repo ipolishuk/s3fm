@@ -23,7 +23,7 @@
 - `SSO_ONLY` — `true` скрывает форму логин/пароль, только SSO;
 - `SSO_AUTO_PROVISION` — `true` создаёт пользователя в БД при первом входе;
 - `SSO_DEFAULT_ROLE` — роль для автосоздания (`storage_viewer` по умолчанию);
-- `OIDC_HTTP_TIMEOUT` — таймаут HTTP-запросов к Keycloak в секундах (по умолчанию `30`).
+- `OIDC_HTTP_TIMEOUT` — read-таймаут HTTP-запросов к Keycloak в секундах (по умолчанию `10`, connect до `5`). После обмена code профиль берётся из `id_token`; `userinfo` вызывается только если в токене нет username.
 
 ### LDAP lookup (добавление / копирование пользователя)
 

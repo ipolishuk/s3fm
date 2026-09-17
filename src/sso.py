@@ -1,4 +1,6 @@
 # sso.py — авторизация через OIDC (Keycloak и совместимые IdP)
+import base64
+import json
 import logging
 import os
 import secrets
@@ -18,7 +20,15 @@ bp = Blueprint('sso', __name__)
 
 _DEFAULT_SCOPES = 'openid profile email'
 _DEFAULT_USERNAME_CLAIMS = ('preferred_username', 'username', 'sub', 'email')
-_OIDC_HTTP_TIMEOUT = int(os.environ.get('OIDC_HTTP_TIMEOUT', '30'))
+_OIDC_HTTP_TIMEOUT = int(os.environ.get('OIDC_HTTP_TIMEOUT', '10'))
+_OIDC_CONNECT_TIMEOUT = 5
+
+
+def _oidc_timeout():
+    """(connect, read). Короткий connect, чтобы не ждать мёртвый IPv6 до полного read timeout."""
+    read = max(1, _OIDC_HTTP_TIMEOUT)
+    connect = min(_OIDC_CONNECT_TIMEOUT, read)
+    return (connect, read)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -109,7 +119,11 @@ def connection_status() -> dict:
 
     discovery = f'{issuer}/.well-known/openid-configuration'
     try:
-        resp = requests.get(discovery, timeout=min(5, max(1, _OIDC_HTTP_TIMEOUT)))
+        probe_timeout = min(5, max(1, _OIDC_HTTP_TIMEOUT))
+        resp = requests.get(
+            discovery,
+            timeout=(min(_OIDC_CONNECT_TIMEOUT, probe_timeout), probe_timeout),
+        )
         if resp.status_code >= 400:
             return {
                 **base,
@@ -309,7 +323,24 @@ def build_federated_logout_url():
     return f'{end_session}?{urlencode(params)}'
 
 
-def _exchange_authorization_code(code: str) -> dict:
+def _b64url_decode(segment: str) -> bytes:
+    padding = '=' * ((4 - len(segment) % 4) % 4)
+    return base64.urlsafe_b64decode(segment + padding)
+
+
+def _claims_from_id_token(id_token: str) -> dict:
+    """Payload JWT без проверки подписи: токен только что получен с token endpoint по TLS."""
+    token = (id_token or '').strip()
+    if token.count('.') < 2:
+        return {}
+    try:
+        payload = json.loads(_b64url_decode(token.split('.', 2)[1]))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _exchange_authorization_code(code: str, http=None) -> dict:
     redirect_uri = get_redirect_uri()
     token_url = f'{_oidc_base()}/token'
     data = {
@@ -319,8 +350,9 @@ def _exchange_authorization_code(code: str) -> dict:
         'client_id': os.environ['OIDC_CLIENT_ID'].strip(),
         'client_secret': os.environ['OIDC_CLIENT_SECRET'].strip(),
     }
+    client = http or requests
     try:
-        resp = requests.post(token_url, data=data, timeout=_OIDC_HTTP_TIMEOUT)
+        resp = client.post(token_url, data=data, timeout=_oidc_timeout())
     except requests.RequestException as exc:
         raise RuntimeError(
             f'OIDC token endpoint unreachable ({token_url}): {exc}'
@@ -350,31 +382,46 @@ def _exchange_authorization_code(code: str) -> dict:
     return payload
 
 
-def _fetch_userinfo(access_token: str) -> dict:
-    resp = requests.get(
+def _fetch_userinfo(access_token: str, http=None) -> dict:
+    client = http or requests
+    resp = client.get(
         f'{_oidc_base()}/userinfo',
         headers={'Authorization': f'Bearer {access_token}'},
-        timeout=_OIDC_HTTP_TIMEOUT,
+        timeout=_oidc_timeout(),
     )
     resp.raise_for_status()
     payload = resp.json()
     return payload if isinstance(payload, dict) else {}
 
 
-def _userinfo_from_token(token_payload: dict) -> dict:
-    userinfo = token_payload.get('userinfo')
-    if isinstance(userinfo, dict) and userinfo:
-        return userinfo
+def _userinfo_from_token(token_payload: dict, http=None) -> dict:
+    embedded = token_payload.get('userinfo') if isinstance(token_payload, dict) else None
+    if isinstance(embedded, dict) and embedded:
+        return embedded
 
-    access_token = (token_payload.get('access_token') or '').strip()
+    claims = _claims_from_id_token(
+        (token_payload.get('id_token') or '').strip() if isinstance(token_payload, dict) else ''
+    )
+    if resolve_username_from_userinfo(claims):
+        return claims
+
+    access_token = ''
+    if isinstance(token_payload, dict):
+        access_token = (token_payload.get('access_token') or '').strip()
     if not access_token:
-        return {}
+        return claims
 
     try:
-        return _fetch_userinfo(access_token)
+        fetched = _fetch_userinfo(access_token, http=http)
     except Exception as exc:
         logger.warning('OIDC userinfo request failed: %s', exc)
-        return {}
+        return claims
+
+    if not fetched:
+        return claims
+    merged = dict(claims)
+    merged.update(fetched)
+    return merged
 
 
 def _sso_disabled():
@@ -456,14 +503,15 @@ def sso_callback():
         _log_app('warn', 'OIDC callback without code', 'sso_callback')
         return redirect(url_for('auth.login_page', sso_error='token'))
 
-    try:
-        token_payload = _exchange_authorization_code(code)
-    except Exception as exc:
-        logger.exception('OIDC token exchange failed')
-        _log_app('error', f'OIDC token exchange failed: {exc}', 'sso_callback')
-        return redirect(url_for('auth.login_page', sso_error='token'))
+    with requests.Session() as http:
+        try:
+            token_payload = _exchange_authorization_code(code, http=http)
+        except Exception as exc:
+            logger.exception('OIDC token exchange failed')
+            _log_app('error', f'OIDC token exchange failed: {exc}', 'sso_callback')
+            return redirect(url_for('auth.login_page', sso_error='token'))
 
-    userinfo = _userinfo_from_token(token_payload)
+        userinfo = _userinfo_from_token(token_payload, http=http)
     username = resolve_username_from_userinfo(userinfo)
     if not username:
         _log_app('warn', 'OIDC: username claim not found in userinfo', 'sso_callback')

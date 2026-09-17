@@ -129,12 +129,6 @@ body {
   padding-right: 40px;
 }
 
-.login-field .form-control::placeholder,
-.login-field input::placeholder {
-  color: var(--text-secondary);
-  opacity: 0.85;
-}
-
 .login-field .form-control:focus,
 .login-field input[type="text"]:focus,
 .login-field input[type="password"]:focus {

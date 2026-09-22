@@ -105,6 +105,9 @@ function setupSettingsPanel() {
         settingsView.classList.add('hidden');
         var secondaryToolbar = document.getElementById('secondaryToolbar');
         if (secondaryToolbar) secondaryToolbar.classList.remove('settings-toolbar-search');
+        if (typeof window.hideSettingsStatusToolbarExtras === 'function') {
+            window.hideSettingsStatusToolbarExtras();
+        }
         containerContent.classList.remove('hidden');
         onSettingsTableCleared();
         if (typeof window.updateFilesPaginationUI === 'function') {

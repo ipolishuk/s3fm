@@ -7,6 +7,7 @@
     var _lastStatus = null;
     var _refreshBound = false;
     var _abortCtrl = null;
+    var _loadSeq = 0;
     var STATUS_FETCH_TIMEOUT_MS = 35000;
 
     function t(key, fallback) {
@@ -182,7 +183,24 @@
         ensureRefreshBound();
     }
 
+    function isStatusTabActive() {
+        return !!(window.settingsPanelState && window.settingsPanelState.currentTab === 'status');
+    }
+
+    function abortStatusFetch() {
+        if (!_abortCtrl) return;
+        try { _abortCtrl.abort(); } catch (e) { /* ignore */ }
+        _abortCtrl = null;
+    }
+
+    function cancelSettingsStatusLoad() {
+        _loadSeq += 1;
+        abortStatusFetch();
+        setRefreshBusy(false);
+    }
+
     function hideStatusToolbarExtras() {
+        cancelSettingsStatusLoad();
         var refreshBtn = document.getElementById('settingsStatusRefreshBtn');
         if (refreshBtn) refreshBtn.classList.add('hidden');
         var secondaryToolbar = document.getElementById('secondaryToolbar');
@@ -235,14 +253,14 @@
         var container = document.getElementById('settingsContentInner');
         if (!container) return;
 
-        if (_abortCtrl) {
-            try { _abortCtrl.abort(); } catch (e) { /* ignore */ }
-        }
+        var seq = ++_loadSeq;
+        abortStatusFetch();
         _abortCtrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
         var timer = null;
         if (_abortCtrl) {
             timer = setTimeout(function () {
-                try { _abortCtrl.abort(); } catch (e) { /* ignore */ }
+                if (seq !== _loadSeq) return;
+                abortStatusFetch();
             }, STATUS_FETCH_TIMEOUT_MS);
         }
 
@@ -258,8 +276,13 @@
                 '</div>';
         }
 
+        function isCurrentLoad() {
+            return seq === _loadSeq && isStatusTabActive();
+        }
+
         fetchServicesStatus(_abortCtrl ? _abortCtrl.signal : null)
             .then(function (res) {
+                if (!isCurrentLoad()) return;
                 if (!res.ok) {
                     var err = (res.data && res.data.error) || t('error.unexpected', 'Unexpected error');
                     container.innerHTML =
@@ -278,6 +301,7 @@
                 filterStatusSections();
             })
             .catch(function (err) {
+                if (!isCurrentLoad()) return;
                 var aborted = err && (err.name === 'AbortError' || err.code === 20);
                 var msg = aborted
                     ? (t('settings.status.timeout', 'Status check timed out'))
@@ -298,7 +322,7 @@
             })
             .finally(function () {
                 if (timer) clearTimeout(timer);
-                setRefreshBusy(false);
+                if (isCurrentLoad()) setRefreshBusy(false);
             });
     }
 
@@ -337,4 +361,5 @@
     window.getCachedLdapStatus = getCachedLdapStatus;
     window.getStatusServicesCount = getStatusServicesCount;
     window.hideSettingsStatusToolbarExtras = hideStatusToolbarExtras;
+    window.cancelSettingsStatusLoad = cancelSettingsStatusLoad;
 })();

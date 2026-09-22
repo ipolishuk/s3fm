@@ -895,6 +895,31 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
   margin: 0;
 }
 
+.settings-col-sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.settings-col-sort-label {
+  min-width: 0;
+}
+
+.settings-col-sort-btn.icon-btn {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.settings-col-sort-btn.icon-btn.is-active {
+  color: var(--text-secondary);
+}
+
 .content-table td > * {
   margin: 0;
 }

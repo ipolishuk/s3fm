@@ -1,3 +1,124 @@
+function settingsSortLabel(key, fallback) {
+    var value = (window.I18N || {})[key];
+    return (value != null && value !== '') ? value : fallback;
+}
+
+function settingsEscapeHtml(value) {
+    if (window.S3FM && typeof window.S3FM.escapeHtml === 'function') {
+        return window.S3FM.escapeHtml(value);
+    }
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function settingsSortableHeader(label, sortKey) {
+    var title = settingsSortLabel('settings.sort', 'Sort');
+    return '<div class="content-table-header settings-col-sort-header">' +
+        '<span class="settings-col-sort-label">' + settingsEscapeHtml(label) + '</span>' +
+        '<button type="button" class="btn icon-btn settings-col-sort-btn" data-sort-key="' + sortKey + '" ' +
+        'title="' + settingsEscapeHtml(title) + '" aria-label="' + settingsEscapeHtml(title) + '" aria-pressed="false">' +
+        '<i class="fa-solid fa-arrow-down-a-z" aria-hidden="true"></i></button></div>';
+}
+
+function settingsSortState(scope) {
+    window._settingsColumnSort = window._settingsColumnSort || {};
+    if (!window._settingsColumnSort[scope]) {
+        window._settingsColumnSort[scope] = { key: 'bucket_name', dir: 'asc' };
+    }
+    return window._settingsColumnSort[scope];
+}
+
+function setSettingsSortState(scope, state) {
+    window._settingsColumnSort = window._settingsColumnSort || {};
+    window._settingsColumnSort[scope] = state;
+}
+
+function updateSettingsSortButtons(table, state) {
+    if (!table) return;
+    var activeKey = state && state.key;
+    var desc = !!(state && state.dir === 'desc');
+    table.querySelectorAll('.settings-col-sort-btn').forEach(function (btn) {
+        var key = btn.getAttribute('data-sort-key');
+        var active = !!activeKey && key === activeKey;
+        btn.classList.toggle('is-active', active);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        var title = !active
+            ? settingsSortLabel('settings.sort', 'Sort')
+            : (desc
+                ? settingsSortLabel('settings.sort_desc', 'Sorted descending')
+                : settingsSortLabel('settings.sort_asc', 'Sorted ascending'));
+        btn.title = title;
+        btn.setAttribute('aria-label', title);
+        var icon = btn.querySelector('i');
+        if (icon) {
+            icon.classList.remove('fa-arrow-down-a-z', 'fa-arrow-up-z-a');
+            icon.classList.add(active && desc ? 'fa-arrow-up-z-a' : 'fa-arrow-down-a-z');
+        }
+    });
+}
+
+function reorderSettingsTableRows(table, state) {
+    var tbody = table && table.querySelector('tbody');
+    if (!tbody) return;
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    var col = -1;
+    if (state && state.key) {
+        var btn = table.querySelector('.settings-col-sort-btn[data-sort-key="' + state.key + '"]');
+        var th = btn && btn.closest('th');
+        col = th ? th.cellIndex : -1;
+    }
+    var locale = document.documentElement.lang || 'en';
+    rows.sort(function (a, b) {
+        if (!state || !state.key || col < 0) {
+            return (parseInt(a.getAttribute('data-sort-index'), 10) || 0) -
+                (parseInt(b.getAttribute('data-sort-index'), 10) || 0);
+        }
+        var av = ((a.cells[col] && a.cells[col].textContent) || '').trim();
+        var bv = ((b.cells[col] && b.cells[col].textContent) || '').trim();
+        var cmp = av.localeCompare(bv, locale, { sensitivity: 'base', numeric: true });
+        return state.dir === 'desc' ? -cmp : cmp;
+    });
+    rows.forEach(function (tr) { tbody.appendChild(tr); });
+}
+
+function bindSettingsColumnSort(scope) {
+    var table = document.querySelector('#settingsContentInner > table.content-table');
+    if (!table) return;
+    var tbody = table.querySelector('tbody');
+    if (!tbody) return;
+    Array.prototype.forEach.call(tbody.querySelectorAll('tr'), function (tr, index) {
+        tr.setAttribute('data-sort-index', String(index));
+    });
+    var state = settingsSortState(scope);
+    if (state.key) reorderSettingsTableRows(table, state);
+    updateSettingsSortButtons(table, state);
+    if (table._settingsSortBound) return;
+    table._settingsSortBound = true;
+    table.addEventListener('click', function (e) {
+        var btn = e.target.closest('.settings-col-sort-btn');
+        if (!btn || !table.contains(btn)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var key = btn.getAttribute('data-sort-key');
+        var prev = settingsSortState(scope);
+        var next = (prev.key === key && prev.dir === 'asc')
+            ? { key: key, dir: 'desc' }
+            : { key: key, dir: 'asc' };
+        setSettingsSortState(scope, next);
+        reorderSettingsTableRows(table, next);
+        updateSettingsSortButtons(table, next);
+        if (typeof window.onSettingsTableRendered === 'function') {
+            window.onSettingsTableRendered();
+        }
+    });
+}
+
+window.settingsSortableHeader = settingsSortableHeader;
+window.bindSettingsColumnSort = bindSettingsColumnSort;
+
 // Settings shell panel
 function setupSettingsPanel() {
     const settingsBtn = document.getElementById('settingsMenuItem');

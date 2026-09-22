@@ -987,11 +987,20 @@
         var indexAllTitle = i18n['settings.search.table_index_enabled'] || 'Enabled';
         var reindexAllTitle = i18n['settings.search.reindex_all'] || 'Reindex all';
         var reindexAllDisabled = !meiliRunnable ? ' disabled' : '';
+        var bucketNameHeader = (typeof window.settingsSortableHeader === 'function')
+            ? window.settingsSortableHeader(i18n['settings.table_bucket_name'] || 'Bucket Name', 'bucket_name')
+            : '<div class="content-table-header">' + escapeHtml(i18n['settings.table_bucket_name'] || 'Bucket Name') + '</div>';
+        var displayNameHeader = (typeof window.settingsSortableHeader === 'function')
+            ? window.settingsSortableHeader(i18n['settings.table_display_name'] || 'Display Name', 'display_name')
+            : '<div class="content-table-header">' + escapeHtml(i18n['settings.table_display_name'] || 'Display Name') + '</div>';
+        var cloudHeader = (typeof window.settingsSortableHeader === 'function')
+            ? window.settingsSortableHeader(i18n['settings.table_cloud'] || 'Cloud', 'cloud')
+            : '<div class="content-table-header">' + escapeHtml(i18n['settings.table_cloud'] || 'Cloud') + '</div>';
         var html = '<table class="content-table settings-search-buckets-table"><thead><tr>' +
-            '<th><div class="content-table-header">' + escapeHtml(i18n['settings.table_bucket_name'] || 'Bucket Name') + '</div></th>' +
-            '<th class="settings-col-display"><div class="content-table-header">' + escapeHtml(i18n['settings.table_display_name'] || 'Display Name') + '</div></th>' +
+            '<th>' + bucketNameHeader + '</th>' +
+            '<th class="settings-col-display">' + displayNameHeader + '</th>' +
             '<th class="settings-col-bucket-id"><div class="content-table-header">' + escapeHtml(i18n['settings.table_bucket_id'] || 'Bucket ID') + '</div></th>' +
-            '<th class="settings-col-cloud"><div class="content-table-header">' + escapeHtml(i18n['settings.table_cloud'] || 'Cloud') + '</div></th>' +
+            '<th class="settings-col-cloud">' + cloudHeader + '</th>' +
             '<th class="settings-col-reindexed-at"><div class="content-table-header">' + escapeHtml(reindexTh) + '</div></th>' +
             '<th class="settings-col-search-index">' +
             '<div class="content-table-header settings-search-col-header">' +
@@ -1691,6 +1700,9 @@
                 }
 
                 inner.innerHTML = renderSearchBucketsTable(items, status);
+                if (typeof window.bindSettingsColumnSort === 'function') {
+                    window.bindSettingsColumnSort('search');
+                }
                 applySearchIndexEnabledRowState();
                 initSearchIndexAllHeaderState();
                 updateSearchToolbar(status);

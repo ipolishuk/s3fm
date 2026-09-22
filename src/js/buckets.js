@@ -650,11 +650,20 @@
                 var tlsThTitle = (t['settings.table_tls_th_title'] || '').replace(/"/g, '&quot;');
                 var caTh = (t['settings.table_ca_path'] || 'CA path').replace(/"/g, '&quot;');
                 var caThTitle = (t['settings.table_ca_path_th_title'] || '').replace(/"/g, '&quot;');
+                var bucketNameHeader = (typeof window.settingsSortableHeader === 'function')
+                    ? window.settingsSortableHeader(t['settings.table_bucket_name'] || 'Bucket Name', 'bucket_name')
+                    : '<div class="content-table-header">' + (t['settings.table_bucket_name'] || 'Bucket Name') + '</div>';
+                var displayNameHeader = (typeof window.settingsSortableHeader === 'function')
+                    ? window.settingsSortableHeader(t['settings.table_display_name'] || 'Display Name', 'display_name')
+                    : '<div class="content-table-header">' + (t['settings.table_display_name'] || 'Display Name') + '</div>';
+                var cloudHeader = (typeof window.settingsSortableHeader === 'function')
+                    ? window.settingsSortableHeader(t['settings.table_cloud'] || 'Cloud', 'cloud')
+                    : '<div class="content-table-header">' + (t['settings.table_cloud'] || 'Cloud') + '</div>';
                 var html = '<table class="content-table"><thead><tr>'
-                    + '<th><div class="content-table-header">' + (t['settings.table_bucket_name'] || 'Bucket Name') + '</div></th>'
-                    + '<th class="settings-col-display"><div class="content-table-header">' + (t['settings.table_display_name'] || 'Display Name') + '</div></th>'
+                    + '<th>' + bucketNameHeader + '</th>'
+                    + '<th class="settings-col-display">' + displayNameHeader + '</th>'
                     + '<th class="settings-col-bucket-id"><div class="content-table-header">' + (t['settings.table_bucket_id'] || 'Bucket ID') + '</div></th>'
-                    + '<th><div class="content-table-header">' + (t['settings.table_cloud'] || 'Cloud') + '</div></th>'
+                    + '<th>' + cloudHeader + '</th>'
                     + '<th class="content-table-col-compact settings-col-credentials" title="' + credThTitle + '"><div class="content-table-header">' + credTh + '</div></th>'
                     + '<th class="content-table-col-compact settings-col-tls" title="' + tlsThTitle + '"><div class="content-table-header">' + tlsTh + '</div></th>'
                     + '<th class="content-table-col-compact settings-col-ca" title="' + caThTitle + '"><div class="content-table-header">' + caTh + '</div></th>'
@@ -687,6 +696,9 @@
                 });
                 html += '</tbody></table>';
                 settingsContentInner.innerHTML = html;
+                if (typeof window.bindSettingsColumnSort === 'function') {
+                    window.bindSettingsColumnSort('buckets');
+                }
                 if (typeof window.onSettingsTableRendered === 'function') {
                     window.onSettingsTableRendered({ preservePage: soft });
                 }

@@ -405,19 +405,17 @@
   width: 100%;
 }
 
-#addUserForm .add-user-status-controls > .dropdown {
-  flex: 1 1 auto;
+#addUserForm .add-user-status-controls > .dropdown,
+#addUserForm .add-user-status-controls > #addUserActiveUntil {
+  flex: 1 1 0;
+  width: calc((100% - 4px) / 2);
+  max-width: calc((100% - 4px) / 2);
   min-width: 0;
+  box-sizing: border-box;
 }
 
 #addUserForm .add-user-status-controls > .dropdown .dropdown-trigger {
   width: 100%;
-}
-
-#addUserForm .add-user-status-controls > #addUserActiveUntil {
-  flex: 0 0 9.25rem;
-  width: 9.25rem;
-  min-width: 0;
 }
 
 #addUserForm #addUserActiveUntil:disabled {

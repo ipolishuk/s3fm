@@ -26,6 +26,7 @@ from users import (
     hash_password,
     password_needs_upgrade,
     sync_logged_in_session_from_db,
+    user_is_active,
     verify_password,
 )
 
@@ -78,6 +79,10 @@ def login():
             record_login_failure(client_ip, username)
             log_warning(f'Invalid password for user {username}', context)
             return jsonify({'error': _('error.invalid_credentials')}), 401
+
+        if not user_is_active(user):
+            log_warning(f'Inactive account login attempt for user {username}', context)
+            return jsonify({'error': _('login.error_inactive')}), 403
 
         if password_needs_upgrade(user['password_hash']):
             update_user(

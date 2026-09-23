@@ -67,6 +67,8 @@ from settings_helpers import (
     _normalize_bucket_roles_payload,
     _normalize_role_permissions,
     _parse_user_email_field,
+    _parse_is_active,
+    _parse_active_until,
     _resolve_bucket_form_endpoint_url,
     _role_valid_for_user,
     _roles_for_bucket_access,
@@ -136,12 +138,17 @@ def settings_list_users_impl():
         if email is False:
             return jsonify({'error': _('error.user_email_invalid')}), 400
         display_name = (data.get('display_name') or '').strip() or None
+        is_active = _parse_is_active(data, default=True)
+        active_until = _parse_active_until(data, is_active)
+        if active_until is False:
+            return jsonify({'error': _('error.user_active_until_invalid')}), 400
         if get_user(username):
             return jsonify({'error': _('error.user_exists')}), 400
         password_hash = hash_password(password)
         insert_user(
             username, password_hash, role, buckets, clouds,
             bucket_roles=bucket_roles, email=email, full_name=display_name,
+            is_active=is_active, active_until=active_until,
         )
         log_info(f"Created user: {username}", 'create_objects')
         return jsonify({'ok': True})
@@ -504,6 +511,8 @@ def settings_user_by_name_impl(username):
                 'display_name': user_display_name(user),
                 'created_at': _dt_iso(user.get('created_at')),
                 'last_login_at': _dt_iso(user.get('last_login_at')),
+                'is_active': user.get('is_active') is not False,
+                'active_until': user.get('active_until'),
                 'has_custom_roles': bool(user.get('has_custom_roles')),
             })
         except Exception as e:
@@ -550,11 +559,21 @@ def settings_user_by_name_impl(username):
         if email is False:
             return jsonify({'error': _('error.user_email_invalid')}), 400
         display_name = (data.get('display_name') or '').strip() or None
+        is_active = _parse_is_active(data, default=True)
+        if (username or '').strip().lower() == 'admin' and not is_active:
+            return jsonify({'error': _('error.cannot_disable_admin')}), 400
+        active_until = None if (username or '').strip().lower() == 'admin' else _parse_active_until(data, is_active)
+        if active_until is False:
+            return jsonify({'error': _('error.user_active_until_invalid')}), 400
         if not update_user(
             username, role, buckets, clouds,
             password_hash=password_hash, bucket_roles=bucket_roles, email=email, full_name=display_name,
+            is_active=is_active, active_until=active_until,
         ):
             return jsonify({'error': _('error.bucket_not_found')}), 404
+        if username == session.get('username') and not is_active:
+            session.clear()
+            return jsonify({'ok': True, 'session_cleared': True})
         session_updated = False
         if username == session.get('username'):
             session_updated = sync_logged_in_session_from_db()

@@ -6,6 +6,7 @@ import socket
 import ssl
 import threading
 import time
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
@@ -517,3 +518,230 @@ def lookup_user(username: str) -> LdapUser:
 def lookup_user_payload(username: str) -> Dict[str, Any]:
     """Search payload for Flask jsonify: query, count, users[]."""
     return search_users(username)
+
+
+# userAccountControl bit ACCOUNTDISABLE — учётка отключена в Active Directory.
+_ACCOUNT_DISABLE_FLAG = 2
+_STATUS_SYNC_STATE_KEY = 'ldap_account_status_sync_at'
+_STATUS_SYNC_LOCK_KEY = 87422101
+_STATUS_SYNC_CHUNK = 40
+_status_sync_lock = threading.Lock()
+_status_sync_started = False
+
+
+def ldap_account_disabled(user_account_control) -> bool:
+    """True, если в userAccountControl включён бит блокировки учётки."""
+    try:
+        return bool(int(str(user_account_control).strip()) & _ACCOUNT_DISABLE_FLAG)
+    except (TypeError, ValueError):
+        return False
+
+
+def status_sync_interval_sec() -> int:
+    """Интервал сверки с LDAP. 0 — сверка выключена."""
+    hours = _env_int('LDAP_STATUS_SYNC_HOURS', 24)
+    if hours <= 0:
+        return 0
+    return hours * 3600
+
+
+def _chunks(items: List[str], size: int):
+    step = max(1, size)
+    for index in range(0, len(items), step):
+        yield items[index:index + step]
+
+
+def _disabled_accounts_filter(usernames: List[str]) -> str:
+    parts = ''.join(
+        f'(sAMAccountName={escape_filter_chars(name)})'
+        for name in usernames
+    )
+    return f'(&(objectCategory=person)(objectClass=user)(|{parts}))'
+
+
+def disabled_usernames_in_ldap(usernames: List[str]) -> Optional[set]:
+    """
+    Логины из списка, отключённые в AD.
+    None — LDAP не настроен или поиск не удался (никого не выключать).
+    Нет записи в каталоге — локальная учётка, её не выключаем.
+    """
+    by_lower: Dict[str, str] = {}
+    for raw in usernames or []:
+        name = (raw or '').strip()
+        if not name or name.lower() == 'admin':
+            continue
+        by_lower.setdefault(name.lower(), name)
+    if not by_lower:
+        return set()
+    if not is_ldap_configured() or escape_filter_chars is None or SUBTREE is None:
+        return None
+
+    cfg = ldap_config()
+    try:
+        conn = _create_service_connection(receive_timeout=max(15, cfg['time_limit']))
+    except Exception:
+        return None
+    try:
+        disabled: set = set()
+        time_limit = max(int(cfg['time_limit'] or 0), 30)
+        for chunk in _chunks(list(by_lower.values()), _STATUS_SYNC_CHUNK):
+            ok = conn.search(
+                cfg['base_dn'],
+                _disabled_accounts_filter(chunk),
+                SUBTREE,
+                attributes=['sAMAccountName', 'userAccountControl'],
+                size_limit=len(chunk),
+                time_limit=time_limit,
+            )
+            description = ''
+            if isinstance(getattr(conn, 'result', None), dict):
+                description = str(conn.result.get('description') or '')
+            if not ok and description not in ('success', 'sizeLimitExceeded'):
+                err = getattr(conn, 'last_error', None) or description or 'search failed'
+                raise LDAPServiceError(f'LDAP account search failed: {err}')
+            for entry in conn.entries or []:
+                login = _first(entry, 'sAMAccountName')
+                flags = _first(entry, 'userAccountControl')
+                original = by_lower.get(login.lower()) if login else None
+                if original and ldap_account_disabled(flags):
+                    disabled.add(original)
+        return disabled
+    except Exception:
+        return None
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+
+
+def _seconds_until_status_sync() -> float:
+    from db import get_app_state
+
+    interval = status_sync_interval_sec()
+    if interval <= 0:
+        return float(interval)
+    raw = get_app_state(_STATUS_SYNC_STATE_KEY)
+    if not raw:
+        return 0.0
+    try:
+        last = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return 0.0
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    elapsed = (datetime.now(timezone.utc) - last).total_seconds()
+    return max(0.0, interval - elapsed)
+
+
+def _advisory_try_lock(conn) -> bool:
+    with conn.cursor() as cur:
+        cur.execute('SELECT pg_try_advisory_lock(%s)', (_STATUS_SYNC_LOCK_KEY,))
+        row = cur.fetchone()
+    if not row:
+        return False
+    if isinstance(row, dict):
+        return bool(next(iter(row.values())))
+    return bool(row[0])
+
+
+def _advisory_unlock(conn) -> None:
+    with conn.cursor() as cur:
+        cur.execute('SELECT pg_advisory_unlock(%s)', (_STATUS_SYNC_LOCK_KEY,))
+
+
+def sync_ldap_account_status():
+    """
+    Выключить в s3fm включённые учётки, которые отключены в AD.
+    Возвращает число выключенных, 0 если сверка не нужна, 'busy' если её ведёт другой процесс,
+    None если LDAP или БД недоступны.
+    """
+    from logs import log_info, log_warning
+
+    if status_sync_interval_sec() <= 0 or not is_ldap_configured():
+        return 0
+    from db import (
+        disable_users,
+        get_connection,
+        list_active_usernames,
+        set_app_state,
+    )
+
+    conn = None
+    locked = False
+    try:
+        conn = get_connection()
+        locked = _advisory_try_lock(conn)
+        if not locked:
+            return 'busy'
+        if _seconds_until_status_sync() > 0:
+            return 0
+        usernames = list_active_usernames()
+        if usernames is None:
+            log_warning('LDAP account sync skipped: database unavailable', 'ldap_account_sync')
+            return None
+        disabled = disabled_usernames_in_ldap(usernames)
+        if disabled is None:
+            log_warning('LDAP account sync skipped: directory lookup failed', 'ldap_account_sync')
+            return None
+        updated = disable_users(sorted(disabled))
+        set_app_state(_STATUS_SYNC_STATE_KEY, datetime.now(timezone.utc).isoformat())
+        if updated:
+            shown = ', '.join(sorted(disabled)[:20])
+            log_info(
+                f'LDAP account sync disabled {updated} user(s): {shown}',
+                'ldap_account_sync',
+            )
+        else:
+            log_info('LDAP account sync: no disabled accounts', 'ldap_account_sync')
+        return updated
+    except Exception as exc:
+        log_warning(f'LDAP account sync failed: {exc}', 'ldap_account_sync')
+        return None
+    finally:
+        if conn is not None:
+            if locked:
+                try:
+                    _advisory_unlock(conn)
+                except Exception:
+                    pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def schedule_account_status_sync() -> None:
+    """Фоновая сверка статуса УЗ с AD. Не чаще интервала LDAP_STATUS_SYNC_HOURS."""
+    global _status_sync_started
+    from logs import log_info
+
+    if status_sync_interval_sec() <= 0 or not is_ldap_configured():
+        return
+    with _status_sync_lock:
+        if _status_sync_started:
+            return
+        _status_sync_started = True
+
+    def _loop():
+        from logs import log_warning
+
+        while True:
+            try:
+                if status_sync_interval_sec() <= 0 or not is_ldap_configured():
+                    time.sleep(3600)
+                    continue
+                wait = _seconds_until_status_sync()
+                if wait > 0:
+                    time.sleep(wait)
+                    continue
+                outcome = sync_ldap_account_status()
+                if outcome is None or outcome == 'busy':
+                    time.sleep(3600)
+            except Exception as exc:
+                log_warning(f'LDAP account sync loop failed: {exc}', 'ldap_account_sync')
+                time.sleep(3600)
+
+    threading.Thread(target=_loop, name='ldap-account-status', daemon=True).start()
+    hours = max(1, status_sync_interval_sec() // 3600)
+    log_info(f'LDAP account status sync enabled: every {hours} hour(s)', 'ldap_account_sync')

@@ -2,8 +2,10 @@
 import os
 import json
 import secrets
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import psycopg2
+
+_ACTIVE_UNTIL_UNSET = object()
 from psycopg2.extras import RealDictCursor
 
 def get_database_url():
@@ -435,6 +437,11 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS middle_name VARCHAR(255);
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255);
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+UPDATE public.users SET is_active = true WHERE is_active IS NULL;
+ALTER TABLE public.users ALTER COLUMN is_active SET DEFAULT true;
+ALTER TABLE public.users ALTER COLUMN is_active SET NOT NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS active_until DATE;
 UPDATE public.users SET created_at = NOW() WHERE created_at IS NULL;
 
 DO $$
@@ -462,6 +469,12 @@ CREATE TABLE IF NOT EXISTS public.schema_migrations (
 );
 
 CREATE TABLE IF NOT EXISTS public.meilisearch (
+    key VARCHAR(128) PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.app_state (
     key VARCHAR(128) PRIMARY KEY,
     value TEXT NOT NULL DEFAULT '',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -767,6 +780,17 @@ def bucket_roles_to_allowed_buckets(bucket_roles, fallback_buckets=None):
     return ids
 
 
+def _iso_date(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text = str(value).strip()
+    return text[:10] or None
+
+
 def get_user(username):
     """
     Возвращает пользователя по username или None.
@@ -785,7 +809,7 @@ def get_user(username):
                     """
                     SELECT u.username, u.password, u.role, u.buckets, u.clouds, u.email,
                            u.given_name, u.family_name, u.middle_name, u.full_name,
-                           u.created_at, u.last_login_at,
+                           u.created_at, u.last_login_at, u.is_active, u.active_until,
                            EXISTS (
                                SELECT 1 FROM user_roles ubr
                                WHERE ubr.username = u.username
@@ -807,6 +831,27 @@ def get_user(username):
                 for bid in grant_ids:
                     if bid not in buckets:
                         buckets.append(bid)
+            is_active = row.get('is_active') is not False
+            active_until = _iso_date(row.get('active_until'))
+            if is_active and active_until and (username or '').strip().lower() != 'admin':
+                with conn.cursor() as cur_exp:
+                    cur_exp.execute(
+                        """
+                        UPDATE users
+                        SET is_active = false, active_until = NULL
+                        WHERE username = %s
+                          AND is_active = true
+                          AND active_until IS NOT NULL
+                          AND active_until < CURRENT_DATE
+                          AND LOWER(username) <> 'admin'
+                        """,
+                        (username,),
+                    )
+                    expired = cur_exp.rowcount > 0
+                if expired:
+                    conn.commit()
+                    is_active = False
+                    active_until = None
             return {
                 'password_hash': row['password'],
                 'role': row['role'],
@@ -820,12 +865,75 @@ def get_user(username):
                 'full_name': _normalize_user_text(row.get('full_name')),
                 'created_at': row.get('created_at'),
                 'last_login_at': row.get('last_login_at'),
+                'is_active': is_active,
+                'active_until': active_until,
                 'has_custom_roles': bool(row.get('has_custom_roles')),
             }
         finally:
             conn.close()
     except Exception:
         return None
+
+
+def user_session_allowed(username):
+    """
+    Доступ по уже открытой сессии.
+    True — учётка включена. False — нет пользователя, выключена или срок истёк.
+    None — сбой БД, сессию не сбрасывать.
+    Просроченную дату сохраняет как is_active=false.
+    """
+    name = (username or '').strip()
+    if not name:
+        return False
+    try:
+        conn = get_connection()
+    except Exception:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT is_active,
+                       (
+                           is_active IS NOT FALSE
+                           AND active_until IS NOT NULL
+                           AND active_until < CURRENT_DATE
+                           AND LOWER(username) <> 'admin'
+                       ) AS expired
+                FROM users
+                WHERE username = %s
+                """,
+                (name,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return False
+            if row.get('expired'):
+                try:
+                    cur.execute(
+                        """
+                        UPDATE users
+                        SET is_active = false, active_until = NULL
+                        WHERE username = %s
+                          AND is_active = true
+                          AND active_until IS NOT NULL
+                          AND active_until < CURRENT_DATE
+                          AND LOWER(username) <> 'admin'
+                        """,
+                        (name,),
+                    )
+                    conn.commit()
+                except Exception:
+                    pass
+                return False
+            return row.get('is_active') is not False
+    except Exception:
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def get_buckets_config():
@@ -1593,6 +1701,93 @@ def list_endpoints():
         return []
 
 
+def list_active_usernames():
+    """Включённые пользователи, кроме admin. None — сбой БД."""
+    try:
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT username
+                    FROM users
+                    WHERE is_active = true
+                      AND LOWER(username) <> 'admin'
+                    ORDER BY LOWER(username)
+                    """
+                )
+                rows = cur.fetchall()
+            return [row['username'] for row in rows if row.get('username')]
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+
+def disable_users(usernames):
+    """Выключить учётки и сбросить дату. admin не трогает. Возвращает число обновлённых строк."""
+    names = []
+    seen = set()
+    for raw in usernames or []:
+        name = (raw or '').strip()
+        key = name.lower()
+        if not name or key == 'admin' or key in seen:
+            continue
+        seen.add(key)
+        names.append(name)
+    if not names:
+        return 0
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE users
+                SET is_active = false, active_until = NULL
+                WHERE username = ANY(%s)
+                  AND is_active = true
+                  AND LOWER(username) <> 'admin'
+                """,
+                (names,),
+            )
+            updated = cur.rowcount
+        conn.commit()
+        return updated
+    finally:
+        conn.close()
+
+
+def get_app_state(key):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT value FROM app_state WHERE key = %s", (key,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            return row.get('value')
+    finally:
+        conn.close()
+
+
+def set_app_state(key, value):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO app_state (key, value, updated_at)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (key) DO UPDATE
+                SET value = EXCLUDED.value, updated_at = NOW()
+                """,
+                (key, '' if value is None else str(value)),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def list_users():
     """Список пользователей из таблицы users (без паролей) для настроек."""
     try:
@@ -1853,7 +2048,7 @@ def touch_user_last_login(username, conn=None):
             conn.close()
 
 
-def insert_user(username, password_hash, role, buckets=None, clouds=None, bucket_roles=None, email=None, full_name=None, conn=None):
+def insert_user(username, password_hash, role, buckets=None, clouds=None, bucket_roles=None, email=None, full_name=None, is_active=True, active_until=None, conn=None):
     """Добавить или обновить пользователя. buckets/clouds — списки, сохраняются как JSONB."""
     buckets = buckets if buckets is not None else []
     clouds = clouds if clouds is not None else []
@@ -1867,8 +2062,8 @@ def insert_user(username, password_hash, role, buckets=None, clouds=None, bucket
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO users (username, password, role, buckets, clouds, email, full_name)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO users (username, password, role, buckets, clouds, email, full_name, is_active, active_until)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (username) DO UPDATE SET
                     password = EXCLUDED.password,
                     role = EXCLUDED.role,
@@ -1885,6 +2080,8 @@ def insert_user(username, password_hash, role, buckets=None, clouds=None, bucket
                     json.dumps(clouds),
                     _normalize_user_email(email),
                     _normalize_user_text(full_name),
+                    bool(is_active),
+                    active_until if is_active else None,
                 ),
             )
         set_user_bucket_roles(username, grants, conn=conn)
@@ -1895,8 +2092,8 @@ def insert_user(username, password_hash, role, buckets=None, clouds=None, bucket
             conn.close()
 
 
-def update_user(username, role, buckets=None, clouds=None, password_hash=None, bucket_roles=None, email=None, full_name=None):
-    """Обновить пользователя. password_hash=None — пароль не менять. bucket_roles=None — grants не менять."""
+def update_user(username, role, buckets=None, clouds=None, password_hash=None, bucket_roles=None, email=None, full_name=None, is_active=None, active_until=_ACTIVE_UNTIL_UNSET):
+    """Обновить пользователя. password_hash=None — пароль не менять. bucket_roles=None — grants не менять. is_active=None — статус не менять. active_until не передан — дату не менять; None — сбросить."""
     buckets = buckets if buckets is not None else []
     clouds = clouds if clouds is not None else []
     grants = None
@@ -1909,29 +2106,25 @@ def update_user(username, role, buckets=None, clouds=None, password_hash=None, b
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            sets = ['role = %s', 'buckets = %s', 'clouds = %s', 'email = %s', 'full_name = %s']
+            params = [role, json.dumps(buckets), json.dumps(clouds), normalized_email, normalized_full_name]
             if password_hash is not None:
-                cur.execute(
-                    """
-                    UPDATE users
-                    SET password = %s, role = %s, buckets = %s, clouds = %s, email = %s, full_name = %s
-                    WHERE username = %s
-                    """,
-                    (
-                        password_hash, role, json.dumps(buckets), json.dumps(clouds),
-                        normalized_email, normalized_full_name, username,
-                    ),
-                )
-            else:
-                cur.execute(
-                    """
-                    UPDATE users SET role = %s, buckets = %s, clouds = %s, email = %s, full_name = %s
-                    WHERE username = %s
-                    """,
-                    (
-                        role, json.dumps(buckets), json.dumps(clouds),
-                        normalized_email, normalized_full_name, username,
-                    ),
-                )
+                sets.insert(0, 'password = %s')
+                params.insert(0, password_hash)
+            if is_active is not None:
+                sets.append('is_active = %s')
+                params.append(bool(is_active))
+            until_value = active_until
+            if is_active is False and until_value is _ACTIVE_UNTIL_UNSET:
+                until_value = None
+            if until_value is not _ACTIVE_UNTIL_UNSET:
+                sets.append('active_until = %s')
+                params.append(until_value if is_active is not False else None)
+            params.append(username)
+            cur.execute(
+                f"UPDATE users SET {', '.join(sets)} WHERE username = %s",
+                params,
+            )
             updated = cur.rowcount > 0
         if updated and grants is not None:
             set_user_bucket_roles(username, grants, conn=conn)

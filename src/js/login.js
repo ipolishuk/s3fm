@@ -192,12 +192,18 @@
 
     function showSsoErrorFromQuery() {
         var params = new URLSearchParams(window.location.search);
+        var inactiveLogin = params.get('login_error') === 'inactive';
         var code = params.get('sso_error');
-        if (!code || typeof window.showError !== 'function') return;
+        if ((!code && !inactiveLogin) || typeof window.showError !== 'function') return;
 
         var t = i18n();
-        var key = 'login.sso_error_' + code;
-        var msg = t[key] || t['login.sso_error_generic'] || 'SSO login failed';
+        var msg;
+        if (inactiveLogin) {
+            msg = t['login.error_inactive'] || 'Your account is not active. Please contact the administrator.';
+        } else {
+            var key = 'login.sso_error_' + code;
+            msg = t[key] || t['login.sso_error_generic'] || 'SSO login failed';
+        }
         var ssoUser = params.get('sso_user') || '';
         if (ssoUser) {
             msg = msg.replace(/\{username\}/g, ssoUser);
@@ -206,6 +212,7 @@
 
         params.delete('sso_error');
         params.delete('sso_user');
+        params.delete('login_error');
         var qs = params.toString();
         var next = window.location.pathname + (qs ? '?' + qs : '') + window.location.hash;
         window.history.replaceState({}, '', next);

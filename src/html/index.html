@@ -703,6 +703,21 @@
             <div class="modal-body add-user-modal-body" id="AddUserModal">
                 <form id="addUserForm" autocomplete="off">
                 <div class="form-group">
+                    <label class="lables" for="addUserStatusTrigger">{{ _('modal.user_status') }}</label>
+                    <div class="add-user-status-controls">
+                        <div class="dropdown" id="addUserStatusWrap">
+                            <button type="button" class="dropdown-trigger" id="addUserStatusTrigger" aria-expanded="false" aria-haspopup="listbox">
+                                <span id="addUserStatusLabel">{{ _('modal.user_status_enabled') }}</span>
+                                <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                            </button>
+                            <div class="dropdown-menu hidden" id="addUserStatusPanel" role="listbox"></div>
+                        </div>
+                        <input type="date" class="form-control" id="addUserActiveUntil"
+                            aria-label="{{ _('modal.user_active_until') }}" title="{{ _('modal.user_active_until') }}">
+                        <input type="hidden" id="addUserStatusValue" value="1">
+                    </div>
+                </div>
+                <div class="form-group">
                     <label class="lables" for="addUserUsername">{{ _('modal.user_username') }}</label>
                     <div class="form-control-reveal add-user-username-search">
                         <input type="text" id="addUserUsername" class="form-control" autocomplete="off" required>

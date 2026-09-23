@@ -12,7 +12,7 @@ from flask import Blueprint, redirect, request, session, url_for
 
 from db import insert_user
 from roles import ROLE_STORAGE_VIEWER, VALID_ROLES, normalize_role_name
-from users import establish_logged_in_session, get_user, hash_password
+from users import establish_logged_in_session, get_user, hash_password, user_is_active
 
 logger = logging.getLogger('s3-file-manager.sso')
 
@@ -521,6 +521,10 @@ def sso_callback():
     if not user:
         _log_app('warn', f'OIDC: user {username!r} is not provisioned in DB', 'sso_callback')
         return redirect(url_for('auth.login_page', sso_error='provision', sso_user=username))
+
+    if not user_is_active(user):
+        _log_app('warn', f'OIDC: user {username!r} is inactive', 'sso_callback')
+        return redirect(url_for('auth.login_page', sso_error='inactive'))
 
     email = resolve_email_from_userinfo(userinfo)
     given_name = resolve_given_name_from_userinfo(userinfo)

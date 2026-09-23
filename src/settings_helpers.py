@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date, datetime
 
 from flask import session
 
@@ -112,6 +113,37 @@ def _parse_user_email_field(data):
     if '@' not in s or '.' not in s.rsplit('@', 1)[-1]:
         return False
     return s
+
+
+def _parse_is_active(data, default=True):
+    """is_active из JSON. Нет поля — default."""
+    if not isinstance(data, dict) or 'is_active' not in data:
+        return default
+    raw = data.get('is_active')
+    if raw is None:
+        return default
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _parse_active_until(data, is_active):
+    """Дата «включено до» (включительно). Выключенный статус сбрасывает дату. False — некорректное значение."""
+    if not is_active:
+        return None
+    if not isinstance(data, dict):
+        return None
+    raw = data.get('active_until')
+    if raw is None or str(raw).strip() == '':
+        return None
+    text = str(raw).strip()[:10]
+    try:
+        parsed = datetime.strptime(text, '%Y-%m-%d').date()
+    except ValueError:
+        return False
+    if parsed < date.today():
+        return False
+    return parsed
 
 
 def _dt_iso(value):

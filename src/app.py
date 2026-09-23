@@ -39,6 +39,7 @@ from logs import (
 from db import (
     init_schema as db_init_schema,
     ensure_startup_admin,
+    user_session_allowed,
 )
 from buckets import get_buckets_config
 from security import (
@@ -322,6 +323,12 @@ def before_request():
         log_info(f'Session expired for user {username}', 'session_timeout')
         return _auth_required_response(session_expired=True)
 
+    if user_session_allowed(session.get('username')) is False:
+        username = session.get('username', 'Unknown')
+        session.clear()
+        log_info(f'Session cleared for inactive user {username}', 'session_timeout')
+        return _auth_required_response(session_expired=True)
+
     update_session_activity()
     if _csrf_required_for_request() and not validate_csrf(session, request):
         return _csrf_failure_response()
@@ -487,6 +494,13 @@ def _run_app_startup():
                 )
         else:
             log_info('Meilisearch: disabled, search via S3 (set MEILI_ENABLED=true and MEILI_HOST)', 'app_info')
+
+        if last_db_err is None:
+            try:
+                import ldap_client
+                ldap_client.schedule_account_status_sync()
+            except Exception as exc:
+                log_warning(f'LDAP account sync not started: {exc}', 'ldap_account_sync')
 
 _startup_lock = threading.Lock()
 _startup_started = False

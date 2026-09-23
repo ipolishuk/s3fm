@@ -3,7 +3,7 @@ import hashlib
 import os
 import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from db import get_user as _get_user_from_db, touch_user_last_login, update_user_sso_profile
@@ -137,12 +137,26 @@ def sync_logged_in_session_from_db():
     if not session.get('logged_in') or not username:
         return False
     user = get_user(username)
-    if not user:
+    if not user or not user_is_active(user):
         session.clear()
         return False
     apply_user_acl_to_session(user)
     _apply_user_profile_to_session(user)
     return True
+
+
+def user_is_active(user) -> bool:
+    """Учётная запись включена. Отсутствие поля считаем включённым состоянием. Дата «до» включительно."""
+    if not isinstance(user, dict):
+        return False
+    until = user.get('active_until')
+    if until:
+        text = until.isoformat()[:10] if hasattr(until, 'isoformat') else str(until).strip()[:10]
+        if text and text < date.today().isoformat():
+            return False
+    if user.get('is_active') is None:
+        return True
+    return bool(user.get('is_active'))
 
 
 def user_display_name(user):

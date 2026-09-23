@@ -1791,10 +1791,80 @@ function isAddUserDropdownUiTarget(el) {
         el.closest('#addUserLdapResults')
     );
 }
+function applyAddUserStatus(isActive, locked) {
+    var t = window.I18N || {};
+    var value = (isActive === false || isActive === 0 || isActive === '0' || isActive === 'false') ? '0' : '1';
+    var input = document.getElementById('addUserStatusValue');
+    var label = document.getElementById('addUserStatusLabel');
+    var panel = document.getElementById('addUserStatusPanel');
+    var trigger = document.getElementById('addUserStatusTrigger');
+    var wrap = document.getElementById('addUserStatusWrap');
+    if (!input || !label || !panel) return;
+    var options = [
+        { value: '1', label: t['modal.user_status_enabled'] || 'Enabled' },
+        { value: '0', label: t['modal.user_status_disabled'] || 'Disabled' }
+    ];
+    input.value = value;
+    panel.innerHTML = '';
+    options.forEach(function(opt) {
+        var lab = document.createElement('div');
+        lab.className = 'dropdown-item' + (opt.value === value ? ' selected' : '');
+        lab.setAttribute('role', 'option');
+        lab.textContent = opt.label;
+        lab.dataset.value = opt.value;
+        lab.addEventListener('click', function() {
+            if (trigger && trigger.disabled) return;
+            input.value = opt.value;
+            label.textContent = opt.label;
+            label.classList.add('has-selection');
+            panel.querySelectorAll('.dropdown-item').forEach(function(o) { o.classList.remove('selected'); });
+            lab.classList.add('selected');
+            if (wrap) {
+                wrap.classList.remove('open');
+                if (typeof window.resetDropdownMenuOverlay === 'function') window.resetDropdownMenuOverlay(wrap);
+            }
+            syncAddUserActiveUntilEnabled();
+        });
+        panel.appendChild(lab);
+        if (opt.value === value) label.textContent = opt.label;
+    });
+    label.classList.add('has-selection');
+    if (trigger) trigger.disabled = !!locked;
+    applyAddUserActiveUntil(arguments.length > 2 ? arguments[2] : undefined, !!locked);
+}
+function applyAddUserActiveUntil(activeUntil, locked) {
+    var dateEl = document.getElementById('addUserActiveUntil');
+    if (!dateEl) return;
+    var now = new Date();
+    dateEl.min = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    var raw = activeUntil == null ? '' : String(activeUntil).slice(0, 10);
+    dateEl.value = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
+    syncAddUserActiveUntilEnabled(!!locked);
+}
+function syncAddUserActiveUntilEnabled(locked) {
+    var dateEl = document.getElementById('addUserActiveUntil');
+    var status = document.getElementById('addUserStatusValue');
+    var trigger = document.getElementById('addUserStatusTrigger');
+    if (!dateEl) return;
+    var enabled = !!(status && status.value !== '0' && !locked && !(trigger && trigger.disabled));
+    dateEl.disabled = !enabled;
+    if (!enabled) dateEl.value = '';
+}
+function wireAddUserStatusTrigger(otherWraps) {
+    var wrap = document.getElementById('addUserStatusWrap');
+    var panel = document.getElementById('addUserStatusPanel');
+    var trigger = document.getElementById('addUserStatusTrigger');
+    if (!trigger || !wrap || !panel) return;
+    trigger.onclick = function(e) {
+        if (trigger.disabled) return;
+        e.stopPropagation();
+        toggleAddUserDropdown(wrap, panel, otherWraps);
+    };
+}
 function closeAllAddUserDropdownPanels() {
     closeAllAddUserBucketRoleAclDropdowns();
     closeAddUserLdapResults();
-    var idsW = ['addUserBucketsWrap', 'addUserCloudsWrap', 'addUserRoleWrap'];
+    var idsW = ['addUserBucketsWrap', 'addUserCloudsWrap', 'addUserRoleWrap', 'addUserStatusWrap'];
     idsW.forEach(function(id) {
         var w = document.getElementById(id);
         if (!w) return;
@@ -2219,7 +2289,7 @@ function openEditUserModal(username, mode) {
     bucketsLabel.classList.remove('has-selection');
     cloudsLabel.textContent = '—';
     cloudsLabel.classList.remove('has-selection');
-    [roleWrap, bucketsWrap, cloudsWrap].forEach(function(wrap) {
+    [roleWrap, bucketsWrap, cloudsWrap, document.getElementById('addUserStatusWrap')].forEach(function(wrap) {
         if (!wrap) return;
         wrap.classList.remove('open');
         if (typeof window.resetDropdownMenuOverlay === 'function') window.resetDropdownMenuOverlay(wrap);
@@ -2438,13 +2508,15 @@ function openEditUserModal(username, mode) {
         loadAddUserBucketRolesOverrides(userBucketRolesMap);
         updateCloudsLabel();
         rebuildBucketsPanelForEdit(false);
-        document.getElementById('addUserRoleTrigger').onclick = function(ev) { ev.stopPropagation(); toggleAddUserDropdown(roleWrap, rolePanel, [cloudsWrap, bucketsWrap]); };
-        document.getElementById('addUserCloudsTrigger').onclick = function(ev) { ev.stopPropagation(); toggleAddUserDropdown(cloudsWrap, cloudsPanel, [bucketsWrap, roleWrap]); };
+        document.getElementById('addUserRoleTrigger').onclick = function(ev) { ev.stopPropagation(); toggleAddUserDropdown(roleWrap, rolePanel, [cloudsWrap, bucketsWrap, document.getElementById('addUserStatusWrap')]); };
+        document.getElementById('addUserCloudsTrigger').onclick = function(ev) { ev.stopPropagation(); toggleAddUserDropdown(cloudsWrap, cloudsPanel, [bucketsWrap, roleWrap, document.getElementById('addUserStatusWrap')]); };
         document.getElementById('addUserBucketsTrigger').onclick = function(ev) {
             if (ev.currentTarget.disabled) return;
             ev.stopPropagation();
-            toggleAddUserDropdown(bucketsWrap, bucketsPanel, [cloudsWrap, roleWrap]);
+            toggleAddUserDropdown(bucketsWrap, bucketsPanel, [cloudsWrap, roleWrap, document.getElementById('addUserStatusWrap')]);
         };
+        applyAddUserStatus(!(user && user.is_active === false), !isCopy && String(username || '').toLowerCase() === 'admin', user && user.active_until);
+        wireAddUserStatusTrigger([roleWrap, cloudsWrap, bucketsWrap]);
         var addUserModalEdit = document.getElementById('addUserModal');
         function closeDropdownsEdit(e) {
             if (isAddUserDropdownUiTarget(e && e.target)) return;
@@ -2523,7 +2595,7 @@ if (settingsAddBtn) {
             bucketsLabel.classList.remove('has-selection');
             cloudsLabel.textContent = '—';
             cloudsLabel.classList.remove('has-selection');
-            [roleWrap, bucketsWrap, cloudsWrap].forEach(function(wrap) {
+            [roleWrap, bucketsWrap, cloudsWrap, document.getElementById('addUserStatusWrap')].forEach(function(wrap) {
                 if (!wrap) return;
                 wrap.classList.remove('open');
                 if (typeof window.resetDropdownMenuOverlay === 'function') window.resetDropdownMenuOverlay(wrap);
@@ -2690,13 +2762,15 @@ if (settingsAddBtn) {
                     onAllChange: rebuildBucketsPanel
                 });
                 rebuildBucketsPanel();
-                document.getElementById('addUserRoleTrigger').onclick = function(e) { e.stopPropagation(); toggleAddUserDropdown(roleWrap, rolePanel, [cloudsWrap, bucketsWrap]); };
+                document.getElementById('addUserRoleTrigger').onclick = function(e) { e.stopPropagation(); toggleAddUserDropdown(roleWrap, rolePanel, [cloudsWrap, bucketsWrap, document.getElementById('addUserStatusWrap')]); };
                 document.getElementById('addUserBucketsTrigger').onclick = function(e) {
                     if (e.currentTarget.disabled) return;
                     e.stopPropagation();
-                    toggleAddUserDropdown(bucketsWrap, bucketsPanel, [cloudsWrap, roleWrap]);
+                    toggleAddUserDropdown(bucketsWrap, bucketsPanel, [cloudsWrap, roleWrap, document.getElementById('addUserStatusWrap')]);
                 };
-                document.getElementById('addUserCloudsTrigger').onclick = function(e) { e.stopPropagation(); toggleAddUserDropdown(cloudsWrap, cloudsPanel, [bucketsWrap, roleWrap]); };
+                document.getElementById('addUserCloudsTrigger').onclick = function(e) { e.stopPropagation(); toggleAddUserDropdown(cloudsWrap, cloudsPanel, [bucketsWrap, roleWrap, document.getElementById('addUserStatusWrap')]); };
+                applyAddUserStatus(true, false);
+                wireAddUserStatusTrigger([roleWrap, cloudsWrap, bucketsWrap]);
                 var addUserModalEl = document.getElementById('addUserModal');
                 function closeDropdowns(e) {
                     if (isAddUserDropdownUiTarget(e && e.target)) return;
@@ -2768,7 +2842,15 @@ document.getElementById('addUserSubmitBtn').addEventListener('click', function()
         clouds: clouds,
         bucket_roles: collectAddUserBucketRoles(),
         email: email || null,
-        display_name: fullName || null
+        display_name: fullName || null,
+        is_active: (document.getElementById('addUserStatusValue') || {}).value !== '0',
+        active_until: (function() {
+            var statusEl = document.getElementById('addUserStatusValue');
+            var dateEl = document.getElementById('addUserActiveUntil');
+            if (!statusEl || statusEl.value === '0' || !dateEl || dateEl.disabled) return null;
+            var value = (dateEl.value || '').trim();
+            return value || null;
+        })()
     };
     if (!isEdit) {
         body.username = username;
@@ -2784,6 +2866,10 @@ document.getElementById('addUserSubmitBtn').addEventListener('click', function()
     }).then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
     .then(function(res) {
         if (res.ok) {
+            if (res.data && res.data.session_cleared) {
+                window.location.href = '/login?login_error=inactive';
+                return;
+            }
             if (res.data && res.data.session_updated) {
                 window.availableBuckets = [];
                 window.bucketsSidebarLoaded = false;

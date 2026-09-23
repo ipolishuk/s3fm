@@ -500,3 +500,127 @@ class TestRemainingBlueprints:
         assert callable(search_files_impl)
         assert callable(list_buckets_impl)
         assert callable(get_bucket_size_impl)
+
+
+class _StatusCursor:
+    def __init__(self, row, fail_update=False):
+        self.row = row
+        self.fail_update = fail_update
+        self.sql = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, sql, params=None):
+        self.sql.append(sql)
+        if self.fail_update and 'UPDATE' in sql:
+            raise RuntimeError('update failed')
+
+    def fetchone(self):
+        return self.row
+
+
+class _StatusConn:
+    def __init__(self, cursor):
+        self.cursor_obj = cursor
+        self.committed = False
+        self.closed = False
+
+    def cursor(self):
+        return self.cursor_obj
+
+    def commit(self):
+        self.committed = True
+
+    def close(self):
+        self.closed = True
+
+
+class TestUserSessionAllowed:
+    def _call(self, row, fail_update=False, connect_error=False, query_error=False):
+        from db import user_session_allowed
+
+        cursor = _StatusCursor(row, fail_update=fail_update)
+        if query_error:
+            cursor.execute = mock.Mock(side_effect=RuntimeError('db down'))
+        conn = _StatusConn(cursor)
+
+        def connect():
+            if connect_error:
+                raise RuntimeError('no db')
+            return conn
+
+        with mock.patch('db.get_connection', side_effect=connect):
+            result = user_session_allowed('bob')
+        return result, conn, cursor
+
+    def test_missing_user_denied(self):
+        result, conn, cursor = self._call(None)
+        assert result is False
+        assert conn.committed is False
+        assert conn.closed is True
+        assert not any('UPDATE' in sql for sql in cursor.sql)
+
+    def test_disabled_user_denied(self):
+        result, conn, _cursor = self._call({'is_active': False, 'expired': False})
+        assert result is False
+        assert conn.committed is False
+
+    def test_expired_user_denied_and_persisted(self):
+        result, conn, cursor = self._call({'is_active': True, 'expired': True})
+        assert result is False
+        assert conn.committed is True
+        assert any('UPDATE' in sql for sql in cursor.sql)
+
+    def test_expired_user_denied_when_persist_fails(self):
+        result, _conn, _cursor = self._call({'is_active': True, 'expired': True}, fail_update=True)
+        assert result is False
+
+    def test_active_user_allowed(self):
+        result, conn, cursor = self._call({'is_active': True, 'expired': False})
+        assert result is True
+        assert conn.committed is False
+        assert not any('UPDATE' in sql for sql in cursor.sql)
+
+    def test_database_outage_does_not_deny(self):
+        result, _conn, _cursor = self._call(None, connect_error=True)
+        assert result is None
+        result, conn, _cursor = self._call(None, query_error=True)
+        assert result is None
+        assert conn.closed is True
+
+
+class TestInactiveSessionRejected:
+    def _client_with_session(self):
+        from datetime import datetime
+        import app as app_module
+
+        client = app_module.app.test_client()
+        with client.session_transaction() as sess:
+            sess['logged_in'] = True
+            sess['username'] = 'bob'
+            sess['role'] = 'storage_viewer'
+            sess['last_activity'] = datetime.now().isoformat()
+        return app_module, client
+
+    def test_inactive_account_clears_session(self):
+        app_module, client = self._client_with_session()
+        with mock.patch.object(app_module, 'user_session_allowed', return_value=False):
+            response = client.get('/api/buckets')
+        assert response.status_code == 401
+        with client.session_transaction() as sess:
+            assert not sess.get('logged_in')
+
+    def test_database_outage_keeps_session(self):
+        app_module, client = self._client_with_session()
+        with mock.patch.object(app_module, 'user_session_allowed', return_value=None), mock.patch(
+            'blueprints.buckets.list_buckets_impl',
+            return_value=('ok', 200),
+        ):
+            response = client.get('/api/buckets')
+        assert response.status_code == 200
+        with client.session_transaction() as sess:
+            assert sess.get('logged_in') is True

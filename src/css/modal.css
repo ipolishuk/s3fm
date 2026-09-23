@@ -396,6 +396,35 @@
   justify-self: stretch;
 }
 
+#addUserForm > .form-group > .add-user-status-controls {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
+}
+
+#addUserForm .add-user-status-controls > .dropdown {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#addUserForm .add-user-status-controls > .dropdown .dropdown-trigger {
+  width: 100%;
+}
+
+#addUserForm .add-user-status-controls > #addUserActiveUntil {
+  flex: 0 0 9.25rem;
+  width: 9.25rem;
+  min-width: 0;
+}
+
+#addUserForm #addUserActiveUntil:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 #addBucketForm > .form-group > .dropdown .dropdown-trigger,
 #addUserForm > .form-group:not(.add-user-bucket-roles-group) > .dropdown .dropdown-trigger,
 #CloudEditModal > .form-group > .dropdown .dropdown-trigger,
@@ -542,7 +571,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  margin-top: 4px;
+  margin-top: 10px;
 }
 
 /* UserInfo: поля прямо в body без .user-info-content-карточки */
@@ -959,6 +988,7 @@
   flex: 0 0 auto;
   min-height: auto;
   display: block;
+  margin-top: 10px;
 }
 
 .add-user-modal-body > form > .add-user-bucket-roles-group > .file-info-acl-block {

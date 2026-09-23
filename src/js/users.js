@@ -1839,7 +1839,18 @@ function applyAddUserActiveUntil(activeUntil, locked) {
     dateEl.min = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
     var raw = activeUntil == null ? '' : String(activeUntil).slice(0, 10);
     dateEl.value = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
+    if (!dateEl.dataset.untilPlaceholderBound) {
+        dateEl.dataset.untilPlaceholderBound = '1';
+        dateEl.addEventListener('input', syncAddUserActiveUntilPlaceholder);
+        dateEl.addEventListener('change', syncAddUserActiveUntilPlaceholder);
+    }
     syncAddUserActiveUntilEnabled(!!locked);
+}
+function syncAddUserActiveUntilPlaceholder() {
+    var dateEl = document.getElementById('addUserActiveUntil');
+    var wrap = dateEl && dateEl.closest('.add-user-active-until');
+    if (!dateEl || !wrap) return;
+    wrap.classList.toggle('is-filled', !!(dateEl.value || '').trim());
 }
 function syncAddUserActiveUntilEnabled(locked) {
     var dateEl = document.getElementById('addUserActiveUntil');
@@ -1849,6 +1860,7 @@ function syncAddUserActiveUntilEnabled(locked) {
     var enabled = !!(status && status.value !== '0' && !locked && !(trigger && trigger.disabled));
     dateEl.disabled = !enabled;
     if (!enabled) dateEl.value = '';
+    syncAddUserActiveUntilPlaceholder();
 }
 function wireAddUserStatusTrigger(otherWraps) {
     var wrap = document.getElementById('addUserStatusWrap');

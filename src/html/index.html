@@ -712,8 +712,13 @@
                             </button>
                             <div class="dropdown-menu hidden" id="addUserStatusPanel" role="listbox"></div>
                         </div>
-                        <input type="date" class="form-control" id="addUserActiveUntil"
-                            aria-label="{{ _('modal.user_active_until') }}" title="{{ _('modal.user_active_until') }}">
+                        <div class="add-user-active-until">
+                            <input type="date" class="form-control" id="addUserActiveUntil"
+                                lang="{{ 'en-GB' if locale == 'en' else locale }}"
+                                placeholder="{{ _('modal.user_date_placeholder') }}"
+                                aria-label="{{ _('modal.user_active_until') }}" title="{{ _('modal.user_active_until') }}">
+                            <span class="add-user-active-until-placeholder" aria-hidden="true">{{ _('modal.user_date_placeholder') }}</span>
+                        </div>
                         <input type="hidden" id="addUserStatusValue" value="1">
                     </div>
                 </div>

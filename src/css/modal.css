@@ -406,7 +406,7 @@
 }
 
 #addUserForm .add-user-status-controls > .dropdown,
-#addUserForm .add-user-status-controls > #addUserActiveUntil {
+#addUserForm .add-user-status-controls > .add-user-active-until {
   flex: 1 1 0;
   width: calc((100% - 4px) / 2);
   max-width: calc((100% - 4px) / 2);
@@ -414,12 +414,46 @@
   box-sizing: border-box;
 }
 
+#addUserForm .add-user-active-until {
+  position: relative;
+  display: flex;
+}
+
+#addUserForm .add-user-active-until > #addUserActiveUntil {
+  width: 100%;
+  max-width: none;
+  flex: 1 1 auto;
+}
+
+.add-user-active-until-placeholder {
+  position: absolute;
+  left: 8px;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  color: var(--text-muted);
+}
+
+.add-user-active-until.is-filled .add-user-active-until-placeholder {
+  display: none;
+}
+
+.add-user-active-until:not(.is-filled) #addUserActiveUntil::-webkit-datetime-edit {
+  color: transparent;
+}
+
+.add-user-active-until:has(#addUserActiveUntil:disabled) {
+  opacity: 0.55;
+}
+
 #addUserForm .add-user-status-controls > .dropdown .dropdown-trigger {
   width: 100%;
 }
 
 #addUserForm #addUserActiveUntil:disabled {
-  opacity: 0.55;
+  opacity: 1;
   cursor: not-allowed;
 }
 

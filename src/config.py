@@ -335,6 +335,8 @@ def _inherit_bucket_config(bucket_config, group_data):
         cfg["endpoint_url"] = (group_data.get("endpoint_url") or "").strip()
     if "region_name" not in cfg:
         cfg["region_name"] = group_data.get("region_name", "us-east-1")
+    from security import virtual_hosted_for_endpoint
+    cfg["virtual_hosted"] = virtual_hosted_for_endpoint(group_data, cfg.get("endpoint_url"))
     return cfg
 
 
@@ -414,6 +416,7 @@ def _create_s3_client(bucket_config):
     ca_verify_path = _resolve_s3_ca_verify_path(bucket_config)
     skip_tls_verify = _skip_tls_verify_enabled(bucket_config)
     read_timeout = 60
+    addressing_style = "virtual" if bucket_config.get("virtual_hosted") else "path"
     if ca_verify_path:
         config = Config(
             signature_version="s3v4",
@@ -421,6 +424,7 @@ def _create_s3_client(bucket_config):
             read_timeout=read_timeout,
             retries={"max_attempts": 2, "mode": "standard"},
             max_pool_connections=10,
+            s3={"addressing_style": addressing_style},
         )
         return boto3.client(
             "s3",
@@ -445,6 +449,7 @@ def _create_s3_client(bucket_config):
             connect_timeout=30,
             read_timeout=read_timeout,
             retries={"max_attempts": 3},
+            s3={"addressing_style": addressing_style},
         ),
         verify=verify_ssl,
     )
@@ -826,39 +831,59 @@ def _import_clouds(conn, clouds_list):
             print("Skip cloud entry without cloud_id", file=sys.stderr)
             continue
         display_name = (item.get("display_name") or item.get("name") or cloud_id).strip()
-        entry = grouped.setdefault(cloud_id, {"display_name": display_name, "endpoints": []})
+        entry = grouped.setdefault(cloud_id, {
+            "display_name": display_name,
+            "endpoints": [],
+            "public_url_enabled": False,
+        })
         if display_name:
             entry["display_name"] = display_name
-        endpoint_raw = item.get("endpoint_url")
-        if endpoint_raw is None:
+        if item.get("public_url_enabled"):
+            entry["public_url_enabled"] = True
+        detailed = item.get("endpoints")
+        if isinstance(detailed, list) and any(isinstance(part, dict) for part in detailed):
             raw_parts = []
-        elif isinstance(endpoint_raw, list):
-            raw_parts = [str(v).strip() for v in endpoint_raw]
+            for part in detailed:
+                if not isinstance(part, dict):
+                    continue
+                url = str(part.get("url") or part.get("endpoint_url") or "").strip()
+                if not url:
+                    continue
+                raw_parts.append((url, bool(part.get("virtual_hosted"))))
         else:
-            print(f"Skip cloud entry with invalid endpoint_url type (must be array): {cloud_id}", file=sys.stderr)
-            continue
-        for ep in raw_parts:
-            s = ep.strip()
-            if not s:
+            endpoint_raw = item.get("endpoint_url")
+            if endpoint_raw is None:
+                endpoint_raw = []
+            elif not isinstance(endpoint_raw, list):
+                print(f"Skip cloud entry with invalid endpoint_url type (must be array): {cloud_id}", file=sys.stderr)
                 continue
-            if s not in entry["endpoints"]:
-                entry["endpoints"].append(s)
+            shared_flag = bool(item.get("virtual_hosted"))
+            raw_parts = [(str(ep).strip(), shared_flag) for ep in endpoint_raw if str(ep).strip()]
+        known = {url for url, _flag in entry["endpoints"]}
+        for url, flag in raw_parts:
+            if url in known:
+                continue
+            known.add(url)
+            entry["endpoints"].append((url, flag))
 
     with conn.cursor() as cur:
         for cloud_id, payload in grouped.items():
             display_name = payload["display_name"] or cloud_id
-            normalized = payload["endpoints"] or [None]
+            normalized = payload["endpoints"] or [(None, False)]
+            public_url_enabled = bool(payload.get("public_url_enabled"))
             cur.execute("DELETE FROM clouds WHERE cloud_id = %s", (cloud_id,))
-            for endpoint_url in normalized:
+            for endpoint_url, virtual_hosted in normalized:
                 cur.execute(
                     """
-                    INSERT INTO clouds (cloud_id, name, display_name, endpoint_url)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (cloud_id, COALESCE(NULLIF(BTRIM(endpoint_url), ''), '')) DO UPDATE SET
                         name = EXCLUDED.name,
-                        display_name = EXCLUDED.display_name
+                        display_name = EXCLUDED.display_name,
+                        public_url_enabled = EXCLUDED.public_url_enabled,
+                        virtual_hosted = EXCLUDED.virtual_hosted
                     """,
-                    (cloud_id, display_name, display_name, endpoint_url),
+                    (cloud_id, display_name, display_name, endpoint_url, public_url_enabled, virtual_hosted),
                 )
             imported.append(cloud_id)
     return 0, imported

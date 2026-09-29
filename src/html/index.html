@@ -840,6 +840,9 @@
             <div class="modal-header">
                 <i class="fa-solid fa-cloud modal-icon modal-icon-info" id="cloudEditModalIcon"></i>
                 <h3 class="modal-title" id="cloudEditModalTitle">{{ _('modal.add_cloud') }}</h3>
+                <button type="button" class="modal-title-info" id="cloudEditInfoBtn" aria-label="{{ _('modal.cloud_params_info') }}" title="{{ _('modal.cloud_params_info') }}">
+                    <i class="fa-solid fa-info" aria-hidden="true"></i>
+                </button>
             </div>
             <div class="modal-body" id="CloudEditModal">
                 <div class="form-group">
@@ -879,6 +882,42 @@
             <div class="modal-footer">
                 <button type="button" class="btn" id="cloudEditSubmitBtn">{{ _('settings.add') }}</button>
                 <button type="button" class="btn" id="cloudEditCancelBtn">{{ _('modal.cancel') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay hidden modal-overlay-raised" id="cloudParamsInfoModal">
+        <div class="modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-info modal-icon modal-icon-info"></i>
+                <h3 class="modal-title">{{ _('modal.cloud_params_title') }}</h3>
+            </div>
+            <div class="modal-body">
+                <dl class="modal-param-help">
+                    <div>
+                        <dt>{{ _('modal.cloud_id') }}</dt>
+                        <dd>{{ _('modal.cloud_id_help') }}</dd>
+                    </div>
+                    <div>
+                        <dt>{{ _('modal.cloud_display_name') }}</dt>
+                        <dd>{{ _('modal.cloud_display_name_help') }}</dd>
+                    </div>
+                    <div>
+                        <dt>{{ _('modal.cloud_endpoint') }}</dt>
+                        <dd>{{ _('modal.cloud_endpoint_help') }}</dd>
+                    </div>
+                    <div>
+                        <dt>path / fqdn</dt>
+                        <dd>{{ _('modal.cloud_style_help') }}</dd>
+                    </div>
+                    <div>
+                        <dt>{{ _('modal.cloud_enable_public_url') }}</dt>
+                        <dd>{{ _('modal.cloud_enable_public_url_help') }}</dd>
+                    </div>
+                </dl>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" id="cloudParamsInfoClose">{{ _('user_info.close') }}</button>
             </div>
         </div>
     </div>

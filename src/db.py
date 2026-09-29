@@ -430,6 +430,8 @@ ALTER TABLE public.clouds DROP COLUMN IF EXISTS icon;
 ALTER TABLE public.clouds ADD COLUMN IF NOT EXISTS endpoint_url VARCHAR(512);
 ALTER TABLE public.clouds ADD COLUMN IF NOT EXISTS public_url_enabled BOOLEAN DEFAULT false;
 UPDATE public.clouds SET public_url_enabled = false WHERE public_url_enabled IS NULL;
+ALTER TABLE public.clouds ADD COLUMN IF NOT EXISTS virtual_hosted BOOLEAN DEFAULT false;
+UPDATE public.clouds SET virtual_hosted = false WHERE virtual_hosted IS NULL;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS given_name VARCHAR(255);
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS family_name VARCHAR(255);
@@ -994,12 +996,14 @@ def get_buckets_config():
                     'endpoint_url': 'https://s3.example.com',
                     'cloud_id': 'other',
                     'public_url_enabled': False,
+                    'endpoint_virtual_hosted': {},
                     'buckets': {},
                 }
             try:
                 with conn.cursor() as cur:
                     cur.execute("""
-                        SELECT cloud_id, BOOL_OR(COALESCE(public_url_enabled, false)) AS public_url_enabled
+                        SELECT cloud_id,
+                               BOOL_OR(COALESCE(public_url_enabled, false)) AS public_url_enabled
                         FROM clouds
                         GROUP BY cloud_id
                     """)
@@ -1007,11 +1011,30 @@ def get_buckets_config():
                         cid = crow['cloud_id']
                         if cid in result:
                             result[cid]['public_url_enabled'] = bool(crow['public_url_enabled'])
+                    cur.execute("""
+                        SELECT cloud_id,
+                               BTRIM(endpoint_url) AS endpoint_url,
+                               COALESCE(virtual_hosted, false) AS virtual_hosted
+                        FROM clouds
+                        WHERE endpoint_url IS NOT NULL
+                          AND BTRIM(endpoint_url) <> ''
+                    """)
+                    from security import normalize_endpoint_url
+                    for crow in cur.fetchall():
+                        cid = crow['cloud_id']
+                        if cid not in result:
+                            continue
+                        key = normalize_endpoint_url(crow.get('endpoint_url'))
+                        if not key:
+                            continue
+                        result[cid].setdefault('endpoint_virtual_hosted', {})[key] = bool(crow['virtual_hosted'])
             except Exception:
                 pass
             for cid in result:
                 if 'public_url_enabled' not in result[cid]:
                     result[cid]['public_url_enabled'] = False
+                if 'endpoint_virtual_hosted' not in result[cid]:
+                    result[cid]['endpoint_virtual_hosted'] = {}
             return result
         finally:
             conn.close()
@@ -1434,6 +1457,69 @@ def list_clouds():
         return []
 
 
+def _aggregate_cloud_setting_rows(rows):
+    """Собрать строки clouds в одно облако: endpoint_url и стиль virtual-hosted по каждому URL."""
+    grouped = {}
+    order = []
+    for r in rows:
+        cid = r['cloud_id']
+        item = grouped.get(cid)
+        if item is None:
+            item = {
+                'cloud_id': cid,
+                'name': r.get('name') or cid,
+                'display_name': r.get('display_name') or r.get('name') or cid,
+                'endpoint_url': [],
+                'endpoints': [],
+                'public_url_enabled': False,
+            }
+            grouped[cid] = item
+            order.append(cid)
+        if r.get('public_url_enabled'):
+            item['public_url_enabled'] = True
+        ep = (r.get('endpoint_url') or '').strip()
+        if not ep or ep in item['endpoint_url']:
+            continue
+        item['endpoint_url'].append(ep)
+        item['endpoints'].append({
+            'url': ep,
+            'virtual_hosted': bool(r.get('virtual_hosted')),
+        })
+    return [grouped[cid] for cid in order]
+
+
+def _endpoint_flag_pairs(endpoint_url, virtual_hosted=None, endpoint_virtual_hosted=None):
+    """Пары (url, virtual_hosted). Пустой url отбрасывается."""
+    urls = []
+    inline_flags = []
+    seen = set()
+    raw_items = endpoint_url if isinstance(endpoint_url, (list, tuple, set)) else []
+    for v in raw_items:
+        flag = None
+        if isinstance(v, dict):
+            s = str(v.get('url') or v.get('endpoint_url') or '').strip()
+            flag = bool(v.get('virtual_hosted'))
+        else:
+            s = str(v or '').strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        urls.append(s)
+        inline_flags.append(flag)
+    pairs = []
+    for i, url in enumerate(urls):
+        flag = inline_flags[i]
+        if flag is None:
+            if isinstance(endpoint_virtual_hosted, (list, tuple)) and i < len(endpoint_virtual_hosted):
+                flag = bool(endpoint_virtual_hosted[i])
+            elif isinstance(endpoint_virtual_hosted, dict):
+                flag = bool(endpoint_virtual_hosted.get(url))
+            else:
+                flag = bool(virtual_hosted)
+        pairs.append((url, bool(flag)))
+    return pairs
+
+
 def list_cloud_rows():
     """Список облаков из таблицы clouds для вкладки настроек."""
     try:
@@ -1457,16 +1543,15 @@ def list_cloud_rows():
                 cur.execute("""
                     SELECT
                         cloud_id,
-                        COALESCE(MAX(name), cloud_id) AS name,
-                        COALESCE(MAX(display_name), MAX(name), cloud_id) AS display_name,
-                        ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(endpoint_url), '')), NULL) AS endpoint_url,
-                        BOOL_OR(COALESCE(public_url_enabled, false)) AS public_url_enabled
+                        COALESCE(name, cloud_id) AS name,
+                        COALESCE(display_name, name, cloud_id) AS display_name,
+                        NULLIF(BTRIM(endpoint_url), '') AS endpoint_url,
+                        COALESCE(public_url_enabled, false) AS public_url_enabled,
+                        COALESCE(virtual_hosted, false) AS virtual_hosted
                     FROM clouds
-                    GROUP BY cloud_id
-                    ORDER BY cloud_id
+                    ORDER BY cloud_id, endpoint_url NULLS FIRST
                 """)
-                rows = cur.fetchall()
-                return [dict(r) for r in rows]
+                return _aggregate_cloud_setting_rows(cur.fetchall())
         finally:
             conn.close()
     except Exception:
@@ -1485,66 +1570,74 @@ def get_cloud_row(cloud_id):
                     """
                     SELECT
                         cloud_id,
-                        COALESCE(MAX(name), cloud_id) AS name,
-                        COALESCE(MAX(display_name), MAX(name), cloud_id) AS display_name,
-                        ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(endpoint_url), '')), NULL) AS endpoint_url,
-                        BOOL_OR(COALESCE(public_url_enabled, false)) AS public_url_enabled
+                        COALESCE(name, cloud_id) AS name,
+                        COALESCE(display_name, name, cloud_id) AS display_name,
+                        NULLIF(BTRIM(endpoint_url), '') AS endpoint_url,
+                        COALESCE(public_url_enabled, false) AS public_url_enabled,
+                        COALESCE(virtual_hosted, false) AS virtual_hosted
                     FROM clouds
                     WHERE cloud_id = %s
-                    GROUP BY cloud_id
+                    ORDER BY endpoint_url NULLS FIRST
                     """,
                     (cloud_id,),
                 )
-                row = cur.fetchone()
-                return dict(row) if row else None
+                rows = cur.fetchall()
+                aggregated = _aggregate_cloud_setting_rows(rows)
+                return aggregated[0] if aggregated else None
         finally:
             conn.close()
     except Exception:
         return None
 
 
-def insert_cloud(cloud_id, display_name=None, endpoint_url=None, public_url_enabled=False):
+def insert_cloud(
+    cloud_id,
+    display_name=None,
+    endpoint_url=None,
+    public_url_enabled=False,
+    virtual_hosted=False,
+    endpoint_virtual_hosted=None,
+):
     """Добавить облако в таблицу clouds."""
     cid = (cloud_id or "").strip()
     disp = (display_name or "").strip() or cid
     pub_url = bool(public_url_enabled)
-    endpoints = []
-    seen = set()
-    if isinstance(endpoint_url, (list, tuple, set)):
-        for v in endpoint_url:
-            s = str(v or '').strip()
-            if not s or s in seen:
-                continue
-            seen.add(s)
-            endpoints.append(s)
+    pairs = _endpoint_flag_pairs(endpoint_url, virtual_hosted, endpoint_virtual_hosted)
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            if not endpoints:
+            if not pairs:
                 cur.execute(
                     """
-                    INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (cloud_id, COALESCE(NULLIF(BTRIM(endpoint_url), ''), '')) DO NOTHING
                     """,
-                    (cid, disp, disp, None, pub_url),
+                    (cid, disp, disp, None, pub_url, False),
                 )
             else:
-                for ep in endpoints:
+                for ep, virt in pairs:
                     cur.execute(
                         """
-                        INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled)
-                        VALUES (%s, %s, %s, %s, %s)
+                        INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted)
+                        VALUES (%s, %s, %s, %s, %s, %s)
                         ON CONFLICT (cloud_id, COALESCE(NULLIF(BTRIM(endpoint_url), ''), '')) DO NOTHING
                         """,
-                        (cid, disp, disp, ep, pub_url),
+                        (cid, disp, disp, ep, pub_url, virt),
                     )
         conn.commit()
     finally:
         conn.close()
 
 
-def update_cloud(cloud_id, display_name=None, endpoint_url=None, public_url_enabled=None):
+def update_cloud(
+    cloud_id,
+    display_name=None,
+    endpoint_url=None,
+    public_url_enabled=None,
+    virtual_hosted=None,
+    endpoint_virtual_hosted=None,
+):
     """Обновить display_name/endpoint_url облака и синхронизировать buckets по cloud_id."""
     cid = (cloud_id or "").strip()
     current = get_cloud_row(cid)
@@ -1556,41 +1649,40 @@ def update_cloud(cloud_id, display_name=None, endpoint_url=None, public_url_enab
         if public_url_enabled is not None
         else bool(current.get('public_url_enabled'))
     )
-    existing_raw = current.get("endpoint_url")
-    existing_endpoints = [str(v).strip() for v in existing_raw] if isinstance(existing_raw, list) else []
-    existing_endpoints = [v for v in existing_endpoints if v]
-    new_endpoint = endpoint_url if endpoint_url is not None else existing_endpoints
+    existing_pairs = [
+        (item.get('url'), bool(item.get('virtual_hosted')))
+        for item in (current.get('endpoints') or [])
+        if (item.get('url') or '').strip()
+    ]
+    if endpoint_url is None and endpoint_virtual_hosted is None and virtual_hosted is None:
+        pairs = existing_pairs
+    elif endpoint_url is None:
+        urls = [url for url, _flag in existing_pairs]
+        pairs = _endpoint_flag_pairs(urls, virtual_hosted, endpoint_virtual_hosted)
+    else:
+        pairs = _endpoint_flag_pairs(endpoint_url, virtual_hosted, endpoint_virtual_hosted)
     new_display = str(new_display).strip() or cid
-    endpoints = []
-    seen = set()
-    if isinstance(new_endpoint, (list, tuple, set)):
-        for v in new_endpoint:
-            s = str(v or '').strip()
-            if not s or s in seen:
-                continue
-            seen.add(s)
-            endpoints.append(s)
-    bucket_endpoint = endpoints[0] if endpoints else None
+    bucket_endpoint = pairs[0][0] if pairs else None
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM clouds WHERE cloud_id = %s", (cid,))
-            if not endpoints:
+            if not pairs:
                 cur.execute(
                     """
-                    INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     """,
-                    (cid, new_display, new_display, None, new_public_url),
+                    (cid, new_display, new_display, None, new_public_url, False),
                 )
             else:
-                for ep in endpoints:
+                for ep, virt in pairs:
                     cur.execute(
                         """
-                        INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled)
-                        VALUES (%s, %s, %s, %s, %s)
+                        INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted)
+                        VALUES (%s, %s, %s, %s, %s, %s)
                         """,
-                        (cid, new_display, new_display, ep, new_public_url),
+                        (cid, new_display, new_display, ep, new_public_url, virt),
                     )
             cur.execute(
                 """

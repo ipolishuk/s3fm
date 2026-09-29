@@ -264,10 +264,13 @@ def settings_services_status_impl():
                     bn = (bc.get('bucket_name') or '').strip()
                     if not (ep and ak and sk and bn):
                         continue
-                    key = ep.lower()
+                    from security import virtual_hosted_for_endpoint
+                    virtual_hosted = virtual_hosted_for_endpoint(cloud, ep)
+                    key = ep.lower() + '\0' + ('1' if virtual_hosted else '0')
                     if key not in by_endpoint:
                         cfg = dict(bc)
                         cfg['endpoint_url'] = ep
+                        cfg['virtual_hosted'] = virtual_hosted
                         by_endpoint[key] = cfg
 
             vars_list = [
@@ -921,6 +924,13 @@ def settings_test_bucket_connection_impl():
         if security_error:
             return jsonify({'error': _(security_error)}), 400
 
+        from security import normalize_endpoint_url, virtual_hosted_for_endpoint
+        cloud_row = get_cloud_row(cloud_id) or {}
+        endpoint_flags = {}
+        for item in cloud_row.get('endpoints') or []:
+            key = normalize_endpoint_url(item.get('url') or '')
+            if key:
+                endpoint_flags[key] = bool(item.get('virtual_hosted'))
         bucket_config = {
             'bucket_name': bucket_name,
             'endpoint_url': endpoint_url,
@@ -929,6 +939,10 @@ def settings_test_bucket_connection_impl():
             'ca_bundle_path': ca_bundle_path or None,
             'region_name': region_name or 'us-east-1',
             'skip_tls_verify': bool(skip_tls_verify),
+            'virtual_hosted': virtual_hosted_for_endpoint(
+                {'endpoint_virtual_hosted': endpoint_flags},
+                endpoint_url,
+            ),
         }
         s3_client = get_s3_client(bucket_config)
         s3_client.head_bucket(Bucket=bucket_name)
@@ -970,6 +984,49 @@ def settings_options_endpoints_impl():
         return jsonify({'error': _('error.unexpected')}), 500
 
 
+def _parse_cloud_endpoints(data):
+    """(urls, flags) из тела запроса. urls/flags = None, если поле не передано. None целиком — неверный тип."""
+    detailed = data.get('endpoints') if 'endpoints' in data else None
+    if isinstance(detailed, list):
+        urls = []
+        flags = []
+        for item in detailed:
+            if isinstance(item, dict):
+                url = str(item.get('url') or item.get('endpoint_url') or '').strip()
+                if not url:
+                    continue
+                urls.append(url)
+                flags.append(bool(item.get('virtual_hosted')))
+            elif isinstance(item, str) and item.strip():
+                urls.append(item.strip())
+                flags.append(bool(data.get('virtual_hosted')))
+            elif item not in (None, ''):
+                return None
+        return urls, flags
+    if 'endpoint_url' in data:
+        endpoint_raw = data.get('endpoint_url')
+        if endpoint_raw is not None and not isinstance(endpoint_raw, list):
+            return None
+        urls = []
+        for item in (endpoint_raw or []):
+            if isinstance(item, dict):
+                return None
+            url = str(item or '').strip()
+            if url:
+                urls.append(url)
+    else:
+        urls = None
+    if 'endpoint_virtual_hosted' in data:
+        flags_raw = data.get('endpoint_virtual_hosted')
+        if flags_raw is not None and not isinstance(flags_raw, list):
+            return None
+        return urls, [bool(v) for v in (flags_raw or [])]
+    if 'virtual_hosted' in data and urls is not None:
+        flag = bool(data.get('virtual_hosted'))
+        return urls, [flag] * len(urls)
+    return urls, None
+
+
 def settings_clouds_impl():
     """Список облаков из БД или создание нового облака (только admin)."""
     if session.get('role') != 'admin':
@@ -988,16 +1045,17 @@ def settings_clouds_impl():
         if get_cloud_row(cloud_id):
             return jsonify({'error': _('error.cloud_exists')}), 400
         display_name = (data.get('display_name') or '').strip() or cloud_id
-        endpoint_raw = data.get('endpoint_url')
-        if endpoint_raw is not None and not isinstance(endpoint_raw, list):
+        parsed = _parse_cloud_endpoints(data)
+        if parsed is None:
             return jsonify({'error': _('error.endpoint_url_array_required')}), 400
-        endpoint_urls = [str(v).strip() for v in (endpoint_raw or []) if str(v).strip()]
+        endpoint_urls, endpoint_flags = parsed
         public_url_enabled = bool(data.get('public_url_enabled'))
         insert_cloud(
             cloud_id=cloud_id,
             display_name=display_name,
             endpoint_url=endpoint_urls,
             public_url_enabled=public_url_enabled,
+            endpoint_virtual_hosted=endpoint_flags,
         )
         log_info(f"Created cloud: {cloud_id}", 'create_objects')
         return jsonify({'ok': True})
@@ -1037,13 +1095,27 @@ def settings_cloud_by_id_impl(cloud_id):
         data = request.get_json() or {}
         display_name = data.get('display_name') if 'display_name' in data else None
         endpoint_url = None
+        endpoint_flags = None
+        virtual_hosted = None
         public_url_enabled = None
-        if 'endpoint_url' in data:
-            endpoint_raw = data.get('endpoint_url')
-            if endpoint_raw is not None and not isinstance(endpoint_raw, list):
+        touches_endpoints = (
+            'endpoint_url' in data
+            or 'endpoints' in data
+            or 'endpoint_virtual_hosted' in data
+            or 'virtual_hosted' in data
+        )
+        if touches_endpoints:
+            parsed = _parse_cloud_endpoints(data)
+            if parsed is None:
                 return jsonify({'error': _('error.endpoint_url_array_required')}), 400
-            endpoint_urls = [str(v).strip() for v in (endpoint_raw or []) if str(v).strip()]
-            endpoint_url = endpoint_urls
+            endpoint_url, endpoint_flags = parsed
+            if (
+                'virtual_hosted' in data
+                and endpoint_flags is None
+                and 'endpoints' not in data
+                and 'endpoint_virtual_hosted' not in data
+            ):
+                virtual_hosted = bool(data.get('virtual_hosted'))
         if 'public_url_enabled' in data:
             public_url_enabled = bool(data.get('public_url_enabled'))
         update_cloud(
@@ -1051,6 +1123,8 @@ def settings_cloud_by_id_impl(cloud_id):
             display_name=display_name,
             endpoint_url=endpoint_url,
             public_url_enabled=public_url_enabled,
+            virtual_hosted=virtual_hosted,
+            endpoint_virtual_hosted=endpoint_flags,
         )
         return jsonify({'ok': True})
     except Exception as e:

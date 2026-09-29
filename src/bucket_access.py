@@ -12,6 +12,7 @@ from auth_session import (
 )
 from buckets import get_buckets_config
 from logs import log_warning
+from security import virtual_hosted_for_endpoint
 
 
 def normalize_s3_object_key(key: str) -> str:
@@ -28,6 +29,7 @@ def _inherit_bucket_config(group_data, bucket_config):
         cfg['endpoint_url'] = (group_data.get('endpoint_url') or '').strip()
     if 'region_name' not in cfg:
         cfg['region_name'] = group_data.get('region_name', 'us-east-1')
+    cfg['virtual_hosted'] = virtual_hosted_for_endpoint(group_data, cfg.get('endpoint_url'))
     return cfg
 
 
@@ -161,6 +163,9 @@ def _build_session_accessible_buckets(include_secrets, context='accessible_bucke
                 bucket_config_with_inheritance['endpoint_url'] = (group_data.get('endpoint_url') or '').strip()
             if 'region_name' not in bucket_config_with_inheritance:
                 bucket_config_with_inheritance['region_name'] = group_data.get('region_name', 'us-east-1')
+            bucket_config_with_inheritance['virtual_hosted'] = virtual_hosted_for_endpoint(
+                group_data, bucket_config_with_inheritance.get('endpoint_url'),
+            )
 
             if include_secrets:
                 ak = bucket_config.get('aws_access_key_id')
@@ -188,6 +193,7 @@ def _build_session_accessible_buckets(include_secrets, context='accessible_bucke
                 'ca_bundle_path': bucket_config.get('ca_bundle_path'),
                 'skip_tls_verify': bucket_config.get('skip_tls_verify'),
                 'public_url_enabled': bool(group_data.get('public_url_enabled')),
+                'virtual_hosted': bool(bucket_config_with_inheritance.get('virtual_hosted')),
             })
 
     return all_buckets

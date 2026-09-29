@@ -953,8 +953,12 @@ function loadSettingsClouds() {
                 var cloudId = (row && row.cloud_id) ? String(row.cloud_id) : '';
                 var cloudIdAttr = cloudId.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 var display = (row && (row.display_name || row.name)) ? String(row.display_name || row.name) : cloudId;
-                var endpointList = (row && Array.isArray(row.endpoint_url)) ? row.endpoint_url : splitCloudEndpoints(row && row.endpoint_url);
-                var endpointText = endpointList.length ? endpointList.join(', ') : '—';
+                var endpointEntries = cloudEndpointEntriesFromRow(row);
+                var endpointText = endpointEntries.length
+                    ? endpointEntries.map(function(entry) {
+                        return entry.url;
+                    }).join(', ')
+                    : '—';
                 html += '<tr data-cloud-id="' + cloudIdAttr + '">';
                 html += '<td>' + escapeHtml(cloudId) + '</td>';
                 html += '<td class="settings-col-display">' + escapeHtml(display) + '</td>';
@@ -1362,7 +1366,18 @@ function confirmDeleteRole(roleName) {
     }
 }
 
+function hideCloudParamsInfo() {
+    var m = document.getElementById('cloudParamsInfoModal');
+    if (m) m.style.display = 'none';
+}
+
+function showCloudParamsInfo() {
+    var m = document.getElementById('cloudParamsInfoModal');
+    if (m) m.style.display = 'flex';
+}
+
 function hideCloudEditModal() {
+    hideCloudParamsInfo();
     var m = document.getElementById('cloudEditModal');
     if (m) m.style.display = 'none';
     var orig = document.getElementById('cloudEditOriginalId');
@@ -1406,6 +1421,71 @@ function setCloudEditPublicUrl(value) {
 function getCloudEditPublicUrl() {
     var hidden = document.getElementById('cloudEditPublicUrlEnabled');
     return cloudPublicUrlValueFromRaw(hidden ? hidden.value : 'false');
+}
+
+function closeCloudEndpointStyleMenus(exceptWrap) {
+    document.querySelectorAll('#cloudEditEndpointsList .cloud-endpoint-style.open').forEach(function(wrap) {
+        if (exceptWrap && wrap === exceptWrap) return;
+        wrap.classList.remove('open');
+        var trigger = wrap.querySelector('.cloud-endpoint-style-trigger');
+        var panel = wrap.querySelector('.dropdown-menu');
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+        if (panel) panel.classList.add('hidden');
+        if (typeof window.resetDropdownMenuOverlay === 'function') {
+            window.resetDropdownMenuOverlay(wrap);
+        }
+    });
+}
+
+function setCloudEndpointStyle(wrap, value) {
+    var on = !!value;
+    var selected = on ? 'fqdn' : 'path';
+    var hidden = wrap.querySelector('.cloud-endpoint-virtual');
+    var label = wrap.querySelector('.cloud-endpoint-style-label');
+    var panel = wrap.querySelector('.dropdown-menu');
+    if (hidden) hidden.value = on ? 'true' : 'false';
+    if (label) label.textContent = selected;
+    if (panel) {
+        panel.querySelectorAll('.dropdown-item').forEach(function(item) {
+            item.classList.toggle('selected', item.getAttribute('data-value') === selected);
+        });
+    }
+}
+
+function bindCloudEndpointStyle(wrap) {
+    var trigger = wrap.querySelector('.cloud-endpoint-style-trigger');
+    var panel = wrap.querySelector('.dropdown-menu');
+    if (!trigger || !panel) return;
+    var styleLabel = ((window.I18N || {})['modal.cloud_virtual_hosted']) || 'Virtual-hosted style';
+    trigger.setAttribute('aria-label', styleLabel);
+    trigger.addEventListener('click', function(ev) {
+        ev.stopPropagation();
+        var willOpen = !wrap.classList.contains('open');
+        closeCloudEndpointStyleMenus();
+        if (willOpen) {
+            wrap.classList.add('open');
+            trigger.setAttribute('aria-expanded', 'true');
+            panel.classList.remove('hidden');
+            if (typeof window.fitDropdownMenuOverlay === 'function') {
+                window.fitDropdownMenuOverlay(wrap);
+            }
+        }
+    });
+    panel.querySelectorAll('.dropdown-item').forEach(function(item) {
+        item.addEventListener('click', function(ev) {
+            ev.stopPropagation();
+            setCloudEndpointStyle(wrap, item.getAttribute('data-value') === 'fqdn');
+            closeCloudEndpointStyleMenus();
+        });
+    });
+}
+
+if (!window._cloudEndpointStyleDocBound) {
+    window._cloudEndpointStyleDocBound = true;
+    document.addEventListener('click', function(e) {
+        if (e.target.closest && e.target.closest('.cloud-endpoint-style')) return;
+        closeCloudEndpointStyleMenus();
+    });
 }
 
 function initCloudEditPublicUrlDropdown() {
@@ -1469,6 +1549,23 @@ function getCloudEndpointRows() {
     return Array.from(document.querySelectorAll('#cloudEditEndpointsList .cloud-endpoint-row'));
 }
 
+function cloudEndpointEntriesFromRow(row) {
+    if (row && Array.isArray(row.endpoints) && row.endpoints.length) {
+        return row.endpoints.map(function(item) {
+            if (item && typeof item === 'object') {
+                return {
+                    url: String(item.url || item.endpoint_url || '').trim(),
+                    virtual_hosted: cloudPublicUrlValueFromRaw(item.virtual_hosted)
+                };
+            }
+            return { url: String(item || '').trim(), virtual_hosted: false };
+        }).filter(function(item) { return item.url; });
+    }
+    return splitCloudEndpoints(row && row.endpoint_url).map(function(url) {
+        return { url: url, virtual_hosted: cloudPublicUrlValueFromRaw(row && row.virtual_hosted) };
+    });
+}
+
 function updateCloudEndpointButtons() {
     var rows = getCloudEndpointRows();
     rows.forEach(function(row, idx) {
@@ -1477,27 +1574,27 @@ function updateCloudEndpointButtons() {
             if (idx === 0) input.id = 'cloudEditEndpointInput';
             else input.removeAttribute('id');
         }
-        var btn = row.querySelector('button');
+        var btn = row.querySelector('.cloud-endpoint-action');
         if (!btn) return;
         if (idx === rows.length - 1) {
-            btn.className = 'btn cloud-endpoint-add-btn';
+            btn.className = 'btn cloud-endpoint-add-btn cloud-endpoint-action';
             btn.textContent = '+';
             btn.setAttribute('aria-label', 'Add endpoint');
-            btn.onclick = function() { addCloudEndpointInput(''); };
+            btn.onclick = function() { addCloudEndpointInput('', false); };
         } else {
-            btn.className = 'btn cloud-endpoint-remove-btn';
+            btn.className = 'btn cloud-endpoint-remove-btn cloud-endpoint-action';
             btn.textContent = '-';
             btn.setAttribute('aria-label', 'Remove endpoint');
             btn.onclick = function() {
                 row.remove();
-                if (getCloudEndpointRows().length === 0) addCloudEndpointInput('');
+                if (getCloudEndpointRows().length === 0) addCloudEndpointInput('', false);
                 updateCloudEndpointButtons();
             };
         }
     });
 }
 
-function addCloudEndpointInput(value, asPrimary) {
+function addCloudEndpointInput(value, virtualHosted) {
     var list = document.getElementById('cloudEditEndpointsList');
     if (!list) return;
     var row = document.createElement('div');
@@ -1509,12 +1606,27 @@ function addCloudEndpointInput(value, asPrimary) {
     input.maxLength = 512;
     input.placeholder = 'https://...';
     input.value = value || '';
-    if (asPrimary) input.id = 'cloudEditEndpointInput';
+    var style = document.createElement('div');
+    style.className = 'dropdown cloud-endpoint-style';
+    var styleLabel = ((window.I18N || {})['modal.cloud_virtual_hosted']) || 'Virtual-hosted style';
+    style.innerHTML =
+        '<button type="button" class="dropdown-trigger cloud-endpoint-style-trigger" aria-expanded="false" aria-haspopup="listbox" aria-label="' + styleLabel.replace(/"/g, '&quot;') + '">' +
+        '<span class="has-selection cloud-endpoint-style-label">path</span>' +
+        '<i class="fa-solid fa-chevron-down dropdown-icon"></i></button>' +
+        '<div class="dropdown-menu hidden" role="listbox">' +
+        '<button type="button" class="dropdown-item selected" data-value="path" role="option">path</button>' +
+        '<button type="button" class="dropdown-item" data-value="fqdn" role="option">fqdn</button>' +
+        '</div>' +
+        '<input type="hidden" class="cloud-endpoint-virtual" value="false">';
     var btn = document.createElement('button');
     btn.type = 'button';
+    btn.className = 'btn cloud-endpoint-action';
     row.appendChild(input);
+    row.appendChild(style);
     row.appendChild(btn);
     list.appendChild(row);
+    bindCloudEndpointStyle(style);
+    setCloudEndpointStyle(style, !!virtualHosted);
     updateCloudEndpointButtons();
 }
 
@@ -1522,9 +1634,20 @@ function resetCloudEndpointsInputs(values) {
     var list = document.getElementById('cloudEditEndpointsList');
     if (!list) return;
     list.innerHTML = '';
-    var endpoints = Array.isArray(values) ? values.filter(function(v) { return String(v || '').trim(); }) : [];
-    if (!endpoints.length) endpoints = [''];
-    endpoints.forEach(function(endpoint, idx) { addCloudEndpointInput(endpoint, idx === 0); });
+    var entries = [];
+    if (Array.isArray(values)) {
+        values.forEach(function(v) {
+            if (v && typeof v === 'object') {
+                var url = String(v.url || v.endpoint_url || '').trim();
+                if (url) entries.push({ url: url, virtual_hosted: cloudPublicUrlValueFromRaw(v.virtual_hosted) });
+            } else {
+                var text = String(v || '').trim();
+                if (text) entries.push({ url: text, virtual_hosted: false });
+            }
+        });
+    }
+    if (!entries.length) entries = [{ url: '', virtual_hosted: false }];
+    entries.forEach(function(entry) { addCloudEndpointInput(entry.url, entry.virtual_hosted); });
 }
 
 function getCloudEndpointValues() {
@@ -1536,7 +1659,11 @@ function getCloudEndpointValues() {
         var v = (input && input.value || '').trim();
         if (!v || seen[v]) return;
         seen[v] = true;
-        out.push(v);
+        var hidden = row.querySelector('.cloud-endpoint-virtual');
+        out.push({
+            url: v,
+            virtual_hosted: cloudPublicUrlValueFromRaw(hidden ? hidden.value : 'false')
+        });
     });
     return out;
 }
@@ -1593,8 +1720,8 @@ function openCopyCloudModal(cloudId) {
         .then(function(r) { return r.ok ? r.json() : r.json().then(function(j) { return Promise.reject(new Error(j.error || r.statusText)); }); })
         .then(function(row) {
             if (nameEl) nameEl.value = row.display_name || row.name || cloudId;
-            var endpointList = (row && Array.isArray(row.endpoint_url)) ? row.endpoint_url : splitCloudEndpoints(row && row.endpoint_url);
-            resetCloudEndpointsInputs(endpointList.length ? endpointList : ['']);
+            var endpointEntries = cloudEndpointEntriesFromRow(row);
+            resetCloudEndpointsInputs(endpointEntries.length ? endpointEntries : ['']);
             setCloudEditPublicUrl(cloudPublicUrlValueFromRaw(row && row.public_url_enabled));
             var modal = document.getElementById('cloudEditModal');
             if (modal) modal.style.display = 'flex';
@@ -1631,9 +1758,9 @@ function openEditCloudModal(cloudId) {
         .then(function(r) { return r.ok ? r.json() : r.json().then(function(j) { return Promise.reject(new Error(j.error || r.statusText)); }); })
         .then(function(row) {
             if (nameEl) nameEl.value = row.display_name || row.name || cloudId;
-            var endpointList = (row && Array.isArray(row.endpoint_url)) ? row.endpoint_url : splitCloudEndpoints(row && row.endpoint_url);
-            if (epEl) epEl.value = endpointList[0] || '';
-            resetCloudEndpointsInputs(endpointList);
+            var endpointEntries = cloudEndpointEntriesFromRow(row);
+            if (epEl) epEl.value = (endpointEntries[0] && endpointEntries[0].url) || '';
+            resetCloudEndpointsInputs(endpointEntries);
             setCloudEditPublicUrl(cloudPublicUrlValueFromRaw(row && row.public_url_enabled));
             var modal = document.getElementById('cloudEditModal');
             if (modal) modal.style.display = 'flex';
@@ -2956,6 +3083,21 @@ if (roleEditSubmitBtn) {
 }
 var cloudEditCancelBtn = document.getElementById('cloudEditCancelBtn');
 if (cloudEditCancelBtn) cloudEditCancelBtn.addEventListener('click', hideCloudEditModal);
+var cloudEditInfoBtn = document.getElementById('cloudEditInfoBtn');
+if (cloudEditInfoBtn) {
+    cloudEditInfoBtn.addEventListener('click', function(ev) {
+        ev.stopPropagation();
+        showCloudParamsInfo();
+    });
+}
+var cloudParamsInfoClose = document.getElementById('cloudParamsInfoClose');
+if (cloudParamsInfoClose) cloudParamsInfoClose.addEventListener('click', hideCloudParamsInfo);
+var cloudParamsInfoModal = document.getElementById('cloudParamsInfoModal');
+if (cloudParamsInfoModal) {
+    cloudParamsInfoModal.addEventListener('click', function(ev) {
+        if (ev.target === cloudParamsInfoModal) hideCloudParamsInfo();
+    });
+}
 var cloudEditSubmitBtn = document.getElementById('cloudEditSubmitBtn');
 if (cloudEditSubmitBtn) {
     cloudEditSubmitBtn.addEventListener('click', function() {
@@ -2967,7 +3109,9 @@ if (cloudEditSubmitBtn) {
         var errEl = document.getElementById('cloudEditError');
         var cloudId = (idEl && idEl.value || '').trim();
         var displayName = (nameEl && nameEl.value || '').trim();
-        var endpoints = getCloudEndpointValues();
+        var endpointEntries = getCloudEndpointValues();
+        var endpoints = endpointEntries.map(function(entry) { return entry.url; });
+        var endpointFlags = endpointEntries.map(function(entry) { return entry.virtual_hosted; });
         var publicUrlEnabled = getCloudEditPublicUrl();
         if (errEl) errEl.textContent = '';
         if (!cloudId) {
@@ -2977,8 +3121,8 @@ if (cloudEditSubmitBtn) {
         var url = isEdit ? ('/api/settings/clouds/' + encodeURIComponent(orig)) : '/api/settings/clouds';
         var method = isEdit ? 'PUT' : 'POST';
         var body = isEdit
-            ? { display_name: displayName || cloudId, endpoint_url: endpoints, public_url_enabled: publicUrlEnabled }
-            : { cloud_id: cloudId, display_name: displayName || cloudId, endpoint_url: endpoints, public_url_enabled: publicUrlEnabled };
+            ? { display_name: displayName || cloudId, endpoint_url: endpoints, endpoint_virtual_hosted: endpointFlags, public_url_enabled: publicUrlEnabled }
+            : { cloud_id: cloudId, display_name: displayName || cloudId, endpoint_url: endpoints, endpoint_virtual_hosted: endpointFlags, public_url_enabled: publicUrlEnabled };
         fetch(url, {
             method: method,
             headers: { 'Content-Type': 'application/json' },

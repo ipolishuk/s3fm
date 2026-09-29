@@ -216,6 +216,11 @@ def _resolve_s3_ca_verify_path(bucket_config):
     return None
 
 
+def _addressing_style(virtual_hosted):
+    """path: https://endpoint/bucket/key; virtual: https://bucket.endpoint/key."""
+    return 'virtual' if virtual_hosted else 'path'
+
+
 def _create_s3_client(
     *,
     access_key,
@@ -225,9 +230,11 @@ def _create_s3_client(
     ca_verify_path,
     skip_tls_verify,
     read_timeout,
+    virtual_hosted=False,
 ):
     """Создаёт новый boto3 S3-клиент (без кэша)."""
     context = 's3_client'
+    addressing_style = _addressing_style(virtual_hosted)
     if ca_verify_path:
         log_info(f'TLS verification with CA bundle: {ca_verify_path}', context)
         config = Config(
@@ -239,6 +246,7 @@ def _create_s3_client(
                 'mode': 'standard',
             },
             max_pool_connections=10,
+            s3={'addressing_style': addressing_style},
         )
         return boto3.client(
             's3',
@@ -266,6 +274,7 @@ def _create_s3_client(
             connect_timeout=30,
             read_timeout=read_timeout,
             retries={'max_attempts': 3},
+            s3={'addressing_style': addressing_style},
         ),
         verify=verify_ssl,
     )
@@ -301,6 +310,7 @@ def get_s3_client(bucket_config, *, read_timeout=None):
         region_name = bucket_config.get('region_name', 'us-east-1')
         ca_verify_path = _resolve_s3_ca_verify_path(bucket_config)
         skip_tls_verify = _skip_tls_verify_enabled(bucket_config)
+        virtual_hosted = bool(bucket_config.get('virtual_hosted'))
         if read_timeout is not None:
             s3_read_timeout = read_timeout
         elif ca_verify_path:
@@ -315,6 +325,7 @@ def get_s3_client(bucket_config, *, read_timeout=None):
             region_name,
             ca_verify_path or '',
             skip_tls_verify,
+            virtual_hosted,
             s3_read_timeout,
         )
         with _s3_client_cache_lock:
@@ -329,6 +340,7 @@ def get_s3_client(bucket_config, *, read_timeout=None):
                 ca_verify_path=ca_verify_path,
                 skip_tls_verify=skip_tls_verify,
                 read_timeout=s3_read_timeout,
+                virtual_hosted=virtual_hosted,
             )
             _s3_client_cache[cache_key] = s3_client
             return s3_client

@@ -53,6 +53,18 @@ def validate_csrf(session, request) -> bool:
     return hmac.compare_digest(expected, provided)
 
 
+def virtual_hosted_for_endpoint(group_data, endpoint_url):
+    """Стиль адресации endpoint, к которому подключён бакет."""
+    group = group_data or {}
+    mapping = group.get('endpoint_virtual_hosted') or {}
+    key = normalize_endpoint_url(endpoint_url)
+    if key and key in mapping:
+        return bool(mapping[key])
+    if not mapping and group.get('virtual_hosted'):
+        return True
+    return False
+
+
 def normalize_endpoint_url(url):
     """Нормализация endpoint URL для сравнения."""
     raw = (url or '').strip()

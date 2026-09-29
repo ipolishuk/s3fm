@@ -106,6 +106,7 @@ document.addEventListener('keydown', function(e) {
         const addBucketModal = document.getElementById('addBucketModal');
         const bucketAccessModal = document.getElementById('bucketAccessModal');
         const cloudEditModal = document.getElementById('cloudEditModal');
+        const cloudParamsInfoModal = document.getElementById('cloudParamsInfoModal');
         const userInfoModal = document.getElementById('userInfoModal');
         const fileInfoModal = document.getElementById('fileInfoModal');
 
@@ -160,6 +161,11 @@ document.addEventListener('keydown', function(e) {
                 addBucketModal.style.display = 'none';
             }
             // Снимаем фокус с активного элемента
+            if (document.activeElement && document.activeElement.blur) {
+                document.activeElement.blur();
+            }
+        } else if (cloudParamsInfoModal && cloudParamsInfoModal.style.display === 'flex') {
+            cloudParamsInfoModal.style.display = 'none';
             if (document.activeElement && document.activeElement.blur) {
                 document.activeElement.blur();
             }

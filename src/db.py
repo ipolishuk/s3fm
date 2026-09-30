@@ -1662,7 +1662,13 @@ def update_cloud(
     else:
         pairs = _endpoint_flag_pairs(endpoint_url, virtual_hosted, endpoint_virtual_hosted)
     new_display = str(new_display).strip() or cid
-    bucket_endpoint = pairs[0][0] if pairs else None
+    from security import normalize_endpoint_url
+    allowed = {
+        normalize_endpoint_url(ep)
+        for ep, _virt in pairs
+        if (ep or '').strip()
+    }
+    fallback = pairs[0][0] if pairs else None
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -1686,12 +1692,34 @@ def update_cloud(
                     )
             cur.execute(
                 """
-                UPDATE buckets
-                SET cloud_name = %s, endpoint_url = %s
+                SELECT bucket_id, endpoint_url
+                FROM buckets
                 WHERE cloud_id = %s
                 """,
-                (new_display, bucket_endpoint, cid),
+                (cid,),
             )
+            bucket_rows = cur.fetchall()
+            cur.execute(
+                """
+                UPDATE buckets
+                SET cloud_name = %s
+                WHERE cloud_id = %s
+                """,
+                (new_display, cid),
+            )
+            if fallback:
+                for brow in bucket_rows:
+                    current = (brow.get('endpoint_url') or '').strip()
+                    if current and normalize_endpoint_url(current) in allowed:
+                        continue
+                    cur.execute(
+                        """
+                        UPDATE buckets
+                        SET endpoint_url = %s
+                        WHERE bucket_id = %s
+                        """,
+                        (fallback, brow['bucket_id']),
+                    )
         conn.commit()
     finally:
         conn.close()

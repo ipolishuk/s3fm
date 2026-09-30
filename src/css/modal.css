@@ -112,6 +112,17 @@
   background: var(--selection-bg);
 }
 
+#cloudParamsInfoModal .modal-header {
+  align-items: baseline;
+}
+
+#cloudParamsInfoModal .modal-header .modal-icon {
+  font-size: 16px;
+  line-height: 1;
+  position: relative;
+  top: -2px;
+}
+
 .modal-overlay-raised {
   z-index: calc(var(--popup-z-overlay) + 20);
 }
@@ -667,6 +678,7 @@
 /* Общий блок key/value (copy/move и др.) внутри modal-body */
 .modal-body .user-info-content {
   margin: 0;
+  margin-top: 10px;
   padding: 0;
   border: var(--border-style);
   border-radius: var(--radius-lg);
@@ -996,8 +1008,6 @@
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  scroll-padding-bottom: 12px;
-  padding-bottom: 12px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -1106,7 +1116,6 @@
   max-height: none;
   height: auto;
   overflow: visible;
-  padding-bottom: 0;
 }
 
 #BucketAccessModalBody .file-info-acl-grants:has(> #bucketAccessEditRows) {

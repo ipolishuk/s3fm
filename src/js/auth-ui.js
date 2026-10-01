@@ -104,7 +104,9 @@ async function checkAuthentication() {
                     allowedClouds: data.allowed_clouds,
                     email: data.email || null,
                     display_name: data.display_name || null,
-                    has_custom_roles: !!data.has_custom_roles
+                    has_custom_roles: !!data.has_custom_roles,
+                    created_at: data.created_at || null,
+                    last_login_at: data.last_login_at || null
                 });
 
                 // Устанавливаем таймаут сессии и периодическое обновление, пока пользователь на сайте

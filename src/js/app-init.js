@@ -1,4 +1,42 @@
 // Bootstrap listeners
+window.hideModalParamsInfo = function () {
+    var modal = document.getElementById('modalParamsInfo');
+    if (!modal) return;
+    modal.style.display = 'none';
+    modal.classList.add('hidden');
+};
+
+window.showModalParamsInfo = function (templateId, title) {
+    var tpl = document.getElementById(templateId);
+    var modal = document.getElementById('modalParamsInfo');
+    var body = document.getElementById('modalParamsInfoBody');
+    var titleEl = document.getElementById('modalParamsInfoTitle');
+    if (!tpl || !modal || !body || !titleEl) return;
+    titleEl.textContent = title || '';
+    body.replaceChildren(tpl.content.cloneNode(true));
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+};
+
+document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest && ev.target.closest('.modal-title-info');
+    if (!btn) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    window.showModalParamsInfo(btn.getAttribute('data-params-template'), btn.getAttribute('data-params-title'));
+});
+
+(function () {
+    var modal = document.getElementById('modalParamsInfo');
+    var closeBtn = document.getElementById('modalParamsInfoClose');
+    if (closeBtn) closeBtn.addEventListener('click', window.hideModalParamsInfo);
+    if (modal) {
+        modal.addEventListener('click', function (ev) {
+            if (ev.target === modal) window.hideModalParamsInfo();
+        });
+    }
+})();
+
 function getUploadBasePath() {
     let basePath = (currentPath || '').trim().replace(/\/+$/, '');
     if (basePath !== '') basePath += '/';
@@ -98,6 +136,14 @@ document.addEventListener('DOMContentLoaded', function() {
 // Закрытие при нажатии Escape
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
+        const paramsInfoModal = document.getElementById('modalParamsInfo');
+        if (paramsInfoModal && paramsInfoModal.style.display === 'flex') {
+            window.hideModalParamsInfo();
+            if (document.activeElement && document.activeElement.blur) {
+                document.activeElement.blur();
+            }
+            return;
+        }
         const confirmModal = document.getElementById('confirmModal');
         const createFolderModal = document.getElementById('createFolderModal');
         const copyObjectsModal = document.getElementById('copyObjectsModal');
@@ -106,7 +152,6 @@ document.addEventListener('keydown', function(e) {
         const addBucketModal = document.getElementById('addBucketModal');
         const bucketAccessModal = document.getElementById('bucketAccessModal');
         const cloudEditModal = document.getElementById('cloudEditModal');
-        const cloudParamsInfoModal = document.getElementById('cloudParamsInfoModal');
         const userInfoModal = document.getElementById('userInfoModal');
         const fileInfoModal = document.getElementById('fileInfoModal');
 
@@ -161,11 +206,6 @@ document.addEventListener('keydown', function(e) {
                 addBucketModal.style.display = 'none';
             }
             // Снимаем фокус с активного элемента
-            if (document.activeElement && document.activeElement.blur) {
-                document.activeElement.blur();
-            }
-        } else if (cloudParamsInfoModal && cloudParamsInfoModal.style.display === 'flex') {
-            cloudParamsInfoModal.style.display = 'none';
             if (document.activeElement && document.activeElement.blur) {
                 document.activeElement.blur();
             }

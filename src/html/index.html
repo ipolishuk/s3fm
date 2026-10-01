@@ -448,6 +448,9 @@
             <div class="modal-header">
                 <i class="fa-solid fa-copy modal-icon modal-icon-info"></i>
                 <h3 class="modal-title">{{ _('modal.copy_objects') }}</h3>
+                <button type="button" class="modal-title-info" data-params-template="copyParamsHelp" data-params-title="{{ _('modal.copy_params_title') }}" aria-label="{{ _('modal.cloud_params_info') }}" title="{{ _('modal.cloud_params_info') }}">
+                    <i class="fa-solid fa-info" aria-hidden="true"></i>
+                </button>
             </div>
             <div class="modal-body" id="CopyObjectsModal">
                 <div class="form-group">
@@ -498,6 +501,9 @@
             <div class="modal-header">
                 <i class="fa-solid fa-right-left modal-icon modal-icon-info"></i>
                 <h3 class="modal-title">{{ _('modal.move_objects') }}</h3>
+                <button type="button" class="modal-title-info" data-params-template="moveParamsHelp" data-params-title="{{ _('modal.move_params_title') }}" aria-label="{{ _('modal.cloud_params_info') }}" title="{{ _('modal.cloud_params_info') }}">
+                    <i class="fa-solid fa-info" aria-hidden="true"></i>
+                </button>
             </div>
             <div class="modal-body" id="MoveObjectsModal">
                 <div class="form-group">
@@ -548,6 +554,9 @@
             <div class="modal-header">
                 <i class="fa-solid fa-gear modal-icon modal-icon-info"></i>
                 <h3 class="modal-title">{{ _('settings.search.settings_modal_title') }}</h3>
+                <button type="button" class="modal-title-info" data-params-template="searchParamsHelp" data-params-title="{{ _('modal.search_params_title') }}" aria-label="{{ _('modal.cloud_params_info') }}" title="{{ _('modal.cloud_params_info') }}">
+                    <i class="fa-solid fa-info" aria-hidden="true"></i>
+                </button>
             </div>
             <form id="meiliSettingsForm" autocomplete="off">
                 <p class="form-hint meili-settings-config-error hidden" id="meiliSettingsConfigError"></p>
@@ -564,6 +573,9 @@
             <div class="modal-header">
                 <i class="fa-solid fa-file-lines modal-icon modal-icon-info"></i>
                 <h3 class="modal-title" id="fileInfoModalTitle">{{ _('files.info_title') }}</h3>
+                <button type="button" class="modal-title-info" data-params-template="fileParamsHelp" data-params-title="{{ _('modal.file_params_title') }}" aria-label="{{ _('modal.cloud_params_info') }}" title="{{ _('modal.cloud_params_info') }}">
+                    <i class="fa-solid fa-info" aria-hidden="true"></i>
+                </button>
             </div>
             <div class="modal-body file-info-modal-body" id="FileInfoModal">
                 <div class="file-info-acl-group file-info-details-group">
@@ -630,6 +642,9 @@
             <div class="modal-header">
                 <i class="fa-solid fa-user-shield modal-icon modal-icon-info"></i>
                 <h3 class="modal-title" id="bulkAclModalTitle">{{ _('files.bulk_acl_title') }}</h3>
+                <button type="button" class="modal-title-info" data-params-template="bulkAclParamsHelp" data-params-title="{{ _('modal.bulk_acl_params_title') }}" aria-label="{{ _('modal.cloud_params_info') }}" title="{{ _('modal.cloud_params_info') }}">
+                    <i class="fa-solid fa-info" aria-hidden="true"></i>
+                </button>
             </div>
             <div class="modal-body file-info-modal-body" id="BulkAclModal">
                 <p class="bulk-acl-summary" id="bulkAclSummary"></p>
@@ -679,11 +694,11 @@
                     <span class="lables">{{ _('user_info.role') }}</span>
                     <span class="user-info-value" id="modalUserRole"></span>
                 </div>
-                <div class="modal-field" id="modalUserCreatedAtRow" hidden>
+                <div class="modal-field" id="modalUserCreatedAtRow">
                     <span class="lables">{{ _('user_info.created_at') }}</span>
                     <span class="user-info-value" id="modalUserCreatedAt">—</span>
                 </div>
-                <div class="modal-field" id="modalUserLastLoginAtRow" hidden>
+                <div class="modal-field" id="modalUserLastLoginAtRow">
                     <span class="lables">{{ _('user_info.last_login_at') }}</span>
                     <span class="user-info-value" id="modalUserLastLoginAt">—</span>
                 </div>
@@ -699,6 +714,9 @@
             <div class="modal-header">
                 <i class="fa-solid fa-user-plus modal-icon modal-icon-info" id="addUserModalIcon"></i>
                 <h3 class="modal-title" id="addUserModalTitle">{{ _('modal.add_user') }}</h3>
+                <button type="button" class="modal-title-info" data-params-template="userParamsHelp" data-params-title="{{ _('modal.user_params_title') }}" aria-label="{{ _('modal.cloud_params_info') }}" title="{{ _('modal.cloud_params_info') }}">
+                    <i class="fa-solid fa-info" aria-hidden="true"></i>
+                </button>
             </div>
             <div class="modal-body add-user-modal-body" id="AddUserModal">
                 <form id="addUserForm" autocomplete="off">
@@ -815,6 +833,9 @@
             <div class="modal-header">
                 <i class="fa-solid fa-user-shield modal-icon modal-icon-info" id="roleEditModalIcon"></i>
                 <h3 class="modal-title" id="roleEditModalTitle">{{ _('modal.add_role') }}</h3>
+                <button type="button" class="modal-title-info" data-params-template="roleParamsHelp" data-params-title="{{ _('modal.role_params_title') }}" aria-label="{{ _('modal.cloud_params_info') }}" title="{{ _('modal.cloud_params_info') }}">
+                    <i class="fa-solid fa-info" aria-hidden="true"></i>
+                </button>
             </div>
             <div class="modal-body" id="RoleEditModal">
                 <div class="form-group">
@@ -840,7 +861,7 @@
             <div class="modal-header">
                 <i class="fa-solid fa-cloud modal-icon modal-icon-info" id="cloudEditModalIcon"></i>
                 <h3 class="modal-title" id="cloudEditModalTitle">{{ _('modal.add_cloud') }}</h3>
-                <button type="button" class="modal-title-info" id="cloudEditInfoBtn" aria-label="{{ _('modal.cloud_params_info') }}" title="{{ _('modal.cloud_params_info') }}">
+                <button type="button" class="modal-title-info" data-params-template="cloudParamsHelp" data-params-title="{{ _('modal.cloud_params_title') }}" aria-label="{{ _('modal.cloud_params_info') }}" title="{{ _('modal.cloud_params_info') }}">
                     <i class="fa-solid fa-info" aria-hidden="true"></i>
                 </button>
             </div>
@@ -886,47 +907,131 @@
         </div>
     </div>
 
-    <div class="modal-overlay hidden modal-overlay-raised" id="cloudParamsInfoModal">
+    <div class="modal-overlay hidden modal-overlay-raised modal-params-info" id="modalParamsInfo">
         <div class="modal">
             <div class="modal-header">
                 <i class="fa-solid fa-info modal-icon modal-icon-info"></i>
-                <h3 class="modal-title">{{ _('modal.cloud_params_title') }}</h3>
+                <h3 class="modal-title" id="modalParamsInfoTitle"></h3>
             </div>
-            <div class="modal-body">
-                <dl class="modal-param-help">
-                    <div>
-                        <dt>{{ _('modal.cloud_id') }}</dt>
-                        <dd>{{ _('modal.cloud_id_help') }}</dd>
-                    </div>
-                    <div>
-                        <dt>{{ _('modal.cloud_display_name') }}</dt>
-                        <dd>{{ _('modal.cloud_display_name_help') }}</dd>
-                    </div>
-                    <div>
-                        <dt>{{ _('modal.cloud_endpoint') }}</dt>
-                        <dd>{{ _('modal.cloud_endpoint_help') }}</dd>
-                    </div>
-                    <div>
-                        <dt>path / fqdn</dt>
-                        <dd>{{ _('modal.cloud_style_help') }}</dd>
-                    </div>
-                    <div>
-                        <dt>{{ _('modal.cloud_enable_public_url') }}</dt>
-                        <dd>{{ _('modal.cloud_enable_public_url_help') }}</dd>
-                    </div>
-                </dl>
-            </div>
+            <div class="modal-body" id="modalParamsInfoBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn" id="cloudParamsInfoClose">{{ _('user_info.close') }}</button>
+                <button type="button" class="btn" id="modalParamsInfoClose">{{ _('user_info.close') }}</button>
             </div>
         </div>
     </div>
+
+    <template id="copyParamsHelp">
+        <dl class="modal-param-help">
+            <div><dt>{{ _('copy.src') }}</dt><dd>{{ _('modal.copy_src_help') }}</dd></div>
+            <div><dt>{{ _('copy.dst_bucket') }}</dt><dd>{{ _('modal.copy_dst_bucket_help') }}</dd></div>
+            <div><dt>{{ _('copy.dst_path') }}</dt><dd>{{ _('modal.copy_dst_path_help') }}</dd></div>
+        </dl>
+    </template>
+    <template id="moveParamsHelp">
+        <dl class="modal-param-help">
+            <div><dt>{{ _('move.src') }}</dt><dd>{{ _('modal.move_src_help') }}</dd></div>
+            <div><dt>{{ _('move.dst_bucket') }}</dt><dd>{{ _('modal.move_dst_bucket_help') }}</dd></div>
+            <div><dt>{{ _('move.dst_path') }}</dt><dd>{{ _('modal.move_dst_path_help') }}</dd></div>
+        </dl>
+    </template>
+    <template id="fileParamsHelp">
+        <dl class="modal-param-help">
+            <div><dt>{{ _('files.info_name') }}</dt><dd>{{ _('modal.file_name_help') }}</dd></div>
+            <div><dt>{{ _('files.info_size') }}</dt><dd>{{ _('modal.file_size_help') }}</dd></div>
+            <div><dt>{{ _('files.info_content_type') }}</dt><dd>{{ _('modal.file_content_type_help') }}</dd></div>
+            <div><dt>{{ _('files.info_created') }}</dt><dd>{{ _('modal.file_created_help') }}</dd></div>
+            <div><dt>{{ _('files.info_modified') }}</dt><dd>{{ _('modal.file_modified_help') }}</dd></div>
+            <div><dt>{{ _('files.info_modified_by') }}</dt><dd>{{ _('modal.file_modified_by_help') }}</dd></div>
+            <div><dt>{{ _('files.info_source_url') }}</dt><dd>{{ _('modal.file_source_url_help') }}</dd></div>
+            <div><dt>{{ _('files.info_acl_col_user') }}</dt><dd>{{ _('modal.file_acl_user_help') }}</dd></div>
+            <div><dt>{{ _('files.info_acl_col_permission') }}</dt><dd>{{ _('modal.file_acl_perm_help') }}</dd></div>
+        </dl>
+    </template>
+    <template id="bulkAclParamsHelp">
+        <dl class="modal-param-help">
+            <div><dt>{{ _('files.bulk_acl_title') }}</dt><dd>{{ _('modal.bulk_acl_summary_help') }}</dd></div>
+            <div><dt>{{ _('files.info_acl_col_user') }}</dt><dd>{{ _('modal.bulk_acl_user_help') }}</dd></div>
+            <div><dt>{{ _('files.info_acl_col_permission') }}</dt><dd>{{ _('modal.bulk_acl_perm_help') }}</dd></div>
+        </dl>
+    </template>
+    <template id="userParamsHelp">
+        <dl class="modal-param-help">
+            <div><dt>{{ _('modal.user_status') }}</dt><dd>{{ _('modal.user_status_help') }}</dd></div>
+            <div><dt>{{ _('modal.user_active_until') }}</dt><dd>{{ _('modal.user_active_until_help') }}</dd></div>
+            <div><dt>{{ _('modal.user_username') }}</dt><dd>{{ _('modal.user_username_help') }}</dd></div>
+            <div><dt>{{ _('modal.user_full_name') }}</dt><dd>{{ _('modal.user_full_name_help') }}</dd></div>
+            <div><dt>{{ _('modal.user_email') }}</dt><dd>{{ _('modal.user_email_help') }}</dd></div>
+            <div><dt>{{ _('modal.user_password') }}</dt><dd>{{ _('modal.user_password_help') }}</dd></div>
+            <div><dt>{{ _('modal.user_role') }}</dt><dd>{{ _('modal.user_role_help') }}</dd></div>
+            <div><dt>{{ _('modal.user_clouds') }}</dt><dd>{{ _('modal.user_clouds_help') }}</dd></div>
+            <div><dt>{{ _('modal.user_buckets') }}</dt><dd>{{ _('modal.user_buckets_help') }}</dd></div>
+            <div><dt>{{ _('modal.user_bucket_roles') }}</dt><dd>{{ _('modal.user_bucket_roles_help') }}</dd></div>
+        </dl>
+    </template>
+    <template id="roleParamsHelp">
+        <dl class="modal-param-help">
+            <div><dt>{{ _('modal.role_name') }}</dt><dd>{{ _('modal.role_name_help') }}</dd></div>
+            <div><dt>{{ _('modal.role_permissions') }}</dt><dd>{{ _('modal.role_permissions_help') }}</dd></div>
+        </dl>
+    </template>
+    <template id="cloudParamsHelp">
+        <dl class="modal-param-help">
+            <div><dt>{{ _('modal.cloud_id') }}</dt><dd>{{ _('modal.cloud_id_help') }}</dd></div>
+            <div><dt>{{ _('modal.cloud_display_name') }}</dt><dd>{{ _('modal.cloud_display_name_help') }}</dd></div>
+            <div><dt>{{ _('modal.cloud_endpoint') }}</dt><dd>{{ _('modal.cloud_endpoint_help') }}</dd></div>
+            <div><dt>path / fqdn</dt><dd>{{ _('modal.cloud_style_help') }}</dd></div>
+            <div><dt>{{ _('modal.cloud_enable_public_url') }}</dt><dd>{{ _('modal.cloud_enable_public_url_help') }}</dd></div>
+        </dl>
+    </template>
+    <template id="bucketParamsHelp">
+        <dl class="modal-param-help">
+            <div><dt>{{ _('modal.bucket_cloud_id') }}</dt><dd>{{ _('modal.bucket_cloud_help') }}</dd></div>
+            <div><dt>{{ _('modal.bucket_bucket_name') }}</dt><dd>{{ _('modal.bucket_bucket_name_help') }}</dd></div>
+            <div><dt>{{ _('modal.bucket_display_name') }}</dt><dd>{{ _('modal.bucket_display_name_help') }}</dd></div>
+            <div><dt>{{ _('modal.bucket_bucket_id') }}</dt><dd>{{ _('modal.bucket_bucket_id_help') }}</dd></div>
+            <div><dt>{{ _('modal.endpoin_url') }}</dt><dd>{{ _('modal.bucket_endpoint_help') }}</dd></div>
+            <div><dt>{{ _('modal.aws_access_key') }}</dt><dd>{{ _('modal.aws_access_key_help') }}</dd></div>
+            <div><dt>{{ _('modal.aws_secret_key') }}</dt><dd>{{ _('modal.aws_secret_key_help') }}</dd></div>
+            <div><dt>{{ _('modal.bucket_ca_bundle') }}</dt><dd>{{ _('modal.bucket_ca_bundle_help') }}</dd></div>
+            <div><dt>{{ _('modal.bucket_region') }}</dt><dd>{{ _('modal.bucket_region_help') }}</dd></div>
+            <div><dt>{{ _('modal.bucket_skip_tls') }}</dt><dd>{{ _('modal.bucket_skip_tls_help') }}</dd></div>
+        </dl>
+    </template>
+    <template id="bucketAccessParamsHelp">
+        <dl class="modal-param-help">
+            <div><dt>{{ _('modal.bucket_access_col_user') }}</dt><dd>{{ _('modal.bucket_access_user_help') }}</dd></div>
+            <div><dt>{{ _('modal.bucket_access_col_role') }}</dt><dd>{{ _('modal.bucket_access_role_help') }}</dd></div>
+        </dl>
+    </template>
+    <template id="searchParamsHelp">
+        <dl class="modal-param-help">
+            <div><dt>{{ _('settings.search.version') }}</dt><dd>{{ _('settings.search.version_hint') }}</dd></div>
+            <div><dt>{{ _('settings.search.env.meili_enabled') }}</dt><dd>{{ _('settings.search.env.hint.meili_enabled') }}</dd></div>
+            <div><dt>{{ _('settings.search.env.meili_host') }}</dt><dd>{{ _('settings.search.env.hint.meili_host') }}</dd></div>
+            <div><dt>{{ _('settings.search.env.meili_api_key') }}</dt><dd>{{ _('settings.search.env.hint.meili_api_key') }}</dd></div>
+            <div><dt>{{ _('settings.search.env.meili_periodic_sync') }}</dt><dd>{{ _('settings.search.env.hint.meili_periodic_sync') }}</dd></div>
+            <div><dt>{{ _('settings.search.env.meili_sync_at') }}</dt><dd>{{ _('settings.search.env.hint.meili_sync_at') }}</dd></div>
+            <div><dt>{{ _('settings.search.env.meili_reindex_workers') }}</dt><dd>{{ _('settings.search.env.hint.meili_reindex_workers') }}</dd></div>
+            <div><dt>{{ _('settings.search.env.meili_reindex_on_startup') }}</dt><dd>{{ _('settings.search.env.hint.meili_reindex_on_startup') }}</dd></div>
+            <div><dt>{{ _('settings.search.env.meili_sync_timezone') }}</dt><dd>{{ _('settings.search.env.hint.meili_sync_timezone') }}</dd></div>
+            <div><dt>{{ _('settings.search.env.meili_http_timeout') }}</dt><dd>{{ _('settings.search.env.hint.meili_http_timeout') }}</dd></div>
+            <div><dt>{{ _('settings.search.env.meili_reindex_http_timeout') }}</dt><dd>{{ _('settings.search.env.hint.meili_reindex_http_timeout') }}</dd></div>
+            <div><dt>{{ _('settings.search.env.meili_reindex_s3_read_timeout') }}</dt><dd>{{ _('settings.search.env.hint.meili_reindex_s3_read_timeout') }}</dd></div>
+            <div><dt>{{ _('settings.search.env.meili_large_bucket_threshold') }}</dt><dd>{{ _('settings.search.env.hint.meili_large_bucket_threshold') }}</dd></div>
+            <div><dt>{{ _('settings.search.env.meili_index_part_size') }}</dt><dd>{{ _('settings.search.env.hint.meili_index_part_size') }}</dd></div>
+            <div><dt>{{ _('settings.search.env.meili_index_exclude_prefixes') }}</dt><dd>{{ _('settings.search.env.hint.meili_index_exclude_prefixes') }}</dd></div>
+            <div><dt>{{ _('modal.search_env_lock') }}</dt><dd>{{ _('modal.search_env_lock_help') }}</dd></div>
+        </dl>
+    </template>
 
     <div class="modal-overlay hidden" id="addBucketModal">
         <div class="modal add-user-modal">
             <div class="modal-header">
                 <i class="fa-solid fa-database modal-icon modal-icon-info"></i>
                 <h3 class="modal-title">{{ _('modal.add_bucket') }}</h3>
+                <button type="button" class="modal-title-info" data-params-template="bucketParamsHelp" data-params-title="{{ _('modal.bucket_params_title') }}" aria-label="{{ _('modal.cloud_params_info') }}" title="{{ _('modal.cloud_params_info') }}">
+                    <i class="fa-solid fa-info" aria-hidden="true"></i>
+                </button>
             </div>
             <div class="modal-body" id="AddBucketModal">
                 <form id="addBucketForm" autocomplete="off">
@@ -1037,6 +1142,9 @@
             <div class="modal-header">
                 <i class="fa-solid fa-user-shield modal-icon modal-icon-info"></i>
                 <h3 class="modal-title" id="bucketAccessModalTitle">{{ _('modal.bucket_access_title') }}</h3>
+                <button type="button" class="modal-title-info" data-params-template="bucketAccessParamsHelp" data-params-title="{{ _('modal.bucket_access_params_title') }}" aria-label="{{ _('modal.cloud_params_info') }}" title="{{ _('modal.cloud_params_info') }}">
+                    <i class="fa-solid fa-info" aria-hidden="true"></i>
+                </button>
             </div>
             <div class="modal-body file-info-modal-body" id="BucketAccessModalBody">
                 <p class="bulk-acl-summary" id="bucketAccessSummary"></p>

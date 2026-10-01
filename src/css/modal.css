@@ -112,11 +112,11 @@
   background: var(--selection-bg);
 }
 
-#cloudParamsInfoModal .modal-header {
+.modal-params-info .modal-header {
   align-items: baseline;
 }
 
-#cloudParamsInfoModal .modal-header .modal-icon {
+.modal-params-info .modal-header .modal-icon {
   font-size: 16px;
   line-height: 1;
   position: relative;
@@ -782,15 +782,6 @@
   min-height: var(--modal-control-min-h);
 }
 
-.meili-settings-desc {
-  margin: 0;
-  padding: 0;
-  font-size: var(--font-size-sm, 12px);
-  line-height: 1.25;
-  color: var(--text-secondary);
-  white-space: normal;
-}
-
 .meili-settings-value-col {
   width: 100%;
   max-width: none;
@@ -799,7 +790,7 @@
   flex-direction: column;
   align-items: stretch;
   gap: 4px;
-  /* padding: 0 4px; */
+  padding: 2px 0;
   box-sizing: border-box;
 }
 

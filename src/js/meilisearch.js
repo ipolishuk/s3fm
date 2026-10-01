@@ -33,23 +33,6 @@
         MEILI_INDEX_EXCLUDE_PREFIXES: 'settings.search.env.meili_index_exclude_prefixes',
     };
 
-    var ENV_HINT_KEYS = {
-        MEILI_ENABLED: 'settings.search.env.hint.meili_enabled',
-        MEILI_HOST: 'settings.search.env.hint.meili_host',
-        MEILI_API_KEY: 'settings.search.env.hint.meili_api_key',
-        MEILI_REINDEX_ON_STARTUP: 'settings.search.env.hint.meili_reindex_on_startup',
-        MEILI_PERIODIC_SYNC: 'settings.search.env.hint.meili_periodic_sync',
-        MEILI_SYNC_AT: 'settings.search.env.hint.meili_sync_at',
-        MEILI_SYNC_TIMEZONE: 'settings.search.env.hint.meili_sync_timezone',
-        MEILI_REINDEX_WORKERS: 'settings.search.env.hint.meili_reindex_workers',
-        MEILI_HTTP_TIMEOUT: 'settings.search.env.hint.meili_http_timeout',
-        MEILI_REINDEX_HTTP_TIMEOUT: 'settings.search.env.hint.meili_reindex_http_timeout',
-        MEILI_REINDEX_S3_READ_TIMEOUT: 'settings.search.env.hint.meili_reindex_s3_read_timeout',
-        MEILI_LARGE_BUCKET_THRESHOLD: 'settings.search.env.hint.meili_large_bucket_threshold',
-        MEILI_INDEX_PART_SIZE: 'settings.search.env.hint.meili_index_part_size',
-        MEILI_INDEX_EXCLUDE_PREFIXES: 'settings.search.env.hint.meili_index_exclude_prefixes',
-    };
-
     function t(key) {
         return (window.I18N || {})[key] || '';
     }
@@ -304,15 +287,10 @@
             (configError ? escapeHtml(configError) : '') +
             '</p>';
         var versionLabel = escapeHtml(t('settings.search.version') || 'Version');
-        var versionHint = String(t('settings.search.version_hint') || '').trim();
-        var versionHintHtml = versionHint
-            ? '<span class="form-hint meili-settings-desc">' + escapeHtml(versionHint) + '</span>'
-            : '';
         var versionHtml =
             '<div class="modal-field meili-settings-field">' +
             '<div class="meili-settings-label-wrap">' +
             '<label class="lables">' + versionLabel + '</label>' +
-            versionHintHtml +
             '</div>' +
             '<div class="meili-settings-value-col">' +
             '<span class="user-info-value meili-settings-value">' + escapeHtml(version || '—') + '</span>' +
@@ -321,10 +299,6 @@
 
         container.innerHTML = errorHtml + versionHtml + MEILI_SETTINGS_ORDER.map(function (key) {
             var label = escapeHtml(t(ENV_LABEL_KEYS[key]) || key);
-            var hint = ENV_HINT_KEYS[key] ? String(t(ENV_HINT_KEYS[key]) || '').trim() : '';
-            var hintHtml = hint
-                ? '<span class="form-hint meili-settings-desc">' + escapeHtml(hint) + '</span>'
-                : '';
             var value = settings[key] != null ? String(settings[key]) : '';
             var envPh = envPlaceholders[key] != null ? String(envPlaceholders[key]) : '';
             var fromEnv = envPh !== '';
@@ -370,7 +344,6 @@
                 '<div class="modal-field meili-settings-field">' +
                 '<div class="meili-settings-label-wrap">' +
                 '<label class="lables" for="' + id + '">' + label + '</label>' +
-                hintHtml +
                 '</div>' +
                 '<div class="meili-settings-value-col">' +
                 controlHtml +
@@ -500,6 +473,7 @@
     }
 
     function hideMeiliSettingsModal() {
+        if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
         var modal = document.getElementById('meiliSettingsModal');
         if (!modal) return;
         modal.querySelectorAll('.dropdown.open').forEach(closeMeiliSettingsDropdown);

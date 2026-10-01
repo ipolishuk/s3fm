@@ -35,6 +35,7 @@
     };
 
     window.hideConfirmModal = function (confirmed) {
+        if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
         var modal = document.getElementById('confirmModal');
         modal.style.display = 'none';
 
@@ -189,8 +190,7 @@
         }
     }
 
-    window.showUserDetailsModal = function (data, options) {
-        options = options || {};
+    window.showUserDetailsModal = function (data) {
         var modal = document.getElementById('userInfoModal');
         if (!modal) return;
         data = data || {};
@@ -213,22 +213,20 @@
         if (modalUserEmail) modalUserEmail.textContent = formatUserInfoText(data.email);
         if (modalUserRole) modalUserRole.textContent = formatUserInfoRoleDisplay(data, tr);
 
-        var showDates = !!options.showAccountDates;
-        if (createdRow) createdRow.hidden = !showDates;
-        if (lastLoginRow) lastLoginRow.hidden = !showDates;
-        if (showDates) {
-            if (modalUserCreatedAt) modalUserCreatedAt.textContent = formatUserInfoDate(data.created_at);
-            if (modalUserLastLoginAt) modalUserLastLoginAt.textContent = formatUserInfoDate(data.last_login_at);
-        }
+        if (createdRow) createdRow.hidden = false;
+        if (lastLoginRow) lastLoginRow.hidden = false;
+        if (modalUserCreatedAt) modalUserCreatedAt.textContent = formatUserInfoDate(data.created_at);
+        if (modalUserLastLoginAt) modalUserLastLoginAt.textContent = formatUserInfoDate(data.last_login_at);
 
         modal.style.display = 'flex';
     };
 
     window.showUserInfoModal = function () {
-        window.showUserDetailsModal(window.fileManagerCurrentUser || {}, { showAccountDates: false });
+        window.showUserDetailsModal(window.fileManagerCurrentUser || {});
     };
 
     window.hideUserInfoModal = function () {
+        if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
         var modal = document.getElementById('userInfoModal');
         modal.style.display = 'none';
     };
@@ -302,6 +300,7 @@
     };
 
     window.hideCreateFolderModal = function () {
+        if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
         var modal = document.getElementById('createFolderModal');
         modal.style.display = 'none';
     };

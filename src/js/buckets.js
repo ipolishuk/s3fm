@@ -1178,6 +1178,7 @@
     }
 
     function hideAddBucketModal() {
+        if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
         var modal = document.getElementById('addBucketModal');
         modal.style.display = 'none';
         delete modal.dataset.editCloudId;
@@ -2076,6 +2077,7 @@
     }
 
     function hideBucketAccessModal() {
+        if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
         var modal = document.getElementById('bucketAccessModal');
         if (!modal) return;
         closeBucketAccessDropdowns();

@@ -167,6 +167,8 @@ def check_auth():
             payload['display_name'] = display_name
         if session.get('has_custom_roles'):
             payload['has_custom_roles'] = True
+        payload['created_at'] = session.get('created_at')
+        payload['last_login_at'] = session.get('last_login_at')
         payload['csrf_token'] = ensure_csrf_token(session)
         return jsonify(payload)
     return jsonify({'authenticated': False})

@@ -194,6 +194,25 @@ def _apply_user_profile_to_session(user):
         session['display_name'] = display
     else:
         session.pop('display_name', None)
+    created_at = _session_timestamp(user.get('created_at'))
+    if created_at:
+        session['created_at'] = created_at
+    else:
+        session.pop('created_at', None)
+    last_login_at = _session_timestamp(user.get('last_login_at'))
+    if last_login_at:
+        session['last_login_at'] = last_login_at
+    else:
+        session.pop('last_login_at', None)
+
+
+def _session_timestamp(value):
+    if value is None:
+        return None
+    if hasattr(value, 'isoformat'):
+        return value.isoformat()
+    text = str(value).strip()
+    return text or None
 
 
 def _normalize_user_email_from_user(user):

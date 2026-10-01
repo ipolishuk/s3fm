@@ -1980,6 +1980,7 @@ async function revealPendingFileListItem() {
     }
 
     window.hideFileInfoModal = function () {
+        if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
         var modal = document.getElementById('fileInfoModal');
         if (modal) modal.style.display = 'none';
         resetFileInfoState();
@@ -2338,6 +2339,7 @@ async function revealPendingFileListItem() {
     }
 
     window.hideBulkAclModal = function () {
+        if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
         var modal = document.getElementById('bulkAclModal');
         if (modal) modal.style.display = 'none';
         resetBulkAclState();

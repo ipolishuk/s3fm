@@ -1066,7 +1066,7 @@ function openSettingsUserInfoModal(username) {
         .then(function(user) {
             if (!user || !user.username) return;
             if (typeof window.showUserDetailsModal === 'function') {
-                window.showUserDetailsModal(user, { showAccountDates: true });
+                window.showUserDetailsModal(user);
             }
         })
         .catch(function() {
@@ -1219,6 +1219,7 @@ function fetchRoleOptionsForUserForm() {
         });
 }
 function hideRoleEditModal() {
+    if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
     var m = document.getElementById('roleEditModal');
     if (m) m.style.display = 'none';
     var o = document.getElementById('roleEditOriginalName');
@@ -1367,13 +1368,7 @@ function confirmDeleteRole(roleName) {
 }
 
 function hideCloudParamsInfo() {
-    var m = document.getElementById('cloudParamsInfoModal');
-    if (m) m.style.display = 'none';
-}
-
-function showCloudParamsInfo() {
-    var m = document.getElementById('cloudParamsInfoModal');
-    if (m) m.style.display = 'flex';
+    if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
 }
 
 function hideCloudEditModal() {
@@ -2116,6 +2111,7 @@ function toggleAddUserPasswordVisibility() {
     }
 }
 function hideAddUserModal() {
+    if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
     closeAllAddUserDropdownPanels();
     var modal = document.getElementById('addUserModal');
     detachAddUserModalFocusClose();
@@ -3083,21 +3079,6 @@ if (roleEditSubmitBtn) {
 }
 var cloudEditCancelBtn = document.getElementById('cloudEditCancelBtn');
 if (cloudEditCancelBtn) cloudEditCancelBtn.addEventListener('click', hideCloudEditModal);
-var cloudEditInfoBtn = document.getElementById('cloudEditInfoBtn');
-if (cloudEditInfoBtn) {
-    cloudEditInfoBtn.addEventListener('click', function(ev) {
-        ev.stopPropagation();
-        showCloudParamsInfo();
-    });
-}
-var cloudParamsInfoClose = document.getElementById('cloudParamsInfoClose');
-if (cloudParamsInfoClose) cloudParamsInfoClose.addEventListener('click', hideCloudParamsInfo);
-var cloudParamsInfoModal = document.getElementById('cloudParamsInfoModal');
-if (cloudParamsInfoModal) {
-    cloudParamsInfoModal.addEventListener('click', function(ev) {
-        if (ev.target === cloudParamsInfoModal) hideCloudParamsInfo();
-    });
-}
 var cloudEditSubmitBtn = document.getElementById('cloudEditSubmitBtn');
 if (cloudEditSubmitBtn) {
     cloudEditSubmitBtn.addEventListener('click', function() {

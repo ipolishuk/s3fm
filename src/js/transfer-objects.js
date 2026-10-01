@@ -487,6 +487,7 @@
         }
 
         function hideModal() {
+            if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
             var modal = document.getElementById(id(prefix, 'ObjectsModal'));
             if (modal) modal.style.display = 'none';
             closeDstBucketDropdown();

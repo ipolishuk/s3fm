@@ -694,11 +694,19 @@ function loadSettingsUsers() {
                 + '<th><div class="content-table-header">' + (t['settings.table_buckets'] || 'Buckets') + '</div></th>'
                 + '<th><div class="content-table-header">' + (t['settings.table_clouds'] || 'Clouds') + '</div></th>'
                 + '<th class="settings-col-last-login"><div class="content-table-header">' + (t['settings.table_last_login'] || 'Last login') + '</div></th>'
+                + '<th class="settings-col-status content-table-col-compact"><div class="content-table-header">' + (t['settings.table_status'] || 'Status') + '</div></th>'
                 + '</tr></thead><tbody id="settingsTableBody">';
             items.forEach(row => {
                 const buckets = formatUserBucketsCellDisplay(row.buckets, bucketOptions, t, row.clouds);
                 const clouds = (Array.isArray(row.clouds) && row.clouds.length) ? row.clouds.join(', ') : '—';
                 const lastLogin = formatUserLastLoginCell(row.last_login_at);
+                const statusEnabled = row.is_active !== false;
+                const statusTitle = (statusEnabled
+                    ? (t['modal.user_status_enabled'] || 'Enabled')
+                    : (t['modal.user_status_disabled'] || 'Disabled')).replace(/"/g, '&quot;');
+                const statusCell = statusEnabled
+                    ? '<span class="content-table-bool-yes" title="' + statusTitle + '"><i class="fa-solid fa-check" aria-hidden="true"></i></span>'
+                    : '<span class="content-table-bool-no" title="' + statusTitle + '"><i class="fa-solid fa-xmark" aria-hidden="true"></i></span>';
                 const unRaw = String(row.username || '');
                 const un = escapeHtml(unRaw.toLowerCase());
                 const unAttr = escapeHtml(unRaw);
@@ -711,7 +719,7 @@ function loadSettingsUsers() {
                     + ' data-can-delete="' + (isAdminUser ? '0' : '1') + '"'
                     + ' data-edit-denied-title="' + adminEditTitle + '"'
                     + ' data-delete-denied-title="' + adminDeleteTitle + '"'
-                    + '><td>' + un + '</td><td>' + escapeHtml(formatUserRoleCellDisplay(row, t)) + '</td><td class="content-table-cell-multiline">' + escapeHtml(buckets) + '</td><td>' + escapeHtml(clouds) + '</td><td class="settings-col-last-login">' + escapeHtml(lastLogin) + '</td></tr>';
+                    + '><td>' + un + '</td><td>' + escapeHtml(formatUserRoleCellDisplay(row, t)) + '</td><td class="content-table-cell-multiline">' + escapeHtml(buckets) + '</td><td>' + escapeHtml(clouds) + '</td><td class="settings-col-last-login">' + escapeHtml(lastLogin) + '</td><td class="settings-col-status content-table-col-compact" title="' + statusTitle + '">' + statusCell + '</td></tr>';
             });
             html += '</tbody></table>';
             settingsContentInner.innerHTML = html;

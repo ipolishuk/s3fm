@@ -659,10 +659,13 @@
                 var cloudHeader = (typeof window.settingsSortableHeader === 'function')
                     ? window.settingsSortableHeader(t['settings.table_cloud'] || 'Cloud', 'cloud')
                     : '<div class="content-table-header">' + (t['settings.table_cloud'] || 'Cloud') + '</div>';
+                var bucketIdHeader = (typeof window.settingsSortableHeader === 'function')
+                    ? window.settingsSortableHeader(t['settings.table_bucket_id'] || 'Bucket ID', 'bucket_id')
+                    : '<div class="content-table-header">' + (t['settings.table_bucket_id'] || 'Bucket ID') + '</div>';
                 var html = '<table class="content-table"><thead><tr>'
                     + '<th>' + bucketNameHeader + '</th>'
                     + '<th class="settings-col-display">' + displayNameHeader + '</th>'
-                    + '<th class="settings-col-bucket-id"><div class="content-table-header">' + (t['settings.table_bucket_id'] || 'Bucket ID') + '</div></th>'
+                    + '<th class="settings-col-bucket-id">' + bucketIdHeader + '</th>'
                     + '<th>' + cloudHeader + '</th>'
                     + '<th class="content-table-col-compact settings-col-credentials" title="' + credThTitle + '"><div class="content-table-header">' + credTh + '</div></th>'
                     + '<th class="content-table-col-compact settings-col-tls" title="' + tlsThTitle + '"><div class="content-table-header">' + tlsTh + '</div></th>'
@@ -689,9 +692,15 @@
                         + '<td class="settings-col-display">' + escapeHtml(row.display_name) + '</td>'
                         + '<td class="settings-col-bucket-id">' + escapeHtml(row.bucket_id || '—') + '</td>'
                         + '<td>' + escapeHtml(row.cloud_id) + '</td>'
-                        + '<td class="content-table-col-compact settings-col-credentials" title="' + credCellTitle + '">' + (credHas ? '<span class="content-table-bool-yes"><i class="fa-solid fa-check" aria-hidden="true"></i></span>' : '<span class="content-table-bool-no">—</span>') + '</td>'
-                        + '<td class="content-table-col-compact settings-col-tls" title="' + tlsCellTitle + '">' + (stv ? '<span class="content-table-bool-yes"><i class="fa-solid fa-check" aria-hidden="true"></i></span>' : '<span class="content-table-bool-no">—</span>') + '</td>'
-                        + '<td class="content-table-col-compact settings-col-ca" title="' + caCellTitle + '">' + (caSet ? '<span class="content-table-bool-yes"><i class="fa-solid fa-check" aria-hidden="true"></i></span>' : '<span class="content-table-bool-no">—</span>') + '</td>'
+                        + '<td class="content-table-col-compact settings-col-credentials" title="' + credCellTitle + '">' + (credHas
+                            ? '<span class="content-table-bool-yes" title="' + credCellTitle + '"><i class="fa-solid fa-check" aria-hidden="true"></i></span>'
+                            : '<span class="content-table-bool-no" title="' + credCellTitle + '"><i class="fa-solid fa-xmark" aria-hidden="true"></i></span>') + '</td>'
+                        + '<td class="content-table-col-compact settings-col-tls" title="' + tlsCellTitle + '">' + (stv
+                            ? '<span class="content-table-bool-yes" title="' + tlsCellTitle + '"><i class="fa-solid fa-check" aria-hidden="true"></i></span>'
+                            : '<span class="content-table-bool-no" title="' + tlsCellTitle + '"><i class="fa-solid fa-xmark" aria-hidden="true"></i></span>') + '</td>'
+                        + '<td class="content-table-col-compact settings-col-ca" title="' + caCellTitle + '">' + (caSet
+                            ? '<span class="content-table-bool-yes" title="' + caCellTitle + '"><i class="fa-solid fa-check" aria-hidden="true"></i></span>'
+                            : '<span class="content-table-bool-no" title="' + caCellTitle + '"><i class="fa-solid fa-xmark" aria-hidden="true"></i></span>') + '</td>'
                         + '</tr>';
                 });
                 html += '</tbody></table>';

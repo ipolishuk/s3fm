@@ -970,10 +970,13 @@
         var cloudHeader = (typeof window.settingsSortableHeader === 'function')
             ? window.settingsSortableHeader(i18n['settings.table_cloud'] || 'Cloud', 'cloud')
             : '<div class="content-table-header">' + escapeHtml(i18n['settings.table_cloud'] || 'Cloud') + '</div>';
+        var bucketIdHeader = (typeof window.settingsSortableHeader === 'function')
+            ? window.settingsSortableHeader(i18n['settings.table_bucket_id'] || 'Bucket ID', 'bucket_id')
+            : '<div class="content-table-header">' + escapeHtml(i18n['settings.table_bucket_id'] || 'Bucket ID') + '</div>';
         var html = '<table class="content-table settings-search-buckets-table"><thead><tr>' +
             '<th>' + bucketNameHeader + '</th>' +
             '<th class="settings-col-display">' + displayNameHeader + '</th>' +
-            '<th class="settings-col-bucket-id"><div class="content-table-header">' + escapeHtml(i18n['settings.table_bucket_id'] || 'Bucket ID') + '</div></th>' +
+            '<th class="settings-col-bucket-id">' + bucketIdHeader + '</th>' +
             '<th class="settings-col-cloud">' + cloudHeader + '</th>' +
             '<th class="settings-col-reindexed-at"><div class="content-table-header">' + escapeHtml(reindexTh) + '</div></th>' +
             '<th class="settings-col-search-index">' +

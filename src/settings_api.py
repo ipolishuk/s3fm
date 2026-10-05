@@ -84,6 +84,7 @@ from users import (
     hash_password,
     sync_logged_in_session_from_db,
     user_display_name,
+    user_is_active,
 )
 
 
@@ -108,6 +109,7 @@ def settings_list_users_impl():
             for user in users:
                 item = dict(user)
                 item['last_login_at'] = _dt_iso(user.get('last_login_at'))
+                item['is_active'] = user_is_active(user)
                 items.append(item)
             return jsonify({'items': items})
         except Exception as e:

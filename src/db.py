@@ -1917,6 +1917,7 @@ def list_users():
                 cur.execute(
                     """
                     SELECT u.username, u.role, u.buckets, u.clouds, u.last_login_at,
+                           u.is_active, u.active_until,
                            EXISTS (
                                SELECT 1 FROM user_roles ubr
                                WHERE ubr.username = u.username
@@ -1938,6 +1939,8 @@ def list_users():
                     'clouds': clouds,
                     'has_custom_roles': bool(r.get('has_custom_roles')),
                     'last_login_at': r.get('last_login_at'),
+                    'is_active': r.get('is_active') is not False,
+                    'active_until': _iso_date(r.get('active_until')),
                 })
             return out
         finally:

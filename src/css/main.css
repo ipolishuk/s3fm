@@ -951,15 +951,32 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
   text-align: center;
 }
 
+.settings-col-status {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.content-table th.settings-col-status,
+.content-table td.settings-col-status {
+  text-align: center;
+}
+
+.content-table th.settings-col-credentials,
+.content-table td.settings-col-credentials,
+.content-table th.settings-col-tls,
+.content-table td.settings-col-tls,
+.content-table th.settings-col-ca,
+.content-table td.settings-col-ca {
+  text-align: center;
+  width: 5.25rem;
+  min-width: 5.25rem;
+  max-width: 5.25rem;
+  box-sizing: border-box;
+}
+
 .settings-col-last-login {
   width: 1%;
   white-space: nowrap;
-  text-align: end;
-}
-
-.content-table th.settings-col-last-login,
-.content-table td.settings-col-last-login {
-  text-align: end;
 }
 
 /* Buckets settings: 4 data-колонки поровну, compact — 5rem, actions — узкая */
@@ -989,7 +1006,7 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
 }
 
 #settingsView .content-table.settings-buckets-table .content-table-col-compact {
-  text-align: left;
+  text-align: center;
   white-space: nowrap;
   padding-left: 8px;
   padding-right: 8px;

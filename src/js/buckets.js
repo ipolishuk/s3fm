@@ -2001,7 +2001,7 @@
                     }
                 }
             } else {
-                if (sizeText) sizeText.textContent = tr['bucket.size_error'] || '';
+                if (sizeText) sizeText.textContent = tr['bucket.size_no_data'] || '';
                 if (objectsText) objectsText.textContent = tr['bucket.size_no_data'] || '';
                 var sizeElErr = document.getElementById('bucketSize');
                 var objectsElErr = document.getElementById('bucketObjects');
@@ -2021,7 +2021,7 @@
             }
         } catch (error) {
             if (getCurrentBucket() !== targetBucket) return;
-            if (sizeText) sizeText.textContent = tr['bucket.size_error'] || '';
+            if (sizeText) sizeText.textContent = tr['bucket.size_no_data'] || '';
             if (objectsText) objectsText.textContent = tr['bucket.size_no_data'] || '';
             var sizeElCatch = document.getElementById('bucketSize');
             var objectsElCatch = document.getElementById('bucketObjects');

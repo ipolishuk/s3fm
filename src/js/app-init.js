@@ -154,6 +154,7 @@ document.addEventListener('keydown', function(e) {
         const cloudEditModal = document.getElementById('cloudEditModal');
         const userInfoModal = document.getElementById('userInfoModal');
         const fileInfoModal = document.getElementById('fileInfoModal');
+        const folderInfoModal = document.getElementById('folderInfoModal');
 
         if (confirmModal.style.display === 'flex') {
             window.hideConfirmModal(false);
@@ -223,6 +224,15 @@ document.addEventListener('keydown', function(e) {
                 window.hideFileInfoModal();
             } else {
                 fileInfoModal.style.display = 'none';
+            }
+            if (document.activeElement && document.activeElement.blur) {
+                document.activeElement.blur();
+            }
+        } else if (folderInfoModal && folderInfoModal.style.display === 'flex') {
+            if (typeof window.hideFolderInfoModal === 'function') {
+                window.hideFolderInfoModal();
+            } else {
+                folderInfoModal.style.display = 'none';
             }
             if (document.activeElement && document.activeElement.blur) {
                 document.activeElement.blur();

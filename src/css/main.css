@@ -895,29 +895,29 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
   margin: 0;
 }
 
+.content-table th:has(.settings-col-sort-label) {
+  cursor: pointer;
+}
+
 .settings-col-sort-header {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 4px;
+  width: 100%;
   max-width: 100%;
 }
 
 .settings-col-sort-label {
   min-width: 0;
-}
-
-.settings-col-sort-btn.icon-btn {
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  min-height: 22px;
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
   padding: 0;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.settings-col-sort-btn.icon-btn.is-active {
-  color: var(--text-secondary);
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: inherit;
 }
 
 .content-table td > * {
@@ -1429,8 +1429,7 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
 #settingsContentInner .settings-status-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   padding: 7px 10px;
   background: var(--light-bg);
   border-bottom: var(--border-style);
@@ -1438,6 +1437,7 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
 
 #settingsContentInner .settings-status-head .lables {
   margin: 0;
+  flex-shrink: 0;
   font-size: var(--font-size-lg);
   font-weight: 500;
 }
@@ -1449,6 +1449,7 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
 
 .settings-status-badge {
   flex-shrink: 0;
+  margin-left: auto;
   font-size: var(--font-size-sm);
   font-weight: 500;
   padding: 3px 8px;
@@ -1478,8 +1479,10 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
   border-color: transparent;
 }
 
-.settings-status-detail {
-  margin: 0 0 8px;
+#settingsContentInner .settings-status-head .settings-status-detail {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 auto;
   word-break: break-word;
 }
 

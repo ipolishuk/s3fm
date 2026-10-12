@@ -5,6 +5,7 @@ from __future__ import annotations
 import mimetypes
 import os
 from datetime import datetime, timezone
+from typing import Optional
 
 from botocore.exceptions import ClientError
 
@@ -20,12 +21,29 @@ _S3FM_META_CREATED_BY = 's3fm-created-by'
 _S3FM_META_MODIFIED_BY = 's3fm-modified-by'
 
 
+def _s3fm_meta_lookup(md: dict, key: str) -> Optional[str]:
+    """Read one s3fm meta key; tolerate case and optional x-amz-meta- prefix."""
+    if not md:
+        return None
+    want = (key or '').strip().lower()
+    if not want:
+        return None
+    for raw_key, raw_val in md.items():
+        norm = str(raw_key or '').strip().lower()
+        if norm.startswith('x-amz-meta-'):
+            norm = norm[len('x-amz-meta-'):]
+        if norm == want:
+            value = str(raw_val or '').strip()
+            return value or None
+    return None
+
+
 def _s3fm_meta_from_head(head: dict) -> dict:
     """Пользовательские метаданные объекта S3 (загрузка / изменение через s3-file-manager)."""
     md = head.get('Metadata') or {}
-    created_at = (md.get(_S3FM_META_CREATED_AT) or '').strip() or None
-    created_by = (md.get(_S3FM_META_CREATED_BY) or '').strip() or None
-    modified_by = (md.get(_S3FM_META_MODIFIED_BY) or '').strip() or None
+    created_at = _s3fm_meta_lookup(md, _S3FM_META_CREATED_AT)
+    created_by = _s3fm_meta_lookup(md, _S3FM_META_CREATED_BY)
+    modified_by = _s3fm_meta_lookup(md, _S3FM_META_MODIFIED_BY)
     actor = modified_by or created_by
     return {
         'created_at': created_at,

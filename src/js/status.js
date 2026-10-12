@@ -1,5 +1,5 @@
 /**
- * Settings → Status: Database / S3 / LDAP / SSO / Meilisearch.
+ * Settings → Status: Database / S3 / LDAP / SSO / Meilisearch / Prometheus.
  */
 (function () {
     'use strict';
@@ -40,6 +40,7 @@
         if (id === 'meilisearch') return t('settings.status.meilisearch', 'Meilisearch');
         if (id === 'sso') return t('settings.status.sso', 'SSO / OIDC');
         if (id === 's3') return t('settings.status.s3', 'S3');
+        if (id === 'prometheus') return t('settings.status.prometheus', 'Prometheus');
         return id;
     }
 
@@ -85,12 +86,12 @@
             '<div class="help-section-card settings-status-' + escapeHtml(status) + '">' +
             '<div class="help-section-head settings-status-head">' +
             '<span class="lables">' + escapeHtml(title) + '</span>' +
-            '<span class="settings-status-badge">' + escapeHtml(statusLabel(status)) + '</span>' +
-            '</div>' +
-            '<div class="help-section-body">' +
             (detail
                 ? '<p class="form-hint settings-status-detail">' + escapeHtml(detail) + '</p>'
                 : '') +
+            '<span class="settings-status-badge">' + escapeHtml(statusLabel(status)) + '</span>' +
+            '</div>' +
+            '<div class="help-section-body">' +
             renderVarRows(svc) +
             '</div>' +
             '</div>' +
@@ -99,7 +100,7 @@
     }
 
     function statusServicesOrder() {
-        return ['database', 's3', 'ldap', 'sso', 'meilisearch'];
+        return ['database', 's3', 'ldap', 'sso', 'meilisearch', 'prometheus'];
     }
 
     function getStatusServicesCount() {

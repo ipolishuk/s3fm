@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import threading
@@ -229,6 +230,97 @@ def list_selection_items_impl():
             full_msg = _trf('error.folders_list_failed')
         log_s3_exception(context, e, bucket_id)
         return jsonify({'error': full_msg}), status_code
+
+
+def folder_metadata_impl():
+    """Folder properties: name, created, user (from folder marker meta/body)."""
+    context = 'folder_metadata'
+    try:
+        bucket_id = (request.args.get('bucket') or '').strip()
+        folder_path = (request.args.get('path') or '').strip()
+        if not bucket_id:
+            return jsonify({'error': _('error.bucket_id_required')}), 400
+        if not folder_path:
+            return jsonify({'error': _('error.folder_path_required')}), 400
+        if not folder_path.endswith('/'):
+            folder_path += '/'
+
+        bucket_info = find_bucket_config_by_bucket_id(bucket_id)
+        if not bucket_info:
+            return jsonify({'error': _('error.bucket_not_found')}), 404
+
+        bucket_config = bucket_info['bucket_config']
+        bucket_name = bucket_config.get('bucket_name')
+        display_name = bucket_info['display_name']
+
+        if not check_bucket_access(bucket_id):
+            return jsonify({'error': _('error.access_denied')}), 403
+
+        s3_client = get_s3_client(bucket_config)
+
+        created_at = None
+        created_by = None
+        marker_exists = False
+        try:
+            head = s3_client.head_object(Bucket=bucket_name, Key=folder_path)
+            marker_exists = True
+            s3fm = _s3fm_meta_from_head(head)
+            created_at = s3fm.get('created_at')
+            created_by = s3fm.get('created_by') or s3fm.get('actor')
+            if not created_at:
+                last_modified = head.get('LastModified')
+                if last_modified is not None and hasattr(last_modified, 'isoformat'):
+                    created_at = last_modified.isoformat()
+        except ClientError:
+            pass
+
+        # Lightweight existence check for virtual prefixes (no full tree walk).
+        if not marker_exists:
+            probe = s3_client.list_objects_v2(
+                Bucket=bucket_name,
+                Prefix=folder_path,
+                Delimiter='/',
+                MaxKeys=1,
+            )
+            if not (probe.get('CommonPrefixes') or probe.get('Contents')):
+                return jsonify({'error': _trf('error.s3_object_not_found', path=folder_path)}), 404
+
+        # Fallback: folder marker body may carry creator JSON when object Metadata
+        # is stripped by the storage backend.
+        if (not created_by or not created_at) and marker_exists:
+            try:
+                marker_obj = s3_client.get_object(Bucket=bucket_name, Key=folder_path)
+                raw_body = marker_obj['Body'].read(4096) if marker_obj.get('Body') else b''
+                if raw_body:
+                    body = json.loads(raw_body.decode('utf-8'))
+                    if isinstance(body, dict):
+                        if not created_by:
+                            created_by = (body.get('created_by') or '').strip() or None
+                        if not created_at:
+                            created_at = (body.get('created_at') or '').strip() or None
+            except (ClientError, ValueError, UnicodeDecodeError, TypeError):
+                pass
+
+        folder_name = folder_path.rstrip('/').split('/')[-1] if folder_path.rstrip('/') else folder_path
+
+        return jsonify({
+            'bucket_id': bucket_id,
+            'display_name': display_name,
+            'path': folder_path,
+            'name': folder_name,
+            'created_at': created_at,
+            'created_by': created_by,
+            'modified_by': created_by,
+        })
+
+    except ClientError as e:
+        log_name = display_name if 'display_name' in locals() else bucket_id
+        error_msg, status_code = _map_s3_client_error(e, log_name)
+        log_s3_exception(context, e, log_name)
+        return jsonify({'error': error_msg}), status_code
+    except Exception as e:
+        log_error('Folder metadata failed', context, e, LOG_CONFIG['show_traceback'])
+        return jsonify({'error': _('error.unexpected')}), 500
 
 
 def file_metadata_impl():
@@ -958,10 +1050,19 @@ def create_folder_impl():
             log_warning('Error checking if folder exists', context)
             pass
 
-        # Создаем папку
+        # Create folder marker with s3fm metadata + JSON body (creator for properties).
+        # Body is a fallback when the storage drops user-defined object Metadata.
+        folder_meta = _s3fm_upload_metadata(username)
+        marker_body = json.dumps({
+            'created_by': folder_meta.get('s3fm-created-by') or username,
+            'created_at': folder_meta.get('s3fm-created-at') or '',
+        }, ensure_ascii=False).encode('utf-8')
         s3_client.put_object(
             Bucket=bucket_name,
-            Key=folder_path
+            Key=folder_path,
+            Body=marker_body,
+            ContentType='application/json',
+            Metadata=folder_meta,
         )
 
         log_info(f"Folder '{folder_name}' created successfully", context)

@@ -10,6 +10,7 @@ from botocore.exceptions import ClientError
 from flask import jsonify, request, session
 
 from bucket_access import find_bucket_config_by_bucket_id
+import bucket_metrics
 from buckets import get_buckets_config, reset_buckets_config_cache
 from db import (
     count_buckets_with_cloud,
@@ -387,6 +388,10 @@ def settings_services_status_impl():
             try:
                 return fut.result(timeout=timeout_sec)
             except FuturesTimeoutError:
+                log_warning(
+                    f'Service status check timed out after {timeout_sec}s: {service_id}',
+                    'settings_services_status',
+                )
                 return _timeout_payload(service_id)
             except Exception as exc:
                 log_error(
@@ -397,24 +402,38 @@ def settings_services_status_impl():
                 )
                 return _error_payload(service_id, exc)
 
+        def _prometheus_status_payload():
+            raw = bucket_metrics.connection_status()
+            return {
+                'id': 'prometheus',
+                'configured': bool(raw.get('configured')),
+                'connected': bool(raw.get('connected')),
+                'status': raw.get('status') or 'error',
+                'detail': raw.get('detail') or '',
+                'vars': list(raw.get('vars') or []),
+                'meta': dict(raw.get('meta') or {}),
+            }
+
         # wait=False: иначе зависание LDAP/SSL/S3 блокирует ответ после timeout
-        pool = ThreadPoolExecutor(max_workers=5)
+        pool = ThreadPoolExecutor(max_workers=6)
         try:
             fut_db = pool.submit(db_connection_status)
             fut_ldap = pool.submit(ldap_client.connection_status)
             fut_meili = pool.submit(_meili_status_payload)
             fut_sso = pool.submit(sso_module.connection_status)
             fut_s3 = pool.submit(_s3_status_payload)
+            fut_prom = pool.submit(_prometheus_status_payload)
             database = _take(fut_db, 'database', 5)
             ldap = _take(fut_ldap, 'ldap', 15)
             meilisearch_status = _take(fut_meili, 'meilisearch', 5)
             sso_status = _take(fut_sso, 'sso', 8)
             s3_status = _take(fut_s3, 's3', 25)
+            prometheus_status = _take(fut_prom, 'prometheus', 8)
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
 
-        services = [database, ldap, meilisearch_status, sso_status, s3_status]
-        optional_ids = {'meilisearch', 'ldap', 'sso'}
+        services = [database, ldap, meilisearch_status, sso_status, s3_status, prometheus_status]
+        optional_ids = {'meilisearch', 'ldap', 'sso', 'prometheus'}
         overall = 'ok'
         for svc in services:
             st = svc.get('status')
@@ -450,6 +469,7 @@ def settings_services_status_impl():
                 'meilisearch': meilisearch_status,
                 'sso': sso_status,
                 's3': s3_status,
+                'prometheus': prometheus_status,
             },
         })
     except Exception as e:

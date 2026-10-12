@@ -170,7 +170,7 @@
                     </div>
                     <div class="bucket-objects" id="bucketObjects">
                         <i class="fa-solid fa-file file-icon"></i>
-                        <span id="objectsText">...</span>
+                        <span id="objectsText">{{ _('bucket.size_calculating') }}</span>
                     </div>
                     <button class="btn refresh-size-btn" onclick="loadBucketSize()" title="{{ _('bucket.refresh_size') }}">
                         <i class="fa-solid fa-arrows-rotate"></i>
@@ -637,6 +637,40 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="folderInfoModal" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-folder modal-icon modal-icon-info"></i>
+                <h3 class="modal-title" id="folderInfoModalTitle">{{ _('files.folder_info_title') }}</h3>
+                <button type="button" class="modal-title-info" data-params-template="folderParamsHelp" data-params-title="{{ _('modal.folder_params_title') }}" aria-label="{{ _('modal.cloud_params_info') }}" title="{{ _('modal.cloud_params_info') }}">
+                    <i class="fa-solid fa-info" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="FolderInfoModal">
+                <div class="file-info-acl-group file-info-details-group">
+                    <label class="lables" for="folderInfoName" id="folderInfoDetailsHeading">{{ _('files.info_section') }}</label>
+                    <div class="user-info-content" aria-labelledby="folderInfoDetailsHeading">
+                        <div class="modal-field">
+                            <span class="lables">{{ _('files.info_name') }}</span>
+                            <span class="user-info-value file-info-value-wrap" id="folderInfoName">—</span>
+                        </div>
+                        <div class="modal-field">
+                            <span class="lables">{{ _('files.info_created') }}</span>
+                            <span class="user-info-value" id="folderInfoCreated">—</span>
+                        </div>
+                        <div class="modal-field">
+                            <span class="lables">{{ _('files.info_modified_by') }}</span>
+                            <span class="user-info-value" id="folderInfoUser">—</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" id="folderInfoCloseBtn">{{ _('user_info.close') }}</button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="bulkAclModal" style="display: none;">
         <div class="modal">
             <div class="modal-header">
@@ -945,6 +979,13 @@
             <div><dt>{{ _('files.info_source_url') }}</dt><dd>{{ _('modal.file_source_url_help') }}</dd></div>
             <div><dt>{{ _('files.info_acl_col_user') }}</dt><dd>{{ _('modal.file_acl_user_help') }}</dd></div>
             <div><dt>{{ _('files.info_acl_col_permission') }}</dt><dd>{{ _('modal.file_acl_perm_help') }}</dd></div>
+        </dl>
+    </template>
+    <template id="folderParamsHelp">
+        <dl class="modal-param-help">
+            <div><dt>{{ _('files.info_name') }}</dt><dd>{{ _('modal.folder_name_help') }}</dd></div>
+            <div><dt>{{ _('files.info_created') }}</dt><dd>{{ _('modal.folder_created_help') }}</dd></div>
+            <div><dt>{{ _('files.info_modified_by') }}</dt><dd>{{ _('modal.folder_user_help') }}</dd></div>
         </dl>
     </template>
     <template id="bulkAclParamsHelp">

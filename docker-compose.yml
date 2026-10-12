@@ -34,6 +34,10 @@ services:
         BASE: python:3.11.9-bookworm
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      BUCKET_METRICS_PROMETHEUS_URL: ${BUCKET_METRICS_PROMETHEUS_URL:-https://vmselect.example.com/select/0/prometheus}
+      BUCKET_METRICS_TIMEOUT: ${BUCKET_METRICS_TIMEOUT:-5}
+      # Локально корпоративный CA часто не вшит в образ
+      BUCKET_METRICS_TLS_VERIFY: ${BUCKET_METRICS_TLS_VERIFY:-false}
       MEILI_ENABLED: "true"
       MEILI_HOST: http://meilisearch:7700
       MEILI_API_KEY: test_master_key

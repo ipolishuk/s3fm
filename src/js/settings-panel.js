@@ -17,16 +17,21 @@ function settingsEscapeHtml(value) {
 function settingsSortableHeader(label, sortKey) {
     var title = settingsSortLabel('settings.sort', 'Sort');
     return '<div class="content-table-header settings-col-sort-header">' +
-        '<span class="settings-col-sort-label">' + settingsEscapeHtml(label) + '</span>' +
-        '<button type="button" class="btn icon-btn settings-col-sort-btn" data-sort-key="' + sortKey + '" ' +
+        '<button type="button" class="settings-col-sort-label" data-sort-key="' + settingsEscapeHtml(sortKey) + '" ' +
         'title="' + settingsEscapeHtml(title) + '" aria-label="' + settingsEscapeHtml(title) + '" aria-pressed="false">' +
-        '<i class="fa-solid fa-arrow-down-a-z" aria-hidden="true"></i></button></div>';
+        settingsEscapeHtml(label) + '</button></div>';
 }
 
 function settingsSortState(scope) {
     window._settingsColumnSort = window._settingsColumnSort || {};
     if (!window._settingsColumnSort[scope]) {
-        window._settingsColumnSort[scope] = { key: 'bucket_name', dir: 'asc' };
+        var defaults = {
+            buckets: { key: 'bucket_name', dir: 'asc' },
+            search: { key: 'bucket_name', dir: 'asc' },
+            users: { key: 'username', dir: 'asc' },
+            clouds: { key: 'cloud_id', dir: 'asc' }
+        };
+        window._settingsColumnSort[scope] = defaults[scope] || { key: null, dir: 'asc' };
     }
     return window._settingsColumnSort[scope];
 }
@@ -40,24 +45,39 @@ function updateSettingsSortButtons(table, state) {
     if (!table) return;
     var activeKey = state && state.key;
     var desc = !!(state && state.dir === 'desc');
-    table.querySelectorAll('.settings-col-sort-btn').forEach(function (btn) {
-        var key = btn.getAttribute('data-sort-key');
+    table.querySelectorAll('.settings-col-sort-label[data-sort-key]').forEach(function (label) {
+        var key = label.getAttribute('data-sort-key');
         var active = !!activeKey && key === activeKey;
-        btn.classList.toggle('is-active', active);
-        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        label.classList.toggle('is-active', active);
+        label.setAttribute('aria-pressed', active ? 'true' : 'false');
         var title = !active
             ? settingsSortLabel('settings.sort', 'Sort')
             : (desc
                 ? settingsSortLabel('settings.sort_desc', 'Sorted descending')
                 : settingsSortLabel('settings.sort_asc', 'Sorted ascending'));
-        btn.title = title;
-        btn.setAttribute('aria-label', title);
-        var icon = btn.querySelector('i');
-        if (icon) {
-            icon.classList.remove('fa-arrow-down-a-z', 'fa-arrow-up-z-a');
-            icon.classList.add(active && desc ? 'fa-arrow-up-z-a' : 'fa-arrow-down-a-z');
+        label.title = title;
+        label.setAttribute('aria-label', title);
+        var th = label.closest('th');
+        if (th) {
+            if (active) th.setAttribute('aria-sort', desc ? 'descending' : 'ascending');
+            else th.removeAttribute('aria-sort');
         }
     });
+}
+
+function settingsSortCellValue(cell) {
+    if (!cell) return '';
+    var explicit = cell.getAttribute('data-sort-value');
+    if (explicit != null && explicit !== '') return String(explicit).trim();
+    return String(cell.textContent || '').trim();
+}
+
+function settingsRowsSignature(table) {
+    var tbody = table && table.querySelector('tbody');
+    if (!tbody) return '';
+    return Array.prototype.map.call(tbody.querySelectorAll('tr'), function (tr) {
+        return tr.getAttribute('data-sort-index') || '';
+    }).join('\0');
 }
 
 function reorderSettingsTableRows(table, state) {
@@ -66,8 +86,8 @@ function reorderSettingsTableRows(table, state) {
     var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
     var col = -1;
     if (state && state.key) {
-        var btn = table.querySelector('.settings-col-sort-btn[data-sort-key="' + state.key + '"]');
-        var th = btn && btn.closest('th');
+        var label = table.querySelector('.settings-col-sort-label[data-sort-key="' + state.key + '"]');
+        var th = label && label.closest('th');
         col = th ? th.cellIndex : -1;
     }
     var locale = document.documentElement.lang || 'en';
@@ -76,12 +96,35 @@ function reorderSettingsTableRows(table, state) {
             return (parseInt(a.getAttribute('data-sort-index'), 10) || 0) -
                 (parseInt(b.getAttribute('data-sort-index'), 10) || 0);
         }
-        var av = ((a.cells[col] && a.cells[col].textContent) || '').trim();
-        var bv = ((b.cells[col] && b.cells[col].textContent) || '').trim();
+        var av = settingsSortCellValue(a.cells[col]);
+        var bv = settingsSortCellValue(b.cells[col]);
         var cmp = av.localeCompare(bv, locale, { sensitivity: 'base', numeric: true });
+        if (cmp === 0) {
+            return (parseInt(a.getAttribute('data-sort-index'), 10) || 0) -
+                (parseInt(b.getAttribute('data-sort-index'), 10) || 0);
+        }
         return state.dir === 'desc' ? -cmp : cmp;
     });
     rows.forEach(function (tr) { tbody.appendChild(tr); });
+}
+
+function applySettingsColumnSort(table, scope, key) {
+    var prev = settingsSortState(scope);
+    var next = (prev.key === key)
+        ? { key: key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key: key, dir: 'asc' };
+    var before = settingsRowsSignature(table);
+    reorderSettingsTableRows(table, next);
+    // If the table was already in that order, flip so the click always has an effect.
+    if (before === settingsRowsSignature(table) && next.dir === 'asc') {
+        next = { key: key, dir: 'desc' };
+        reorderSettingsTableRows(table, next);
+    }
+    setSettingsSortState(scope, next);
+    updateSettingsSortButtons(table, next);
+    if (typeof window.onSettingsTableRendered === 'function') {
+        window.onSettingsTableRendered({ preservePage: true });
+    }
 }
 
 function bindSettingsColumnSort(scope) {
@@ -98,21 +141,13 @@ function bindSettingsColumnSort(scope) {
     if (table._settingsSortBound) return;
     table._settingsSortBound = true;
     table.addEventListener('click', function (e) {
-        var btn = e.target.closest('.settings-col-sort-btn');
-        if (!btn || !table.contains(btn)) return;
+        var th = e.target.closest('th');
+        if (!th || !table.contains(th)) return;
+        var label = th.querySelector('.settings-col-sort-label[data-sort-key]');
+        if (!label) return;
         e.preventDefault();
         e.stopPropagation();
-        var key = btn.getAttribute('data-sort-key');
-        var prev = settingsSortState(scope);
-        var next = (prev.key === key && prev.dir === 'asc')
-            ? { key: key, dir: 'desc' }
-            : { key: key, dir: 'asc' };
-        setSettingsSortState(scope, next);
-        reorderSettingsTableRows(table, next);
-        updateSettingsSortButtons(table, next);
-        if (typeof window.onSettingsTableRendered === 'function') {
-            window.onSettingsTableRendered();
-        }
+        applySettingsColumnSort(table, scope, label.getAttribute('data-sort-key'));
     });
 }
 

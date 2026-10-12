@@ -15,6 +15,7 @@ from bucket_access import (
     check_bucket_access,
     find_bucket_config_by_bucket_id,
 )
+from bucket_metrics import fetch_ceph_bucket_metrics
 from logs import LOG_CONFIG, log_error, log_info, log_s3_exception, log_warning, trf_en
 from s3_client import (
     _map_s3_client_error,
@@ -78,27 +79,21 @@ def get_bucket_size_impl(bucket_id):
             log_warning(error_msg, context)
             return jsonify({'error': _('error.access_denied')}), 403
 
-        # Кэш размера бакета (bucket_id -> (size, objects_count, truncated, timestamp)) для снижения нагрузки на CPU
+        # Кэш: bucket_id -> (payload_dict, timestamp)
         BUCKET_SIZE_CACHE_TTL = int(os.environ.get('BUCKET_SIZE_CACHE_TTL', '300'))  # секунд, по умолчанию 5 мин
         with _bucket_size_cache_lock:
             cached = _bucket_size_cache.get(bucket_id)
             if cached:
-                size, objects_count, truncated, ts = cached
-                if time.time() - ts < BUCKET_SIZE_CACHE_TTL:
-                    return jsonify({
-                        'size': size,
-                        'objects_count': objects_count,
-                        'bucket': bucket_name,
-                        'bucket_id': bucket_id,
-                        'display_name': display_name,
-                        'truncated': truncated
-                    })
+                payload, ts = cached
+                if time.time() - ts < BUCKET_SIZE_CACHE_TTL and isinstance(payload, dict):
+                    return jsonify(payload)
 
         s3_client = get_s3_client(bucket_config)
         total_size = 0
         total_objects = 0
 
-        # Проверяем доступность бакета с обработкой различных ошибок
+        # Сначала подтверждаем S3-доступ к bucket_name этими credentials —
+        # иначе Prometheus мог бы отдать чужие метрики по одному лишь имени.
         try:
             s3_client.head_bucket(Bucket=bucket_name)
         except ClientError as e:
@@ -109,6 +104,33 @@ def get_bucket_size_impl(bucket_id):
             full_msg, status_code = _map_s3_runtime_error(e, display_name)
             log_s3_exception(context, e, display_name)
             return jsonify({'error': full_msg}), status_code
+
+        metrics = fetch_ceph_bucket_metrics(bucket_name)
+        if metrics:
+            payload = {
+                'size': metrics['size'],
+                'size_max': metrics.get('size_max'),
+                'objects_count': metrics['objects_count'],
+                'objects_max': metrics.get('objects_max'),
+                'bucket': bucket_name,
+                'bucket_id': bucket_id,
+                'display_name': display_name,
+                'truncated': False,
+                'source': 'prometheus',
+            }
+            log_info(
+                f"Bucket {display_name}: {payload['size']} bytes, "
+                f"{payload['objects_count']} objects (prometheus)",
+                context,
+            )
+            with _bucket_size_cache_lock:
+                cache = _bucket_size_cache
+                cache[bucket_id] = (payload, time.time())
+                if len(cache) > 100:
+                    by_time = sorted(cache.items(), key=lambda x: x[1][1])
+                    for k, _ in by_time[: len(cache) - 80]:
+                        del cache[k]
+            return jsonify(payload)
 
         # Лимит объектов для расчёта — меньший лимит по умолчанию снижает нагрузку на CPU (меньше страниц и итераций)
         BUCKET_MAX_OBJECTS = int(os.environ.get('BUCKET_MAX_OBJECTS', '500000'))
@@ -151,23 +173,27 @@ def get_bucket_size_impl(bucket_id):
             context,
         )
 
-        with _bucket_size_cache_lock:
-            cache = _bucket_size_cache
-            cache[bucket_id] = (total_size, total_objects, truncated, time.time())
-            if len(cache) > 100:
-                # Удаляем самые старые записи
-                by_time = sorted(cache.items(), key=lambda x: x[1][3])
-                for k, _ in by_time[: len(cache) - 80]:
-                    del cache[k]
-
-        return jsonify({
+        payload = {
             'size': total_size,
+            'size_max': None,
             'objects_count': total_objects,
+            'objects_max': None,
             'bucket': bucket_name,
             'bucket_id': bucket_id,
             'display_name': display_name,
-            'truncated': truncated
-        })
+            'truncated': truncated,
+            'source': 's3',
+        }
+        with _bucket_size_cache_lock:
+            cache = _bucket_size_cache
+            cache[bucket_id] = (payload, time.time())
+            if len(cache) > 100:
+                # Удаляем самые старые записи
+                by_time = sorted(cache.items(), key=lambda x: x[1][1])
+                for k, _ in by_time[: len(cache) - 80]:
+                    del cache[k]
+
+        return jsonify(payload)
 
     except Exception as e:
         full_msg, status_code = _map_s3_runtime_error(e, display_name)

@@ -26,6 +26,7 @@ from files_api import (
     file_metadata_acl_read_impl,
     file_metadata_acl_update_impl,
     file_metadata_impl,
+    folder_metadata_impl,
     list_all_folders_impl,
     list_files_impl,
     list_folder_files_recursive_impl,
@@ -323,6 +324,12 @@ def list_selection_items():
 @login_required
 def file_metadata():
     return file_metadata_impl()
+
+
+@bp.route('/api/files/folder-metadata', methods=['GET'])
+@login_required
+def folder_metadata():
+    return folder_metadata_impl()
 
 
 @bp.route('/api/files/metadata/acl', methods=['GET'])

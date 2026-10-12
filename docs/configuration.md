@@ -43,6 +43,10 @@
 - `BUCKET_SIZE_CACHE_TTL` — TTL кэша размера бакета в секундах (по умолчанию `300`).
 - `BUCKET_MAX_OBJECTS` — лимит объектов при полном обходе для подсчёта размера (по умолчанию `500000`).
 - `BUCKET_MAX_SIZE` — лимит суммарного размера в байтах при том же обходе (по умолчанию `107000000000`).
+- `BUCKET_METRICS_PROMETHEUS_URL` — base URL VictoriaMetrics/Prometheus select API, например `https://vmselect.example.com/select/0/prometheus`. Если задан, размер и число объектов бакета читаются из метрик `ceph_s3_bucket_*` (label `bucket` = `bucket_name`); при ошибке или отсутствии серии — fallback на ListObjects.
+- `BUCKET_METRICS_TIMEOUT` — таймаут запроса к Prometheus в секундах (по умолчанию `5`).
+- `BUCKET_METRICS_TLS_VERIFY` — проверять TLS-сертификат VictoriaMetrics (`true` по умолчанию; `false` если корпоративный CA не в trust store).
+- `BUCKET_METRICS_CA_BUNDLE` — путь к CA bundle для VictoriaMetrics (иначе `REQUESTS_CA_BUNDLE` / `SSL_CERT_FILE`).
 
 ### S3 object ACL (file ACL в UI)
 - `ACL_PUT_PROBE` — `true` включает живую пробу `PutObjectAcl` при проверке capability (по умолчанию выключено).

@@ -185,6 +185,13 @@ function setupFileContextMenu() {
         return items.length === 1 && items[0].type === 'file' ? items[0].path : '';
     }
 
+    function getSingleSelectedFolderPath() {
+        const counts = getSelectedContextCounts();
+        if (counts.folders !== 1 || counts.files !== 0) return '';
+        const items = getSelectedContextItems();
+        return items.length === 1 && items[0].type === 'folder' ? items[0].path : '';
+    }
+
     function updateMenuItemsState(fileItem, path) {
         const isFolder = isFolderRow(fileItem, path);
         const useSelection = isSelectionMode();
@@ -198,6 +205,10 @@ function setupFileContextMenu() {
             ? getSingleSelectedFilePath()
             : (isFolder ? '' : path);
         const singleFileOnly = !!singleFilePath;
+        const singleFolderPath = useSelection
+            ? getSingleSelectedFolderPath()
+            : (isFolder ? path : '');
+        const singleFolderOnly = !!singleFolderPath;
 
         const canDeleteFiles = typeof global.userHasPermission === 'function'
             ? global.userHasPermission(filesCount === 1 ? 'delete_file' : 'delete_files_multi')
@@ -284,7 +295,7 @@ function setupFileContextMenu() {
         }
 
         if (propertiesItem) {
-            if (!singleFileOnly) {
+            if (!singleFileOnly && !singleFolderOnly) {
                 propertiesItem.classList.add('hidden');
                 propertiesItem.disabled = true;
             } else {
@@ -421,8 +432,19 @@ function setupFileContextMenu() {
     if (propertiesItem) {
         propertiesItem.addEventListener('click', function() {
             if (propertiesItem.disabled) return;
-            const path = isSelectionMode() ? getSingleSelectedFilePath() : contextPath;
-            const item = (!isSelectionMode() || (contextFileItem && listRowPath(contextFileItem) === path))
+            const useSelection = isSelectionMode();
+            const folderPath = useSelection
+                ? getSingleSelectedFolderPath()
+                : (isFolderRow(contextFileItem, contextPath) ? contextPath : '');
+            if (folderPath) {
+                closeMenu();
+                if (typeof window.showFolderInfoModal === 'function') {
+                    window.showFolderInfoModal(folderPath);
+                }
+                return;
+            }
+            const path = useSelection ? getSingleSelectedFilePath() : contextPath;
+            const item = (!useSelection || (contextFileItem && listRowPath(contextFileItem) === path))
                 ? contextFileItem
                 : null;
             closeMenu();

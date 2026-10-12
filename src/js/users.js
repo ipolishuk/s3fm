@@ -688,18 +688,22 @@ function loadSettingsUsers() {
             if (settingsSearchClear) settingsSearchClear.classList.add('hidden');
             var editTitle = t['settings.edit_user'] || 'Edit';
             var deleteTitle = t['settings.delete_user'] || 'Delete';
+            var sortHeader = typeof window.settingsSortableHeader === 'function'
+                ? window.settingsSortableHeader
+                : function (label) { return '<div class="content-table-header">' + escapeHtml(label) + '</div>'; };
             let html = '<table class="content-table"><thead><tr>'
-                + '<th><div class="content-table-header">' + (t['settings.table_username'] || 'User') + '</div></th>'
-                + '<th><div class="content-table-header">' + (t['settings.table_role'] || 'Role') + '</div></th>'
-                + '<th><div class="content-table-header">' + (t['settings.table_buckets'] || 'Buckets') + '</div></th>'
-                + '<th><div class="content-table-header">' + (t['settings.table_clouds'] || 'Clouds') + '</div></th>'
-                + '<th class="settings-col-last-login"><div class="content-table-header">' + (t['settings.table_last_login'] || 'Last login') + '</div></th>'
-                + '<th class="settings-col-status content-table-col-compact"><div class="content-table-header">' + (t['settings.table_status'] || 'Status') + '</div></th>'
+                + '<th>' + sortHeader(t['settings.table_username'] || 'User', 'username') + '</th>'
+                + '<th>' + sortHeader(t['settings.table_role'] || 'Role', 'role') + '</th>'
+                + '<th>' + sortHeader(t['settings.table_buckets'] || 'Buckets', 'buckets') + '</th>'
+                + '<th>' + sortHeader(t['settings.table_clouds'] || 'Clouds', 'clouds') + '</th>'
+                + '<th class="settings-col-last-login">' + sortHeader(t['settings.table_last_login'] || 'Last login', 'last_login') + '</th>'
+                + '<th class="settings-col-status content-table-col-compact">' + sortHeader(t['settings.table_status'] || 'Status', 'status') + '</th>'
                 + '</tr></thead><tbody id="settingsTableBody">';
             items.forEach(row => {
                 const buckets = formatUserBucketsCellDisplay(row.buckets, bucketOptions, t, row.clouds);
                 const clouds = (Array.isArray(row.clouds) && row.clouds.length) ? row.clouds.join(', ') : '—';
                 const lastLogin = formatUserLastLoginCell(row.last_login_at);
+                const lastLoginSort = row.last_login_at ? String(row.last_login_at) : '';
                 const statusEnabled = row.is_active !== false;
                 const statusTitle = (statusEnabled
                     ? (t['modal.user_status_enabled'] || 'Enabled')
@@ -719,10 +723,11 @@ function loadSettingsUsers() {
                     + ' data-can-delete="' + (isAdminUser ? '0' : '1') + '"'
                     + ' data-edit-denied-title="' + adminEditTitle + '"'
                     + ' data-delete-denied-title="' + adminDeleteTitle + '"'
-                    + '><td>' + un + '</td><td>' + escapeHtml(formatUserRoleCellDisplay(row, t)) + '</td><td class="content-table-cell-multiline">' + escapeHtml(buckets) + '</td><td>' + escapeHtml(clouds) + '</td><td class="settings-col-last-login">' + escapeHtml(lastLogin) + '</td><td class="settings-col-status content-table-col-compact" title="' + statusTitle + '">' + statusCell + '</td></tr>';
+                    + '><td>' + un + '</td><td>' + escapeHtml(formatUserRoleCellDisplay(row, t)) + '</td><td class="content-table-cell-multiline">' + escapeHtml(buckets) + '</td><td>' + escapeHtml(clouds) + '</td><td class="settings-col-last-login" data-sort-value="' + escapeHtml(lastLoginSort) + '">' + escapeHtml(lastLogin) + '</td><td class="settings-col-status content-table-col-compact" data-sort-value="' + (statusEnabled ? '1' : '0') + '" title="' + statusTitle + '">' + statusCell + '</td></tr>';
             });
             html += '</tbody></table>';
             settingsContentInner.innerHTML = html;
+            if (typeof window.bindSettingsColumnSort === 'function') window.bindSettingsColumnSort('users');
             if (typeof window.onSettingsTableRendered === 'function') window.onSettingsTableRendered();
         })
         .catch(() => {
@@ -952,10 +957,19 @@ function loadSettingsClouds() {
             setSettingsToolbarVisibleFallback(true, { searchLocked: false });
             if (settingsSearchInput) settingsSearchInput.value = '';
             if (settingsSearchClear) settingsSearchClear.classList.add('hidden');
+            var cloudIdHeader = (typeof window.settingsSortableHeader === 'function')
+                ? window.settingsSortableHeader(t['settings.table_cloud_id'] || 'Cloud ID', 'cloud_id')
+                : '<div class="content-table-header">' + (t['settings.table_cloud_id'] || 'Cloud ID') + '</div>';
+            var displayHeader = (typeof window.settingsSortableHeader === 'function')
+                ? window.settingsSortableHeader(t['settings.table_display_name'] || 'Display Name', 'display_name')
+                : '<div class="content-table-header">' + (t['settings.table_display_name'] || 'Display Name') + '</div>';
+            var endpointHeader = (typeof window.settingsSortableHeader === 'function')
+                ? window.settingsSortableHeader(t['settings.table_endpoint'] || 'Endpoint', 'endpoint')
+                : '<div class="content-table-header">' + (t['settings.table_endpoint'] || 'Endpoint') + '</div>';
             var html = '<table class="content-table"><thead><tr>'
-                + '<th><div class="content-table-header">' + (t['settings.table_cloud_id'] || 'Cloud ID') + '</div></th>'
-                + '<th class="settings-col-display"><div class="content-table-header">' + (t['settings.table_display_name'] || 'Display Name') + '</div></th>'
-                + '<th><div class="content-table-header">' + (t['settings.table_endpoint'] || 'Endpoint') + '</div></th>'
+                + '<th>' + cloudIdHeader + '</th>'
+                + '<th class="settings-col-display">' + displayHeader + '</th>'
+                + '<th>' + endpointHeader + '</th>'
                 + '</tr></thead><tbody id="settingsTableBody">';
             items.forEach(function(row) {
                 var cloudId = (row && row.cloud_id) ? String(row.cloud_id) : '';
@@ -975,6 +989,7 @@ function loadSettingsClouds() {
             });
             html += '</tbody></table>';
             settingsContentInner.innerHTML = html;
+            if (typeof window.bindSettingsColumnSort === 'function') window.bindSettingsColumnSort('clouds');
             if (typeof window.onSettingsTableRendered === 'function') window.onSettingsTableRendered();
         })
         .catch(function() {

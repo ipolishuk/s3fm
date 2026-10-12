@@ -1859,8 +1859,13 @@
             bucketInfo.classList.remove('hidden');
             bucketInfo.style.display = 'flex';
         }
-        if (sizeText) sizeText.textContent = (window.I18N && window.I18N['bucket.size_calculating']) || '';
-        if (objectsText) objectsText.textContent = '...';
+        var loadingLabel = (window.I18N && window.I18N['bucket.size_calculating']) || 'Loading...';
+        if (sizeText) sizeText.textContent = loadingLabel;
+        if (objectsText) objectsText.textContent = loadingLabel;
+        var sizeElLoad = document.getElementById('bucketSize');
+        var objectsElLoad = document.getElementById('bucketObjects');
+        if (sizeElLoad) sizeElLoad.removeAttribute('title');
+        if (objectsElLoad) objectsElLoad.removeAttribute('title');
 
         var fileList = document.getElementById('fileList');
         if (fileList) {
@@ -1926,8 +1931,13 @@
         var sizeText = document.getElementById('sizeText');
         var objectsText = document.getElementById('objectsText');
         var tr = window.I18N || {};
-        if (sizeText) sizeText.textContent = tr['bucket.size_calculating'] || '';
-        if (objectsText) objectsText.textContent = '...';
+        var loadingLabel = tr['bucket.size_calculating'] || 'Loading...';
+        if (sizeText) sizeText.textContent = loadingLabel;
+        if (objectsText) objectsText.textContent = loadingLabel;
+        var sizeElPending = document.getElementById('bucketSize');
+        var objectsElPending = document.getElementById('bucketObjects');
+        if (sizeElPending) sizeElPending.removeAttribute('title');
+        if (objectsElPending) objectsElPending.removeAttribute('title');
 
         try {
             var response = await fetch('/api/bucket-size/' + encodeURIComponent(targetBucket), {
@@ -1946,22 +1956,57 @@
             }
 
             if (response.ok && data) {
-                if (sizeText && typeof window.formatFileSize === 'function') {
-                    sizeText.textContent = (data.truncated ? '> ' : '') + window.formatFileSize(data.size);
+                var fromProm = data.source === 'prometheus';
+                var sizeEl = document.getElementById('bucketSize');
+                var objectsEl = document.getElementById('bucketObjects');
+                var formatCount = function (n) {
+                    return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+                };
+                var ofQuota = function (used, max) {
+                    return String(tr['bucket.of_quota'] || '{used} of {max}')
+                        .replace('{used}', used)
+                        .replace('{max}', max);
+                };
+                var sizeUsed = (data.truncated ? '> ' : '') + (
+                    typeof window.formatFileSize === 'function'
+                        ? window.formatFileSize(data.size || 0)
+                        : String(data.size || 0)
+                );
+                if (sizeText) sizeText.textContent = sizeUsed;
+                if (sizeEl) {
+                    if (fromProm && data.size_max != null && Number(data.size_max) > 0 && typeof window.formatFileSize === 'function') {
+                        sizeEl.title = ofQuota(window.formatFileSize(data.size || 0), window.formatFileSize(data.size_max));
+                    } else {
+                        sizeEl.removeAttribute('title');
+                    }
                 }
-                var objCount = data.objects_count;
-                var numLocale = (tr['bucket.objects'] === 'objects') ? 'en-US' : 'ru-RU';
+                var objCount = Math.round(Number(data.objects_count) || 0);
                 var objWord = typeof window.getPluralForm === 'function'
                     ? window.getPluralForm(objCount, tr['plural.object_one'], tr['plural.object_two'], tr['plural.object_five'])
-                    : '';
-                if (objectsText) {
-                    objectsText.textContent = data.truncated
-                        ? '> ' + objCount.toLocaleString(numLocale) + ' ' + objWord
-                        : objCount.toLocaleString(numLocale) + ' ' + objWord;
+                    : (tr['bucket.objects'] || '');
+                var objectsUsed = (data.truncated ? '> ' : '') + formatCount(objCount) + (objWord ? (' ' + objWord) : '');
+                if (objectsText) objectsText.textContent = objectsUsed;
+                if (objectsEl) {
+                    if (fromProm && data.objects_max != null && Number(data.objects_max) > 0) {
+                        var maxCount = Math.round(Number(data.objects_max));
+                        var maxWord = typeof window.getPluralForm === 'function'
+                            ? window.getPluralForm(maxCount, tr['plural.object_one'], tr['plural.object_two'], tr['plural.object_five'])
+                            : (tr['bucket.objects'] || '');
+                        objectsEl.title = ofQuota(
+                            formatCount(objCount),
+                            formatCount(maxCount) + (maxWord ? (' ' + maxWord) : '')
+                        );
+                    } else {
+                        objectsEl.removeAttribute('title');
+                    }
                 }
             } else {
                 if (sizeText) sizeText.textContent = tr['bucket.size_error'] || '';
                 if (objectsText) objectsText.textContent = tr['bucket.size_no_data'] || '';
+                var sizeElErr = document.getElementById('bucketSize');
+                var objectsElErr = document.getElementById('bucketObjects');
+                if (sizeElErr) sizeElErr.removeAttribute('title');
+                if (objectsElErr) objectsElErr.removeAttribute('title');
                 if (getCurrentBucket() !== targetBucket) return;
 
                 var errorText = tr['msg.unknown_error'] || '';
@@ -1978,6 +2023,10 @@
             if (getCurrentBucket() !== targetBucket) return;
             if (sizeText) sizeText.textContent = tr['bucket.size_error'] || '';
             if (objectsText) objectsText.textContent = tr['bucket.size_no_data'] || '';
+            var sizeElCatch = document.getElementById('bucketSize');
+            var objectsElCatch = document.getElementById('bucketObjects');
+            if (sizeElCatch) sizeElCatch.removeAttribute('title');
+            if (objectsElCatch) objectsElCatch.removeAttribute('title');
 
             var errorMsg = error.message || '';
             var isTimeout = errorMsg.indexOf('504') !== -1 || errorMsg.indexOf('timeout') !== -1 || errorMsg.indexOf('Timeout') !== -1;

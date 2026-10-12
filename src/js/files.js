@@ -2662,6 +2662,126 @@ async function revealPendingFileListItem() {
     }
 })();
 
+/* ===== folder-info ===== */
+(function () {
+    'use strict';
+
+    var _requestId = 0;
+
+    function t(key) {
+        return (window.I18N && window.I18N[key]) || key;
+    }
+
+    function setField(id, value) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = value == null || value === '' ? '—' : String(value);
+    }
+
+    function formatDate(iso) {
+        if (!iso) return '—';
+        if (typeof window.formatDate === 'function') {
+            return window.formatDate(iso);
+        }
+        return String(iso);
+    }
+
+    function folderNameFromPath(path) {
+        var clean = String(path || '').replace(/\/+$/, '');
+        if (!clean) return path || '—';
+        var parts = clean.split('/');
+        return parts[parts.length - 1] || clean;
+    }
+
+    window.hideFolderInfoModal = function () {
+        if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
+        var modal = document.getElementById('folderInfoModal');
+        if (modal) modal.style.display = 'none';
+    };
+
+    window.showFolderInfoModal = function (folderPath) {
+        folderPath = (folderPath || '').trim();
+        var bucketId = window.fileManagerCurrentBucketId || window.currentBucket || '';
+        if (!bucketId || !folderPath) return;
+        if (!folderPath.endsWith('/')) folderPath += '/';
+
+        var modal = document.getElementById('folderInfoModal');
+        if (!modal) return;
+
+        var name = folderNameFromPath(folderPath);
+        var titleEl = document.getElementById('folderInfoModalTitle');
+        if (titleEl) titleEl.textContent = t('files.folder_info_title');
+        setField('folderInfoName', name);
+        setField('folderInfoCreated', t('files.info_loading'));
+        setField('folderInfoUser', t('files.info_loading'));
+        modal.style.display = 'flex';
+
+        var requestId = ++_requestId;
+        var url =
+            '/api/files/folder-metadata?bucket=' +
+            encodeURIComponent(bucketId) +
+            '&path=' +
+            encodeURIComponent(folderPath);
+
+        fetch(url, { credentials: 'include' })
+            .then(function (r) {
+                return r.json().then(function (data) {
+                    return { ok: r.ok, data: data };
+                });
+            })
+            .then(function (res) {
+                if (requestId !== _requestId) return;
+                if (!res.ok) {
+                    window.hideFolderInfoModal();
+                    if (typeof window.showError === 'function') {
+                        window.showError((res.data && res.data.error) || t('error.unexpected'));
+                    }
+                    return;
+                }
+                var data = res.data || {};
+                setField('folderInfoName', data.name || name);
+                setField(
+                    'folderInfoCreated',
+                    data.created_at ? formatDate(data.created_at) : '—'
+                );
+                setField('folderInfoUser', data.created_by || data.modified_by || '—');
+            })
+            .catch(function (err) {
+                if (requestId !== _requestId) return;
+                window.hideFolderInfoModal();
+                if (typeof window.showError === 'function') {
+                    window.showError((err && err.message) || t('msg.network_error'));
+                }
+            });
+    };
+
+    function bindFolderInfoUi() {
+        var modal = document.getElementById('folderInfoModal');
+        if (modal) {
+            modal.addEventListener('click', function (e) {
+                if (e.target === modal) window.hideFolderInfoModal();
+            });
+        }
+        var closeBtn = document.getElementById('folderInfoCloseBtn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', function () {
+                window.hideFolderInfoModal();
+            });
+        }
+        document.addEventListener('keydown', function (e) {
+            if (e.key !== 'Escape') return;
+            var m = document.getElementById('folderInfoModal');
+            if (!m || m.style.display !== 'flex') return;
+            window.hideFolderInfoModal();
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindFolderInfoUi);
+    } else {
+        bindFolderInfoUi();
+    }
+})();
+
 /* ===== file-preview.js ===== */
 /**
  * Предпросмотр изображений, PDF, JSON, TXT, MD, HTML и CSS в новой вкладке браузера.

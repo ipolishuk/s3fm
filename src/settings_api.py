@@ -167,15 +167,31 @@ def settings_services_status_impl():
     try:
         from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 
+        def _fallback_vars(service_id):
+            """Keep Status var rows visible when a probe times out or crashes."""
+            if service_id == 'prometheus':
+                try:
+                    return bucket_metrics.status_env_vars()
+                except Exception:
+                    return []
+            return []
+
         def _timeout_payload(service_id):
+            vars_list = _fallback_vars(service_id)
+            configured = False
+            if service_id == 'prometheus':
+                configured = any(
+                    v.get('name') == 'BUCKET_METRICS_PROMETHEUS_URL' and v.get('ok')
+                    for v in vars_list
+                )
             return {
                 'id': service_id,
-                'configured': False,
+                'configured': configured,
                 'connected': False,
                 'enabled': False,
                 'status': 'error',
                 'detail': 'Timed out',
-                'vars': [],
+                'vars': vars_list,
                 'meta': {},
             }
 
@@ -186,7 +202,7 @@ def settings_services_status_impl():
                 'connected': False,
                 'status': 'error',
                 'detail': str(exc),
-                'vars': [],
+                'vars': _fallback_vars(service_id),
                 'meta': {},
             }
 
@@ -428,7 +444,15 @@ def settings_services_status_impl():
             meilisearch_status = _take(fut_meili, 'meilisearch', 5)
             sso_status = _take(fut_sso, 'sso', 8)
             s3_status = _take(fut_s3, 's3', 25)
-            prometheus_status = _take(fut_prom, 'prometheus', 8)
+            # Wait longer than the probe timeout so connection_status can return
+            # vars + a real error instead of an empty Timed out shell.
+            try:
+                prom_wait = int(bucket_metrics._query_timeout_sec()) + 3
+            except Exception:
+                prom_wait = 8
+            prometheus_status = _take(
+                fut_prom, 'prometheus', max(8, min(prom_wait, 25))
+            )
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
 

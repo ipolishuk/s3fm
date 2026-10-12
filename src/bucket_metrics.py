@@ -169,27 +169,36 @@ def _quota_or_none(value: Optional[float]) -> Optional[float]:
     return value
 
 
+def status_env_vars() -> list[dict[str, Any]]:
+    """Env/library checks for Settings → Status (no network). Always includes CA bundle row."""
+    base = prometheus_base_url()
+    ca_explicit = (os.environ.get('BUCKET_METRICS_CA_BUNDLE') or '').strip()
+    ca_resolved = (
+        ca_explicit
+        or (os.environ.get('REQUESTS_CA_BUNDLE') or '').strip()
+        or (os.environ.get('SSL_CERT_FILE') or '').strip()
+    )
+    # Optional: unset → ok; set → file must exist.
+    if ca_explicit:
+        ca_ok = os.path.isfile(ca_explicit)
+    elif ca_resolved:
+        ca_ok = os.path.isfile(ca_resolved)
+    else:
+        ca_ok = True
+    return [
+        {'name': 'BUCKET_METRICS_PROMETHEUS_URL', 'ok': bool(base), 'required': True},
+        {'name': 'BUCKET_METRICS_TLS_VERIFY', 'ok': True, 'required': False},
+        {'name': 'BUCKET_METRICS_TIMEOUT', 'ok': True, 'required': False},
+        {'name': 'BUCKET_METRICS_CA_BUNDLE', 'ok': ca_ok, 'required': False},
+    ]
+
+
 def connection_status() -> dict[str, Any]:
     """Status probe for Settings → Status (Prometheus / VictoriaMetrics)."""
     base = prometheus_base_url()
     tls_verify = _env_flag('BUCKET_METRICS_TLS_VERIFY', default=True)
     timeout_sec = _query_timeout_sec()
-    ca_bundle = (
-        (os.environ.get('BUCKET_METRICS_CA_BUNDLE') or '').strip()
-        or (os.environ.get('REQUESTS_CA_BUNDLE') or '').strip()
-        or (os.environ.get('SSL_CERT_FILE') or '').strip()
-    )
-    vars_list = [
-        {'name': 'BUCKET_METRICS_PROMETHEUS_URL', 'ok': bool(base), 'required': True},
-        {'name': 'BUCKET_METRICS_TLS_VERIFY', 'ok': True, 'required': False},
-        {'name': 'BUCKET_METRICS_TIMEOUT', 'ok': True, 'required': False},
-    ]
-    if ca_bundle:
-        vars_list.append({
-            'name': 'BUCKET_METRICS_CA_BUNDLE',
-            'ok': os.path.isfile(ca_bundle),
-            'required': False,
-        })
+    vars_list = status_env_vars()
 
     if not base:
         log_warning(

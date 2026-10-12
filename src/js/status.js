@@ -92,7 +92,8 @@
             prometheus: [
                 'BUCKET_METRICS_PROMETHEUS_URL',
                 'BUCKET_METRICS_TLS_VERIFY',
-                'BUCKET_METRICS_TIMEOUT'
+                'BUCKET_METRICS_TIMEOUT',
+                'BUCKET_METRICS_CA_BUNDLE'
             ]
         };
         var names = (known[serviceId] || []).slice();

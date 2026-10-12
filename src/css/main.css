@@ -1479,6 +1479,12 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
   border-color: transparent;
 }
 
+.settings-status-pending .settings-status-badge {
+  background: var(--light-bg);
+  color: var(--text-secondary);
+  border: var(--border-style);
+}
+
 #settingsContentInner .settings-status-head .settings-status-detail {
   margin: 0;
   min-width: 0;
@@ -1521,7 +1527,8 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
 }
 
 .settings-status-var-ok,
-.settings-status-var-bad {
+.settings-status-var-bad,
+.settings-status-var-pending {
   flex-shrink: 0;
   width: 1.25em;
   text-align: center;
@@ -1533,6 +1540,10 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
 
 .settings-status-var-bad {
   color: var(--error);
+}
+
+.settings-status-var-pending {
+  color: var(--muted-color, #888);
 }
 
 .add-user-ldap-search-btn.add-user-ldap-search-unavailable {

@@ -26,6 +26,7 @@
     }
 
     function statusLabel(status) {
+        if (status === 'pending') return t('settings.status.state_pending', 'Pending');
         if (status === 'ok') return t('settings.status.state_ok', 'Connected');
         if (status === 'disabled') return t('settings.status.state_disabled', 'Disabled');
         if (status === 'not_configured') return t('settings.status.state_not_configured', 'Not configured');
@@ -44,8 +45,13 @@
         return id;
     }
 
-    function boolIcon(ok) {
-        if (ok) {
+    function varStatusIcon(item) {
+        if (item && item.pending) {
+            return '<span class="settings-status-var-pending" title="' +
+                escapeHtml(t('settings.status.state_pending', 'Pending')) +
+                '"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i></span>';
+        }
+        if (item && item.ok) {
             return '<span class="settings-status-var-ok" title="' +
                 escapeHtml(t('settings.status.yes', 'Yes')) +
                 '"><i class="fa-solid fa-check" aria-hidden="true"></i></span>';
@@ -53,6 +59,56 @@
         return '<span class="settings-status-var-bad" title="' +
             escapeHtml(t('settings.status.no', 'No')) +
             '"><i class="fa-solid fa-xmark" aria-hidden="true"></i></span>';
+    }
+
+    function pendingVarNames(serviceId) {
+        var known = {
+            database: [
+                'psycopg2',
+                'DATABASE_URL',
+                'DATABASE_HOST',
+                'DATABASE_PORT',
+                'DATABASE_USER',
+                'DATABASE_PASSWORD',
+                'DATABASE_NAME'
+            ],
+            s3: ['boto3'],
+            ldap: [
+                'ldap3',
+                'LDAP_URI',
+                'LDAP_BASE_DN',
+                'LDAP_DOMAIN',
+                'LDAP_BIND_USER',
+                'LDAP_BIND_PASSWORD'
+            ],
+            sso: [
+                'SSO_ENABLED',
+                'OIDC_ISSUER',
+                'OIDC_CLIENT_ID',
+                'OIDC_CLIENT_SECRET',
+                'OIDC_REDIRECT_URI / APP_EXTERNAL_URL'
+            ],
+            meilisearch: ['MEILI_ENABLED', 'MEILI_HOST', 'MEILI_API_KEY'],
+            prometheus: [
+                'BUCKET_METRICS_PROMETHEUS_URL',
+                'BUCKET_METRICS_TLS_VERIFY',
+                'BUCKET_METRICS_TIMEOUT'
+            ]
+        };
+        var names = (known[serviceId] || []).slice();
+        // Keep previously seen S3 endpoints so refresh does not shrink the list.
+        if (serviceId === 's3') {
+            var prev = (_lastStatus && _lastStatus.services && _lastStatus.services.s3) ||
+                (window._servicesStatusCache && window._servicesStatusCache.services &&
+                    window._servicesStatusCache.services.s3) ||
+                null;
+            var prevVars = prev && Array.isArray(prev.vars) ? prev.vars : [];
+            prevVars.forEach(function (v) {
+                var name = (v && v.name) || '';
+                if (name && names.indexOf(name) === -1) names.push(name);
+            });
+        }
+        return names;
     }
 
     function renderVarRows(svc) {
@@ -64,16 +120,30 @@
             '<ul class="settings-status-vars">' +
             varsList.map(function (item) {
                 var name = (item && item.name) || '';
-                var ok = !!(item && item.ok);
                 return (
                     '<li class="settings-status-var-row" data-var="' + escapeHtml(name) + '">' +
                     '<span class="settings-status-var-name">' + escapeHtml(name) + '</span>' +
-                    boolIcon(ok) +
+                    varStatusIcon(item) +
                     '</li>'
                 );
             }).join('') +
             '</ul>'
         );
+    }
+
+    function buildPendingPayload() {
+        var services = {};
+        statusServicesOrder().forEach(function (id) {
+            services[id] = {
+                id: id,
+                status: 'pending',
+                detail: '',
+                vars: pendingVarNames(id).map(function (name) {
+                    return { name: name, pending: true, ok: null, required: false };
+                })
+            };
+        });
+        return { ok: true, overall: 'pending', services: services };
     }
 
     function renderServiceSection(svc) {
@@ -267,15 +337,9 @@
 
         setRefreshBusy(true);
 
-        if (!options.soft) {
-            container.innerHTML =
-                '<div class="settings-status-panel">' +
-                '<div class="empty-state">' +
-                '<i class="fa-solid fa-spinner fa-spin empty-state-icon" aria-hidden="true"></i>' +
-                '<div>' + escapeHtml(t('settings.loading', 'Loading...')) + '</div>' +
-                '</div>' +
-                '</div>';
-        }
+        // Show all services immediately with Pending badges; fill results when checks finish.
+        container.innerHTML = renderStatusPanel(buildPendingPayload());
+        filterStatusSections();
 
         function isCurrentLoad() {
             return seq === _loadSeq && isStatusTabActive();

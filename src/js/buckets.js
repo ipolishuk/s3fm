@@ -663,8 +663,8 @@
                     ? window.settingsSortableHeader(t['settings.table_bucket_id'] || 'Bucket ID', 'bucket_id')
                     : '<div class="content-table-header">' + (t['settings.table_bucket_id'] || 'Bucket ID') + '</div>';
                 var html = '<table class="content-table"><thead><tr>'
-                    + '<th>' + bucketNameHeader + '</th>'
                     + '<th class="settings-col-display">' + displayNameHeader + '</th>'
+                    + '<th>' + bucketNameHeader + '</th>'
                     + '<th class="settings-col-bucket-id">' + bucketIdHeader + '</th>'
                     + '<th>' + cloudHeader + '</th>'
                     + '<th class="content-table-col-compact settings-col-credentials" title="' + credThTitle + '"><div class="content-table-header">' + credTh + '</div></th>'
@@ -688,8 +688,8 @@
                     html += '<tr data-cloud-id="' + cloudIdAttr + '" data-display-name="' + displayNameAttr +
                         '" data-bucket-id="' + bucketIdAttr + '" data-bucket-name="' + bucketNameAttr + '"'
                         + ' data-can-edit="1" data-can-delete="' + (canDelete ? '1' : '0') + '">'
-                        + '<td>' + escapeHtml(row.bucket_name) + '</td>'
                         + '<td class="settings-col-display">' + escapeHtml(row.display_name) + '</td>'
+                        + '<td>' + escapeHtml(row.bucket_name) + '</td>'
                         + '<td class="settings-col-bucket-id">' + escapeHtml(row.bucket_id || '—') + '</td>'
                         + '<td>' + escapeHtml(row.cloud_id) + '</td>'
                         + '<td class="content-table-col-compact settings-col-credentials" title="' + credCellTitle + '">' + (credHas
@@ -1924,6 +1924,81 @@
         if (typeof window.setupUserPermissions === 'function') window.setupUserPermissions();
     }
 
+    function applyBucketSizeData(data, sizeText, objectsText, tr) {
+        var fromProm = data.source === 'prometheus';
+        var sizeEl = document.getElementById('bucketSize');
+        var objectsEl = document.getElementById('bucketObjects');
+        var formatCount = function (n) {
+            return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+        };
+        var ofQuota = function (used, max) {
+            return String(tr['bucket.of_quota'] || '{used} of {max}')
+                .replace('{used}', used)
+                .replace('{max}', max);
+        };
+        var sizeUsed = (data.truncated ? '> ' : '') + (
+            typeof window.formatFileSize === 'function'
+                ? window.formatFileSize(data.size || 0)
+                : String(data.size || 0)
+        );
+        if (sizeText) sizeText.textContent = sizeUsed;
+        if (sizeEl) {
+            if (fromProm && data.size_max != null && Number(data.size_max) > 0 && typeof window.formatFileSize === 'function') {
+                sizeEl.title = ofQuota(window.formatFileSize(data.size || 0), window.formatFileSize(data.size_max));
+            } else {
+                sizeEl.removeAttribute('title');
+            }
+        }
+        var objCount = Math.round(Number(data.objects_count) || 0);
+        var objWord = typeof window.getPluralForm === 'function'
+            ? window.getPluralForm(objCount, tr['plural.object_one'], tr['plural.object_two'], tr['plural.object_five'])
+            : (tr['bucket.objects'] || '');
+        var objectsUsed = (data.truncated ? '> ' : '') + formatCount(objCount) + (objWord ? (' ' + objWord) : '');
+        if (objectsText) objectsText.textContent = objectsUsed;
+        if (objectsEl) {
+            if (fromProm && data.objects_max != null && Number(data.objects_max) > 0) {
+                var maxCount = Math.round(Number(data.objects_max));
+                var maxWord = typeof window.getPluralForm === 'function'
+                    ? window.getPluralForm(maxCount, tr['plural.object_one'], tr['plural.object_two'], tr['plural.object_five'])
+                    : (tr['bucket.objects'] || '');
+                objectsEl.title = ofQuota(
+                    formatCount(objCount),
+                    formatCount(maxCount) + (maxWord ? (' ' + maxWord) : '')
+                );
+            } else {
+                objectsEl.removeAttribute('title');
+            }
+        }
+    }
+
+    function showBucketSizeNoData(sizeText, objectsText, tr) {
+        if (sizeText) sizeText.textContent = tr['bucket.size_no_data'] || '';
+        if (objectsText) objectsText.textContent = tr['bucket.size_no_data'] || '';
+        var sizeEl = document.getElementById('bucketSize');
+        var objectsEl = document.getElementById('bucketObjects');
+        if (sizeEl) sizeEl.removeAttribute('title');
+        if (objectsEl) objectsEl.removeAttribute('title');
+    }
+
+    async function fetchBucketSizePayload(targetBucket) {
+        var response = await fetch('/api/bucket-size/' + encodeURIComponent(targetBucket), {
+            credentials: 'include'
+        });
+        var contentType = response.headers.get('Content-Type') || '';
+        var isJson = contentType.includes('application/json');
+        var data = null;
+        if (isJson) data = await response.json();
+        else {
+            var text = await response.text();
+            try { data = JSON.parse(text); } catch (_) { data = null; }
+        }
+        return { response: response, data: data, isJson: isJson };
+    }
+
+    function sleepMs(ms) {
+        return new Promise(function (resolve) { setTimeout(resolve, ms); });
+    }
+
     async function loadBucketSize() {
         var targetBucket = getCurrentBucket();
         if (!targetBucket) return;
@@ -1940,93 +2015,42 @@
         if (objectsElPending) objectsElPending.removeAttribute('title');
 
         try {
-            var response = await fetch('/api/bucket-size/' + encodeURIComponent(targetBucket), {
-                credentials: 'include'
-            });
-
+            var result = await fetchBucketSizePayload(targetBucket);
             if (getCurrentBucket() !== targetBucket) return;
 
-            var contentType = response.headers.get('Content-Type') || '';
-            var isJson = contentType.includes('application/json');
-            var data = null;
-            if (isJson) data = await response.json();
-            else {
-                var text = await response.text();
-                try { data = JSON.parse(text); } catch (_) { data = null; }
+            // Proxy may 504 while the worker still finishes and fills the size cache.
+            // Retry once quietly before showing a timeout toast.
+            if (!(result.response.ok && result.data) && result.response.status === 504) {
+                await sleepMs(1500);
+                if (getCurrentBucket() !== targetBucket) return;
+                result = await fetchBucketSizePayload(targetBucket);
+                if (getCurrentBucket() !== targetBucket) return;
             }
 
-            if (response.ok && data) {
-                var fromProm = data.source === 'prometheus';
-                var sizeEl = document.getElementById('bucketSize');
-                var objectsEl = document.getElementById('bucketObjects');
-                var formatCount = function (n) {
-                    return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-                };
-                var ofQuota = function (used, max) {
-                    return String(tr['bucket.of_quota'] || '{used} of {max}')
-                        .replace('{used}', used)
-                        .replace('{max}', max);
-                };
-                var sizeUsed = (data.truncated ? '> ' : '') + (
-                    typeof window.formatFileSize === 'function'
-                        ? window.formatFileSize(data.size || 0)
-                        : String(data.size || 0)
-                );
-                if (sizeText) sizeText.textContent = sizeUsed;
-                if (sizeEl) {
-                    if (fromProm && data.size_max != null && Number(data.size_max) > 0 && typeof window.formatFileSize === 'function') {
-                        sizeEl.title = ofQuota(window.formatFileSize(data.size || 0), window.formatFileSize(data.size_max));
-                    } else {
-                        sizeEl.removeAttribute('title');
-                    }
-                }
-                var objCount = Math.round(Number(data.objects_count) || 0);
-                var objWord = typeof window.getPluralForm === 'function'
-                    ? window.getPluralForm(objCount, tr['plural.object_one'], tr['plural.object_two'], tr['plural.object_five'])
-                    : (tr['bucket.objects'] || '');
-                var objectsUsed = (data.truncated ? '> ' : '') + formatCount(objCount) + (objWord ? (' ' + objWord) : '');
-                if (objectsText) objectsText.textContent = objectsUsed;
-                if (objectsEl) {
-                    if (fromProm && data.objects_max != null && Number(data.objects_max) > 0) {
-                        var maxCount = Math.round(Number(data.objects_max));
-                        var maxWord = typeof window.getPluralForm === 'function'
-                            ? window.getPluralForm(maxCount, tr['plural.object_one'], tr['plural.object_two'], tr['plural.object_five'])
-                            : (tr['bucket.objects'] || '');
-                        objectsEl.title = ofQuota(
-                            formatCount(objCount),
-                            formatCount(maxCount) + (maxWord ? (' ' + maxWord) : '')
-                        );
-                    } else {
-                        objectsEl.removeAttribute('title');
-                    }
-                }
-            } else {
-                if (sizeText) sizeText.textContent = tr['bucket.size_no_data'] || '';
-                if (objectsText) objectsText.textContent = tr['bucket.size_no_data'] || '';
-                var sizeElErr = document.getElementById('bucketSize');
-                var objectsElErr = document.getElementById('bucketObjects');
-                if (sizeElErr) sizeElErr.removeAttribute('title');
-                if (objectsElErr) objectsElErr.removeAttribute('title');
-                if (getCurrentBucket() !== targetBucket) return;
+            if (result.response.ok && result.data) {
+                applyBucketSizeData(result.data, sizeText, objectsText, tr);
+                return;
+            }
 
-                var errorText = tr['msg.unknown_error'] || '';
-                if (response.status === 504) errorText = tr['msg.timeout_bucket'] || errorText;
-                else if (data && data.error) errorText = data.error;
-                else if (!isJson) errorText = response.status === 504 ? (tr['msg.timeout_server'] || errorText) : (tr['msg.invalid_response'] || errorText);
+            showBucketSizeNoData(sizeText, objectsText, tr);
+            if (getCurrentBucket() !== targetBucket) return;
 
-                var duration = (response.status === 504 || errorText.indexOf('Таймаут') !== -1 || errorText.indexOf('Timeout') !== -1) ? 8000 : 10000;
-                if (typeof window.showError === 'function') {
-                    window.showError((tr['msg.load_bucket_size_failed'] || '') + ': ' + errorText, duration);
-                }
+            var errorText = tr['msg.unknown_error'] || '';
+            if (result.response.status === 504) errorText = tr['msg.timeout_bucket'] || errorText;
+            else if (result.data && result.data.error) errorText = result.data.error;
+            else if (!result.isJson) {
+                errorText = result.response.status === 504
+                    ? (tr['msg.timeout_server'] || errorText)
+                    : (tr['msg.invalid_response'] || errorText);
+            }
+
+            var duration = (result.response.status === 504 || errorText.indexOf('Таймаут') !== -1 || errorText.indexOf('Timeout') !== -1) ? 8000 : 10000;
+            if (typeof window.showError === 'function') {
+                window.showError((tr['msg.load_bucket_size_failed'] || '') + ': ' + errorText, duration);
             }
         } catch (error) {
             if (getCurrentBucket() !== targetBucket) return;
-            if (sizeText) sizeText.textContent = tr['bucket.size_no_data'] || '';
-            if (objectsText) objectsText.textContent = tr['bucket.size_no_data'] || '';
-            var sizeElCatch = document.getElementById('bucketSize');
-            var objectsElCatch = document.getElementById('bucketObjects');
-            if (sizeElCatch) sizeElCatch.removeAttribute('title');
-            if (objectsElCatch) objectsElCatch.removeAttribute('title');
+            showBucketSizeNoData(sizeText, objectsText, tr);
 
             var errorMsg = error.message || '';
             var isTimeout = errorMsg.indexOf('504') !== -1 || errorMsg.indexOf('timeout') !== -1 || errorMsg.indexOf('Timeout') !== -1;

@@ -28,11 +28,13 @@ def test_prom_escape_label():
 
 
 def test_fetch_disabled_without_url(monkeypatch):
+    bm._clear_prom_down()
     monkeypatch.delenv('BUCKET_METRICS_PROMETHEUS_URL', raising=False)
     assert bm.fetch_ceph_bucket_metrics('demo') is None
 
 
 def test_fetch_success(monkeypatch):
+    bm._clear_prom_down()
     monkeypatch.setenv('BUCKET_METRICS_PROMETHEUS_URL', 'https://vm.example/select/0/prometheus')
 
     def fake_urlopen(req, timeout=None, context=None):
@@ -63,6 +65,7 @@ def test_fetch_success(monkeypatch):
 
 
 def test_fetch_unlimited_quota(monkeypatch):
+    bm._clear_prom_down()
     monkeypatch.setenv('BUCKET_METRICS_PROMETHEUS_URL', 'https://vm.example/select/0/prometheus')
 
     def fake_urlopen(req, timeout=None, context=None):
@@ -85,16 +88,25 @@ def test_fetch_unlimited_quota(monkeypatch):
 
 
 def test_fetch_network_error_returns_none(monkeypatch):
+    bm._clear_prom_down()
     monkeypatch.setenv('BUCKET_METRICS_PROMETHEUS_URL', 'https://vm.example/select/0/prometheus')
+    monkeypatch.setenv('BUCKET_METRICS_FAIL_COOLDOWN', '60')
 
     def boom(*args, **kwargs):
         raise urllib.error.URLError('down')
 
-    with patch('bucket_metrics.urllib.request.urlopen', side_effect=boom):
+    with patch('bucket_metrics.urllib.request.urlopen', side_effect=boom) as mocked:
         assert bm.fetch_ceph_bucket_metrics('b') is None
+        assert mocked.call_count >= 1
+        mocked.reset_mock()
+        # Cooldown: skip Prometheus after transport failure.
+        assert bm.fetch_ceph_bucket_metrics('b') is None
+        assert mocked.call_count == 0
+    bm._clear_prom_down()
 
 
 def test_connection_status_not_configured(monkeypatch):
+    bm._clear_prom_down()
     monkeypatch.delenv('BUCKET_METRICS_PROMETHEUS_URL', raising=False)
     st = bm.connection_status()
     assert st['status'] == 'not_configured'
@@ -103,6 +115,7 @@ def test_connection_status_not_configured(monkeypatch):
 
 
 def test_connection_status_ok(monkeypatch):
+    bm._clear_prom_down()
     monkeypatch.setenv('BUCKET_METRICS_PROMETHEUS_URL', 'https://vm.example/select/0/prometheus')
     monkeypatch.setenv('BUCKET_METRICS_TLS_VERIFY', 'false')
 

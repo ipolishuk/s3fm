@@ -974,8 +974,8 @@
             ? window.settingsSortableHeader(i18n['settings.table_bucket_id'] || 'Bucket ID', 'bucket_id')
             : '<div class="content-table-header">' + escapeHtml(i18n['settings.table_bucket_id'] || 'Bucket ID') + '</div>';
         var html = '<table class="content-table settings-search-buckets-table"><thead><tr>' +
-            '<th>' + bucketNameHeader + '</th>' +
             '<th class="settings-col-display">' + displayNameHeader + '</th>' +
+            '<th>' + bucketNameHeader + '</th>' +
             '<th class="settings-col-bucket-id">' + bucketIdHeader + '</th>' +
             '<th class="settings-col-cloud">' + cloudHeader + '</th>' +
             '<th class="settings-col-reindexed-at"><div class="content-table-header">' + escapeHtml(reindexTh) + '</div></th>' +
@@ -1005,8 +1005,8 @@
                 ? (i18n['settings.search.index_enabled_on'] || '')
                 : (i18n['settings.search.index_enabled_off'] || '');
             html += '<tr data-bucket-id="' + bucketIdAttr + '" data-search-index-enabled="' + indexEnabledAttr + '">' +
-                '<td>' + escapeHtml(row.bucket_name) + '</td>' +
                 '<td class="settings-col-display">' + escapeHtml(row.display_name) + '</td>' +
+                '<td>' + escapeHtml(row.bucket_name) + '</td>' +
                 '<td class="settings-col-bucket-id">' + escapeHtml(row.bucket_id || '—') + '</td>' +
                 '<td class="settings-col-cloud">' + escapeHtml(row.cloud_id) + '</td>' +
                 '<td class="settings-col-reindexed-at">' + escapeHtml(reindexCell) + '</td>' +

@@ -5,12 +5,18 @@ from __future__ import annotations
 import json
 import os
 import ssl
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Optional
 
 from logs import log_info, log_warning
+
+
+_prom_down_until = 0.0
+_prom_down_lock = threading.Lock()
 
 
 def prometheus_base_url() -> str:
@@ -32,6 +38,41 @@ def _query_timeout_sec() -> float:
         return max(1.0, float(os.environ.get('BUCKET_METRICS_TIMEOUT', '5')))
     except (TypeError, ValueError):
         return 5.0
+
+
+def _fetch_timeout_sec() -> float:
+    """Shorter timeout for bucket-size path so S3 fallback can finish before proxy 504."""
+    try:
+        return max(1.0, float(os.environ.get('BUCKET_METRICS_FETCH_TIMEOUT', '2')))
+    except (TypeError, ValueError):
+        return 2.0
+
+
+def _fail_cooldown_sec() -> float:
+    try:
+        return max(0.0, float(os.environ.get('BUCKET_METRICS_FAIL_COOLDOWN', '60')))
+    except (TypeError, ValueError):
+        return 60.0
+
+
+def _mark_prom_down() -> None:
+    cooldown = _fail_cooldown_sec()
+    if cooldown <= 0:
+        return
+    global _prom_down_until
+    with _prom_down_lock:
+        _prom_down_until = time.time() + cooldown
+
+
+def _clear_prom_down() -> None:
+    global _prom_down_until
+    with _prom_down_lock:
+        _prom_down_until = 0.0
+
+
+def _prom_is_down() -> bool:
+    with _prom_down_lock:
+        return time.time() < _prom_down_until
 
 
 def _env_flag(name: str, default: bool = True) -> bool:
@@ -60,7 +101,11 @@ class _PromTransportError(Exception):
     """Prometheus endpoint unreachable; abort the whole metrics batch."""
 
 
-def _instant_query(base_url: str, query: str) -> Optional[float]:
+def _instant_query(
+    base_url: str,
+    query: str,
+    timeout: Optional[float] = None,
+) -> Optional[float]:
     """Run Prometheus instant query; return first sample value or None."""
     url = (
         base_url.rstrip('/')
@@ -70,7 +115,9 @@ def _instant_query(base_url: str, query: str) -> Optional[float]:
     req = urllib.request.Request(url, headers={'Accept': 'application/json'}, method='GET')
     try:
         with urllib.request.urlopen(
-            req, timeout=_query_timeout_sec(), context=_ssl_context()
+            req,
+            timeout=_query_timeout_sec() if timeout is None else timeout,
+            context=_ssl_context(),
         ) as resp:
             raw = resp.read()
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
@@ -176,6 +223,7 @@ def connection_status() -> dict[str, Any]:
         payload = json.loads(raw.decode('utf-8')) if raw else {}
         ok = isinstance(payload, dict) and payload.get('status') == 'success'
         if ok:
+            _clear_prom_down()
             log_info(
                 f'Prometheus status: connected to {base} '
                 f'(tls_verify={tls_verify}, timeout={timeout_sec}s)',
@@ -201,6 +249,7 @@ def connection_status() -> dict[str, Any]:
         ok = False
         detail = str(exc)[:240] or 'Unreachable'
 
+    _mark_prom_down()
     log_warning(
         f'Prometheus status: probe failed for {base} '
         f'(tls_verify={tls_verify}, timeout={timeout_sec}s): {detail}',
@@ -232,17 +281,30 @@ def fetch_ceph_bucket_metrics(bucket_name: str) -> Optional[dict[str, Any]]:
     if not base or not (bucket_name or '').strip():
         return None
 
+    if _prom_is_down():
+        return None
+
     label = _prom_escape_label(bucket_name.strip())
+    timeout = _fetch_timeout_sec()
     try:
-        size_kb = _instant_query(base, f'ceph_s3_bucket_size_kb_actual{{bucket="{label}"}}')
-        size_max_kb = _quota_or_none(
-            _instant_query(base, f'ceph_s3_bucket_quota_max_size_kb{{bucket="{label}"}}')
+        size_kb = _instant_query(
+            base, f'ceph_s3_bucket_size_kb_actual{{bucket="{label}"}}', timeout=timeout
         )
-        objects_count = _instant_query(base, f'ceph_s3_bucket_objects_count{{bucket="{label}"}}')
+        size_max_kb = _quota_or_none(
+            _instant_query(
+                base, f'ceph_s3_bucket_quota_max_size_kb{{bucket="{label}"}}', timeout=timeout
+            )
+        )
+        objects_count = _instant_query(
+            base, f'ceph_s3_bucket_objects_count{{bucket="{label}"}}', timeout=timeout
+        )
         objects_max = _quota_or_none(
-            _instant_query(base, f'ceph_s3_bucket_quota_max_objects{{bucket="{label}"}}')
+            _instant_query(
+                base, f'ceph_s3_bucket_quota_max_objects{{bucket="{label}"}}', timeout=timeout
+            )
         )
     except _PromTransportError as exc:
+        _mark_prom_down()
         log_warning(
             f'Prometheus metrics unavailable for bucket {bucket_name!r} via {base}: {exc}',
             'bucket_metrics',
@@ -252,6 +314,7 @@ def fetch_ceph_bucket_metrics(bucket_name: str) -> Optional[dict[str, Any]]:
     if size_kb is None and objects_count is None:
         return None
 
+    _clear_prom_down()
     size_bytes = int(round((size_kb or 0.0) * 1024.0))
     size_max_bytes = int(round(size_max_kb * 1024.0)) if size_max_kb is not None else None
     return {

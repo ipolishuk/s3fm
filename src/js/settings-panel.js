@@ -26,8 +26,8 @@ function settingsSortState(scope) {
     window._settingsColumnSort = window._settingsColumnSort || {};
     if (!window._settingsColumnSort[scope]) {
         var defaults = {
-            buckets: { key: 'bucket_name', dir: 'asc' },
-            search: { key: 'bucket_name', dir: 'asc' },
+            buckets: { key: 'display_name', dir: 'asc' },
+            search: { key: 'display_name', dir: 'asc' },
             users: { key: 'username', dir: 'asc' },
             clouds: { key: 'cloud_id', dir: 'asc' }
         };

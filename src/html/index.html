@@ -473,15 +473,25 @@
                         </div>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group copy-dst-target-group">
                     <label class="lables" for="copyDstBucketTrigger">{{ _('copy.dst_bucket') }}</label>
-                    <div class="dropdown" id="copyDstBucketWrap">
-                        <button type="button" class="dropdown-trigger" id="copyDstBucketTrigger" aria-haspopup="listbox">
-                            <span id="copyDstBucketLabel">{{ _('copy.dst_select_bucket') }}</span>
-                            <i class="fa-solid fa-chevron-down dropdown-icon"></i>
-                        </button>
-                        <div class="dropdown-menu hidden" id="copyDstBucketPanel" role="listbox"></div>
+                    <div class="copy-dst-selects">
+                        <div class="dropdown" id="copyDstCloudWrap">
+                            <button type="button" class="dropdown-trigger" id="copyDstCloudTrigger" aria-haspopup="listbox" title="{{ _('copy.dst_cloud') }}">
+                                <span id="copyDstCloudLabel">{{ _('copy.dst_select_cloud') }}</span>
+                                <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                            </button>
+                            <div class="dropdown-menu hidden" id="copyDstCloudPanel" role="listbox"></div>
+                        </div>
+                        <div class="dropdown" id="copyDstBucketWrap">
+                            <button type="button" class="dropdown-trigger" id="copyDstBucketTrigger" aria-haspopup="listbox">
+                                <span id="copyDstBucketLabel">{{ _('copy.dst_select_bucket') }}</span>
+                                <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                            </button>
+                            <div class="dropdown-menu hidden" id="copyDstBucketPanel" role="listbox"></div>
+                        </div>
                     </div>
+                    <input type="hidden" id="copyDstCloudValue" value="">
                     <input type="hidden" id="copyDstBucketValue" value="">
                 </div>
                 <div class="form-group">
@@ -526,15 +536,25 @@
                         </div>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group copy-dst-target-group">
                     <label class="lables" for="moveDstBucketTrigger">{{ _('move.dst_bucket') }}</label>
-                    <div class="dropdown" id="moveDstBucketWrap">
-                        <button type="button" class="dropdown-trigger" id="moveDstBucketTrigger" aria-haspopup="listbox">
-                            <span id="moveDstBucketLabel">{{ _('move.dst_select_bucket') }}</span>
-                            <i class="fa-solid fa-chevron-down dropdown-icon"></i>
-                        </button>
-                        <div class="dropdown-menu hidden" id="moveDstBucketPanel" role="listbox"></div>
+                    <div class="copy-dst-selects">
+                        <div class="dropdown" id="moveDstCloudWrap">
+                            <button type="button" class="dropdown-trigger" id="moveDstCloudTrigger" aria-haspopup="listbox" title="{{ _('move.dst_cloud') }}">
+                                <span id="moveDstCloudLabel">{{ _('move.dst_select_cloud') }}</span>
+                                <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                            </button>
+                            <div class="dropdown-menu hidden" id="moveDstCloudPanel" role="listbox"></div>
+                        </div>
+                        <div class="dropdown" id="moveDstBucketWrap">
+                            <button type="button" class="dropdown-trigger" id="moveDstBucketTrigger" aria-haspopup="listbox">
+                                <span id="moveDstBucketLabel">{{ _('move.dst_select_bucket') }}</span>
+                                <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                            </button>
+                            <div class="dropdown-menu hidden" id="moveDstBucketPanel" role="listbox"></div>
+                        </div>
                     </div>
+                    <input type="hidden" id="moveDstCloudValue" value="">
                     <input type="hidden" id="moveDstBucketValue" value="">
                 </div>
                 <div class="form-group">

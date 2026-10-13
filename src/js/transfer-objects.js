@@ -40,6 +40,16 @@
         return bucket.display_name || bucket.name || bucket.bucket_id;
     }
 
+    function getBucketCloudId(bucket) {
+        if (!bucket) return '';
+        return String(bucket.cloud_id || bucket.group || '').trim();
+    }
+
+    function getCloudLabel(cloud) {
+        if (!cloud) return '—';
+        return cloud.cloud_name || cloud.cloud_id || '—';
+    }
+
     function formatPathLabel(prefix, path) {
         var p = (path || '').trim();
         if (!p) return '/' + tk(prefix, 'dst_root', 'Root');
@@ -56,6 +66,27 @@
             }
             return true;
         });
+    }
+
+    function getDestinationClouds(buckets) {
+        var byId = {};
+        var order = [];
+        (buckets || []).forEach(function (b) {
+            var cid = getBucketCloudId(b);
+            if (!cid || byId[cid]) return;
+            byId[cid] = {
+                cloud_id: cid,
+                cloud_name: b.cloud_name || b.group_name || cid
+            };
+            order.push(cid);
+        });
+        return order.map(function (cid) { return byId[cid]; });
+    }
+
+    function filterBucketsByCloud(buckets, cloudId) {
+        var cid = String(cloudId || '').trim();
+        if (!cid) return buckets.slice();
+        return buckets.filter(function (b) { return getBucketCloudId(b) === cid; });
     }
 
     function getSelectedItems() {
@@ -197,7 +228,13 @@
 
     function createTransferController(cfg) {
         var prefix = cfg.prefix;
-        var state = { dstBucketId: '', dstPath: '', hasFolders: false, pendingItems: null };
+        var state = {
+            dstCloudId: '',
+            dstBucketId: '',
+            dstPath: '',
+            hasFolders: false,
+            pendingItems: null
+        };
 
         function setError(message) {
             var el = document.getElementById(id(prefix, 'ObjectsError'));
@@ -211,15 +248,28 @@
             }
         }
 
-        function closeDstBucketDropdown() {
-            var wrap = document.getElementById(id(prefix, 'DstBucketWrap'));
-            var panel = document.getElementById(id(prefix, 'DstBucketPanel'));
+        function closeDropdown(kind) {
+            var wrap = document.getElementById(id(prefix, 'Dst' + kind + 'Wrap'));
+            var panel = document.getElementById(id(prefix, 'Dst' + kind + 'Panel'));
             if (wrap) wrap.classList.remove('open');
             if (panel) panel.classList.add('hidden');
             if (panel && panel._dropdownSearchSetMode) panel._dropdownSearchSetMode(false);
             if (wrap && typeof window.resetDropdownMenuOverlay === 'function') {
                 window.resetDropdownMenuOverlay(wrap);
             }
+        }
+
+        function closeDstBucketDropdown() {
+            closeDropdown('Bucket');
+        }
+
+        function closeDstCloudDropdown() {
+            closeDropdown('Cloud');
+        }
+
+        function closeAllDstDropdowns() {
+            closeDstCloudDropdown();
+            closeDstBucketDropdown();
         }
 
         function attachDstBucketSearch(panel, wrap) {
@@ -283,16 +333,115 @@
             updateFilter();
         }
 
-        function rebuildDstBucketDropdown(hasFolders) {
+        function bindDropdownToggle(kind, onOpen) {
+            var wrap = document.getElementById(id(prefix, 'Dst' + kind + 'Wrap'));
+            var panel = document.getElementById(id(prefix, 'Dst' + kind + 'Panel'));
+            var trigger = document.getElementById(id(prefix, 'Dst' + kind + 'Trigger'));
+            if (!wrap || !panel || !trigger) return;
+            var boundKey = prefix + kind + 'DropdownBound';
+            if (wrap.dataset[boundKey]) return;
+            wrap.dataset[boundKey] = '1';
+            trigger.addEventListener('click', function (e) {
+                e.stopPropagation();
+                var willOpen = !wrap.classList.contains('open');
+                closeAllDstDropdowns();
+                if (willOpen) {
+                    wrap.classList.add('open');
+                    panel.classList.remove('hidden');
+                    if (typeof onOpen === 'function') onOpen(panel);
+                    if (typeof window.fitDropdownMenuOverlay === 'function') {
+                        window.fitDropdownMenuOverlay(wrap);
+                    }
+                }
+            });
+            document.addEventListener('click', function (e) {
+                if (wrap.classList.contains('open') && !wrap.contains(e.target)) {
+                    closeDropdown(kind);
+                }
+            });
+        }
+
+        function rebuildDstCloudDropdown(clouds, selectedCloudId) {
+            var panel = document.getElementById(id(prefix, 'DstCloudPanel'));
+            var label = document.getElementById(id(prefix, 'DstCloudLabel'));
+            var hidden = document.getElementById(id(prefix, 'DstCloudValue'));
+            if (!panel || !label || !hidden) return;
+
+            panel.innerHTML = '';
+            if (!clouds.length) {
+                label.textContent = tk(prefix, 'dst_select_cloud', 'Select cloud');
+                label.classList.remove('has-selection');
+                hidden.value = '';
+                state.dstCloudId = '';
+                return;
+            }
+
+            var selectedId = selectedCloudId || hidden.value || state.dstCloudId || clouds[0].cloud_id;
+            if (!clouds.some(function (c) { return c.cloud_id === selectedId; })) {
+                selectedId = clouds[0].cloud_id;
+            }
+            hidden.value = selectedId;
+            state.dstCloudId = selectedId;
+            var selectedCloud = clouds.find(function (c) { return c.cloud_id === selectedId; }) || clouds[0];
+            label.textContent = getCloudLabel(selectedCloud);
+            label.classList.add('has-selection');
+
+            clouds.forEach(function (cloud) {
+                var item = document.createElement('div');
+                item.className = 'dropdown-item' + (cloud.cloud_id === selectedId ? ' selected' : '');
+                item.setAttribute('role', 'option');
+                var text = getCloudLabel(cloud);
+                item.textContent = text;
+                item.dataset.cloudId = cloud.cloud_id;
+                item.addEventListener('click', function () {
+                    if (state.dstCloudId === cloud.cloud_id) {
+                        closeDstCloudDropdown();
+                        return;
+                    }
+                    hidden.value = cloud.cloud_id;
+                    state.dstCloudId = cloud.cloud_id;
+                    label.textContent = text;
+                    label.classList.add('has-selection');
+                    closeDstCloudDropdown();
+                    state.dstBucketId = '';
+                    var bucketHidden = document.getElementById(id(prefix, 'DstBucketValue'));
+                    if (bucketHidden) bucketHidden.value = '';
+                    state.dstPath = '';
+                    rebuildDstBucketDropdown(state.hasFolders, { keepCloud: true });
+                    loadDstFolders();
+                });
+                panel.appendChild(item);
+            });
+
+            bindDropdownToggle('Cloud');
+        }
+
+        function rebuildDstBucketDropdown(hasFolders, options) {
+            options = options || {};
             var panel = document.getElementById(id(prefix, 'DstBucketPanel'));
             var label = document.getElementById(id(prefix, 'DstBucketLabel'));
             var hidden = document.getElementById(id(prefix, 'DstBucketValue'));
             var wrap = document.getElementById(id(prefix, 'DstBucketWrap'));
             if (!panel || !label || !hidden) return;
 
-            var buckets = getDestinationBuckets(hasFolders);
+            var allBuckets = getDestinationBuckets(hasFolders);
+            var clouds = getDestinationClouds(allBuckets);
+            var preferredCloud = '';
+            if (options.keepCloud) {
+                preferredCloud = state.dstCloudId;
+            } else {
+                var currentBucket = (window.availableBuckets || []).find(function (b) {
+                    return b && b.bucket_id === getCurrentBucketId();
+                });
+                preferredCloud = getBucketCloudId(currentBucket);
+            }
+            if (!options.keepCloud) {
+                rebuildDstCloudDropdown(clouds, preferredCloud);
+            }
+
+            var buckets = filterBucketsByCloud(allBuckets, state.dstCloudId);
             panel.innerHTML = '';
-            if (buckets.length === 0) {
+            if (allBuckets.length === 0 || buckets.length === 0) {
                 label.textContent = tk(prefix, 'dst_no_buckets', 'No buckets available for upload');
                 label.classList.remove('has-selection');
                 hidden.value = '';
@@ -331,32 +480,9 @@
             });
 
             attachDstBucketSearch(panel, wrap);
-
-            var boundKey = prefix + 'DropdownBound';
-            if (wrap && !wrap.dataset[boundKey]) {
-                wrap.dataset[boundKey] = '1';
-                var trigger = document.getElementById(id(prefix, 'DstBucketTrigger'));
-                if (trigger) {
-                    trigger.addEventListener('click', function (e) {
-                        e.stopPropagation();
-                        var willOpen = !wrap.classList.contains('open');
-                        closeDstBucketDropdown();
-                        if (willOpen) {
-                            wrap.classList.add('open');
-                            if (panel) panel.classList.remove('hidden');
-                            if (panel._dropdownSearchSetMode) panel._dropdownSearchSetMode(true);
-                            if (typeof window.fitDropdownMenuOverlay === 'function') {
-                                window.fitDropdownMenuOverlay(wrap);
-                            }
-                        }
-                    });
-                }
-                document.addEventListener('click', function (e) {
-                    if (wrap.classList.contains('open') && !wrap.contains(e.target)) {
-                        closeDstBucketDropdown();
-                    }
-                });
-            }
+            bindDropdownToggle('Bucket', function (bucketPanel) {
+                if (bucketPanel._dropdownSearchSetMode) bucketPanel._dropdownSearchSetMode(true);
+            });
         }
 
         function renderDstBreadcrumb() {
@@ -477,6 +603,8 @@
             state.pendingItems = items;
             state.hasFolders = foldersCount > 0;
             state.dstPath = '';
+            state.dstCloudId = '';
+            state.dstBucketId = '';
             setError('');
             renderSrcSummary(items);
             rebuildDstBucketDropdown(state.hasFolders);
@@ -490,7 +618,7 @@
             if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
             var modal = document.getElementById(id(prefix, 'ObjectsModal'));
             if (modal) modal.style.display = 'none';
-            closeDstBucketDropdown();
+            closeAllDstDropdowns();
             setError('');
             state.pendingItems = null;
         }

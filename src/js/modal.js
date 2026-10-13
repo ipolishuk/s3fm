@@ -317,15 +317,26 @@
         var child = dropdownWrap.firstElementChild;
         while (child) {
             if (child !== menu && child.matches && child.matches(
-                'button.dropdown-trigger, .dropdown-trigger, [aria-haspopup], input.bucket-access-user-input, input.search-input'
+                'button.dropdown-trigger, .dropdown-trigger, .context-menu-trigger, [aria-haspopup], input.bucket-access-user-input, input.search-input'
             )) {
                 return child;
             }
             child = child.nextElementSibling;
         }
         return dropdownWrap.querySelector(
-            ':scope > .dropdown-trigger, :scope > [aria-haspopup], :scope > input.bucket-access-user-input, :scope > input.search-input'
+            ':scope > .dropdown-trigger, :scope > .context-menu-trigger, :scope > [aria-haspopup], :scope > input.bucket-access-user-input, :scope > input.search-input'
+        ) || dropdownWrap.querySelector(
+            '.dropdown-trigger, .context-menu-trigger, [aria-haspopup], input.bucket-access-user-input, input.search-input'
         );
+    }
+
+    function contextMenuAnchorRect(dropdownWrap, trigger) {
+        var cx = parseFloat(dropdownWrap && dropdownWrap.getAttribute('data-context-x'));
+        var cy = parseFloat(dropdownWrap && dropdownWrap.getAttribute('data-context-y'));
+        if (!isNaN(cx) && !isNaN(cy)) {
+            return { left: cx, right: cx, top: cy, bottom: cy, width: 0, height: 0 };
+        }
+        return trigger.getBoundingClientRect();
     }
 
     function isDropdownOverlayOpen(dropdownWrap) {
@@ -370,10 +381,15 @@
         if (!dropdownWrap) return;
         var menu = getDropdownMenu(dropdownWrap);
         var trigger = getDropdownTrigger(dropdownWrap);
-        if (!menu || !trigger) return;
-        var rect = trigger.getBoundingClientRect();
-        var margin = 16;
+        if (!menu) return;
         var isContextMenu = dropdownWrap.classList.contains('context-menu-dropdown');
+        // Context menus: prefer explicit cursor coords — 1×1 trigger rect can be 0,0
+        // when absolute positioning inside a 0×0 fixed host fails (seen in some prod layouts).
+        var rect = (isContextMenu || !trigger)
+            ? contextMenuAnchorRect(dropdownWrap, trigger || dropdownWrap)
+            : trigger.getBoundingClientRect();
+        if (!trigger && !isContextMenu) return;
+        var margin = 16;
         var gap = isContextMenu ? 0 : 4;
         var safeB = 0;
         try {
@@ -494,6 +510,8 @@
     window.resetDropdownMenuOverlay = function (dropdownWrap) {
         if (!dropdownWrap) return;
         cleanupDropdownMenuOverlayTracking(dropdownWrap);
+        dropdownWrap.removeAttribute('data-context-x');
+        dropdownWrap.removeAttribute('data-context-y');
         var menu = getDropdownMenu(dropdownWrap);
         var trigger = getDropdownTrigger(dropdownWrap);
         if (menu) {
@@ -511,7 +529,11 @@
             menu.style.overflowY = '';
             menu.style.zIndex = '';
         }
-        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+        if (trigger) {
+            trigger.style.left = '';
+            trigger.style.top = '';
+            trigger.setAttribute('aria-expanded', 'false');
+        }
     };
 
     window.fitDropdownMenuOverlay = function (dropdownWrap) {

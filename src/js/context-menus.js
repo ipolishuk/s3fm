@@ -327,8 +327,22 @@ function setupFileContextMenu() {
             window.preloadFileInfoForPath(preloadPath);
         }
 
-        trigger.style.left = e.clientX + 'px';
-        trigger.style.top = e.clientY + 'px';
+        var x = Number(e && e.clientX);
+        var y = Number(e && e.clientY);
+        if (!isFinite(x) || !isFinite(y)) {
+            x = 0;
+            y = 0;
+        }
+        container.setAttribute('data-context-x', String(x));
+        container.setAttribute('data-context-y', String(y));
+        trigger.style.left = x + 'px';
+        trigger.style.top = y + 'px';
+        // Fallback if overlay fitter is unavailable: pin menu at cursor immediately
+        menu.style.position = 'fixed';
+        menu.style.left = x + 'px';
+        menu.style.top = y + 'px';
+        menu.style.right = 'auto';
+        menu.style.bottom = 'auto';
         ignoreOutsideClickUntil = Date.now() + OUTSIDE_CLICK_IGNORE_MS;
 
         document.dispatchEvent(new CustomEvent('dropdown:open', { detail: { source: 'file-context' } }));
@@ -589,8 +603,21 @@ function setupSettingsContextMenu() {
     function openMenu(e, row) {
         contextRow = row;
         updateMenuForRow(row);
-        trigger.style.left = e.clientX + 'px';
-        trigger.style.top = e.clientY + 'px';
+        var x = Number(e && e.clientX);
+        var y = Number(e && e.clientY);
+        if (!isFinite(x) || !isFinite(y)) {
+            x = 0;
+            y = 0;
+        }
+        container.setAttribute('data-context-x', String(x));
+        container.setAttribute('data-context-y', String(y));
+        trigger.style.left = x + 'px';
+        trigger.style.top = y + 'px';
+        menu.style.position = 'fixed';
+        menu.style.left = x + 'px';
+        menu.style.top = y + 'px';
+        menu.style.right = 'auto';
+        menu.style.bottom = 'auto';
         ignoreOutsideClickUntil = Date.now() + OUTSIDE_CLICK_IGNORE_MS;
         document.dispatchEvent(new CustomEvent('dropdown:open', { detail: { source: 'settings-context' } }));
         container.classList.add('open');

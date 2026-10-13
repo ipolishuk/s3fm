@@ -207,10 +207,12 @@ def settings_services_status_impl():
             }
 
         def _meili_status_payload():
-            meili_raw = meilisearch.connection_status(include_stats=False, timeout=3)
+            # timeout covers /health + write probe (read-only FS detection)
+            meili_raw = meilisearch.connection_status(include_stats=False, timeout=5)
             meili_enabled = bool(meili_raw.get('enabled'))
             meili_configured = bool(meili_raw.get('configured'))
             meili_available = bool(meili_raw.get('available'))
+            meili_writable = meili_raw.get('writable')
             meili_host = (meili_raw.get('host') or '').strip() or None
             meili_api_key_ok = bool(meilisearch._meili_api_key())
             if not meili_enabled:
@@ -241,6 +243,7 @@ def settings_services_status_impl():
                     meili_detail = f'Unreachable ({meili_host})'
                 else:
                     meili_detail = 'Meilisearch is unreachable'
+            writable_ok = True if meili_writable is None else bool(meili_writable)
             return {
                 'id': 'meilisearch',
                 'configured': meili_configured,
@@ -252,6 +255,7 @@ def settings_services_status_impl():
                     {'name': 'MEILI_ENABLED', 'ok': meili_enabled, 'required': True},
                     {'name': 'MEILI_HOST', 'ok': bool(meili_host), 'required': True},
                     {'name': 'MEILI_API_KEY', 'ok': meili_api_key_ok, 'required': True},
+                    {'name': 'Writable File System', 'ok': writable_ok if meili_enabled and meili_configured else True, 'required': True},
                 ],
                 'meta': {
                     'host': meili_host,
@@ -260,6 +264,7 @@ def settings_services_status_impl():
                     'version': meili_raw.get('version'),
                     'config_error': meili_raw.get('config_error'),
                     'probe_error': meili_raw.get('probe_error'),
+                    'writable': meili_writable,
                 },
             }
 
@@ -441,7 +446,7 @@ def settings_services_status_impl():
             fut_prom = pool.submit(_prometheus_status_payload)
             database = _take(fut_db, 'database', 5)
             ldap = _take(fut_ldap, 'ldap', 15)
-            meilisearch_status = _take(fut_meili, 'meilisearch', 5)
+            meilisearch_status = _take(fut_meili, 'meilisearch', 10)
             sso_status = _take(fut_sso, 'sso', 8)
             s3_status = _take(fut_s3, 's3', 25)
             # Wait longer than the probe timeout so connection_status can return
@@ -457,7 +462,6 @@ def settings_services_status_impl():
             pool.shutdown(wait=False, cancel_futures=True)
 
         services = [database, ldap, meilisearch_status, sso_status, s3_status, prometheus_status]
-        optional_ids = {'meilisearch', 'ldap', 'sso', 'prometheus'}
         overall = 'ok'
         for svc in services:
             st = svc.get('status')
@@ -469,17 +473,12 @@ def settings_services_status_impl():
                     overall = 'degraded'
                 continue
             if st == 'error':
-                if sid in optional_ids and not (sid == 'sso' and sso_module.is_sso_only()):
-                    if overall == 'ok':
-                        overall = 'degraded'
-                else:
-                    overall = 'error'
-                    break
+                # error always wins over degraded/ok (incl. optional services)
+                overall = 'error'
             elif st == 'not_configured':
                 if sid == 'database' or sid == 's3':
                     overall = 'error'
-                    break
-                if overall == 'ok':
+                elif overall == 'ok':
                     overall = 'degraded'
             elif st == 'degraded' and overall == 'ok':
                 overall = 'degraded'

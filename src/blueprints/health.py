@@ -42,12 +42,17 @@ def healthz_ready():
     )
     if meili_enabled:
         try:
-            meili = meilisearch.connection_status()
+            # include write probe — /health alone misses read-only data dir
+            meili = meilisearch.connection_status(include_stats=False, timeout=5)
             if meili.get('available'):
                 checks['meilisearch'] = 'ok'
             else:
                 ready = False
-                checks['meilisearch'] = meili.get('config_error') or 'unavailable'
+                checks['meilisearch'] = (
+                    meili.get('probe_error')
+                    or meili.get('config_error')
+                    or 'unavailable'
+                )
         except Exception as e:
             ready = False
             checks['meilisearch'] = f'error: {e}'

@@ -538,6 +538,7 @@
 
         var enabled = !!status.enabled;
         var connected = !!status.available;
+        var probeError = (status.probe_error || '').trim();
         var label;
         if (!enabled) {
             label = capitalizeLabel(t('settings.search.status_disabled') || 'Disabled');
@@ -555,7 +556,7 @@
             btn.classList.add('status-enabled');
         }
         btn.disabled = !connected;
-        btn.title = titleBase + ': ' + label;
+        btn.title = titleBase + ': ' + label + (probeError && !connected ? ' — ' + probeError : '');
         btn.setAttribute('aria-label', btn.title);
         btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
         updateMeiliIndexSize(status);

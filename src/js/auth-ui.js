@@ -44,6 +44,9 @@ function setCurrentUser(user) {
     if (typeof window.updateBucketsAddBtnVisibility === 'function') {
         window.updateBucketsAddBtnVisibility();
     }
+    if (typeof window.refreshHeaderStatusIndicator === 'function') {
+        window.refreshHeaderStatusIndicator();
+    }
 }
 
 function getActivePermissions(bucketId) {
@@ -76,6 +79,9 @@ function displayUserInfo() {
         usernameDisplay.textContent = String(currentUser.username || '').toLowerCase();
         userSection.style.display = 'flex';
         updateSettingsMenuItemVisibility();
+        if (typeof window.refreshHeaderStatusIndicator === 'function') {
+            window.refreshHeaderStatusIndicator();
+        }
     }
 }
 

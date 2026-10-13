@@ -336,9 +336,34 @@ class MeiliHTTPError(Exception):
         super().__init__(f'Meilisearch HTTP {status}: {body[:500]}')
 
 
+_HEALTHCHECK_INDEX_UID = '_s3fm_healthcheck'
+_WRITABLE_CACHE_TTL_SEC = 30.0
+_writable_cache_lock = threading.Lock()
+_writable_cache: Dict[str, Any] = {
+    'checked_at': 0.0,
+    'ok': False,
+    'error': None,
+    'host': None,
+}
+
+
 def _format_probe_error(exc: Exception) -> str:
     """Короткое описание ошибки probe без тела ответа и секретов."""
     if isinstance(exc, MeiliHTTPError):
+        msg = ''
+        try:
+            payload = json.loads(exc.body or '')
+            if isinstance(payload, dict):
+                msg = str(payload.get('message') or '').strip()
+        except Exception:
+            msg = ''
+        if not msg:
+            msg = (exc.body or '').strip().replace('\n', ' ')
+        lower = msg.lower()
+        if 'read-only file system' in lower or 'os error 30' in lower:
+            return 'Read-only file system (Meilisearch cannot write data)'
+        if msg:
+            return f'HTTP {exc.status}: {msg[:200]}'
         return f'HTTP {exc.status}'
     reason = getattr(exc, 'reason', None)
     text = str(reason if reason is not None else exc).strip() or exc.__class__.__name__
@@ -346,7 +371,70 @@ def _format_probe_error(exc: Exception) -> str:
         text = text[len('<urlopen error '):-1].strip()
     if text.startswith('[Errno ') and ']' in text:
         text = text.split(']', 1)[1].strip() or text
+    lower = text.lower()
+    if 'read-only file system' in lower or 'os error 30' in lower:
+        return 'Read-only file system (Meilisearch cannot write data)'
     return text[:240]
+
+
+def _probe_writable(client: '_MeiliHTTPClient', timeout: int) -> Tuple[bool, Optional[str]]:
+    """
+    /health can be green while the data dir is read-only.
+    Probe: ensure a tiny index exists and accept one document write.
+    """
+    uid = _HEALTHCHECK_INDEX_UID
+    doc = {'id': 'ping', 'ok': True, 'ts': int(time.time())}
+    try:
+        try:
+            client.request('GET', f'/indexes/{uid}', timeout=timeout)
+        except MeiliHTTPError as exc:
+            if exc.status != 404:
+                raise
+            client.request(
+                'POST',
+                '/indexes',
+                {'uid': uid, 'primaryKey': 'id'},
+                timeout=timeout,
+            )
+        client.request(
+            'POST',
+            f'/indexes/{uid}/documents',
+            [doc],
+            timeout=timeout,
+        )
+        try:
+            client.request(
+                'DELETE',
+                f'/indexes/{uid}/documents/ping',
+                timeout=timeout,
+            )
+        except Exception:
+            pass
+        return True, None
+    except Exception as exc:
+        return False, _format_probe_error(exc)
+
+
+def _probe_writable_cached(
+    client: '_MeiliHTTPClient',
+    timeout: int,
+    host: Optional[str],
+) -> Tuple[bool, Optional[str]]:
+    now = time.time()
+    with _writable_cache_lock:
+        if (
+            _writable_cache['host'] == host
+            and _writable_cache['checked_at'] > 0
+            and (now - float(_writable_cache['checked_at'])) < _WRITABLE_CACHE_TTL_SEC
+        ):
+            return bool(_writable_cache['ok']), _writable_cache.get('error')
+    ok, err = _probe_writable(client, timeout)
+    with _writable_cache_lock:
+        _writable_cache['checked_at'] = now
+        _writable_cache['ok'] = ok
+        _writable_cache['error'] = err
+        _writable_cache['host'] = host
+    return ok, err
 
 
 class _MeiliHTTPClient:
@@ -709,6 +797,7 @@ def connection_status(
     configured = is_configured()
     host = _meili_host() if configured else (_configured_host() or None)
     available = False
+    writable: Optional[bool] = None
     database_size = None
     version = None
     probe_error = None
@@ -745,7 +834,18 @@ def connection_status(
         ver_timeout = timeout if timeout is not None else _request_timeout_sec()
         version = _pkg_version_from_client(client, timeout=ver_timeout)
 
-    if include_stats and client is not None:
+    # Write probe: /health alone misses read-only data dir /tmp (reindex fails with HTTP 500).
+    if client is not None and available:
+        write_timeout = timeout if timeout is not None else min(_request_timeout_sec(), 5)
+        write_timeout = max(1, int(write_timeout))
+        w_ok, w_err = _probe_writable_cached(client, write_timeout, host)
+        writable = w_ok
+        if not w_ok:
+            available = False
+            probe_error = w_err or 'Meilisearch is not writable'
+            logger.warning('Meilisearch write probe failed at %s: %s', host, probe_error)
+
+    if include_stats and client is not None and available:
         try:
             stats_timeout = timeout if timeout is not None else _request_timeout_sec()
             stats = client.request('GET', '/stats', timeout=stats_timeout) or {}
@@ -760,6 +860,7 @@ def connection_status(
     return {
         'configured': configured,
         'available': available,
+        'writable': writable,
         'enabled': _config_bool('MEILI_ENABLED', code_default=False),
         'enabled_from_env': _env_raw('MEILI_ENABLED') is not None,
         'host': host,

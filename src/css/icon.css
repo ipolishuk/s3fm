@@ -218,6 +218,7 @@ i.fa-solid.empty-state-icon-error {
 }
 
 /* Header icon-only buttons should match toolbar button geometry */
+#headerStatusBtn,
 #themeToggleBtn,
 .lang-dropdown > #langDropdownTrigger,
 .lang-dropdown > #loginLangTrigger {
@@ -226,4 +227,31 @@ i.fa-solid.empty-state-icon-error {
   padding-left: 0;
   padding-right: 0;
   justify-content: center;
+}
+
+#headerStatusBtn > .fa-solid {
+  line-height: 1;
+  font-size: 15px;
+}
+
+#headerStatusBtn.status-ok #headerStatusIcon {
+  color: var(--success);
+}
+
+#headerStatusBtn.status-warn #headerStatusIcon {
+  color: var(--warning);
+}
+
+#headerStatusBtn.status-error #headerStatusIcon {
+  color: var(--error);
+  animation: header-status-pulse 1.4s ease-in-out infinite;
+}
+
+#headerStatusBtn.status-pending #headerStatusIcon {
+  color: var(--text-secondary, #888);
+}
+
+@keyframes header-status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }

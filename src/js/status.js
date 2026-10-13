@@ -8,6 +8,8 @@
     var _refreshBound = false;
     var _abortCtrl = null;
     var _loadSeq = 0;
+    var _headerBtnBound = false;
+    var _headerPrefetchStarted = false;
     var STATUS_FETCH_TIMEOUT_MS = 35000;
 
     function t(key, fallback) {
@@ -88,7 +90,7 @@
                 'OIDC_CLIENT_SECRET',
                 'OIDC_REDIRECT_URI / APP_EXTERNAL_URL'
             ],
-            meilisearch: ['MEILI_ENABLED', 'MEILI_HOST', 'MEILI_API_KEY'],
+            meilisearch: ['MEILI_ENABLED', 'MEILI_HOST', 'MEILI_API_KEY', 'Writable File System'],
             prometheus: [
                 'BUCKET_METRICS_PROMETHEUS_URL',
                 'BUCKET_METRICS_TLS_VERIFY',
@@ -109,7 +111,34 @@
                 if (name && names.indexOf(name) === -1) names.push(name);
             });
         }
-        return names;
+        return sortStatusVarNames(names);
+    }
+
+    /** Library probes stay first; the rest are alphabetical. */
+    var STATUS_VAR_PIN_FIRST = {
+        psycopg2: 1,
+        boto3: 1,
+        ldap3: 1
+    };
+
+    function sortStatusVarNames(names) {
+        return names.slice().sort(function (a, b) {
+            var aPin = STATUS_VAR_PIN_FIRST[a] ? 0 : 1;
+            var bPin = STATUS_VAR_PIN_FIRST[b] ? 0 : 1;
+            if (aPin !== bPin) return aPin - bPin;
+            return String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
+        });
+    }
+
+    function sortStatusVarItems(varsList) {
+        return varsList.slice().sort(function (a, b) {
+            var aName = (a && a.name) || '';
+            var bName = (b && b.name) || '';
+            var aPin = STATUS_VAR_PIN_FIRST[aName] ? 0 : 1;
+            var bPin = STATUS_VAR_PIN_FIRST[bName] ? 0 : 1;
+            if (aPin !== bPin) return aPin - bPin;
+            return String(aName).localeCompare(String(bName), undefined, { sensitivity: 'base' });
+        });
     }
 
     function renderVarRows(svc) {
@@ -117,6 +146,7 @@
         if (!varsList.length) {
             return '<p class="form-hint">' + escapeHtml(t('settings.status.unavailable', 'Status unavailable')) + '</p>';
         }
+        varsList = sortStatusVarItems(varsList);
         return (
             '<ul class="settings-status-vars">' +
             varsList.map(function (item) {
@@ -359,12 +389,14 @@
                     if (typeof window.setSettingsMenuCountById === 'function') {
                         window.setSettingsMenuCountById('settingsCountStatus', 0);
                     }
+                    updateHeaderStatusIndicator(null);
                     return;
                 }
                 _lastStatus = res.data || null;
                 window._servicesStatusCache = _lastStatus;
                 container.innerHTML = renderStatusPanel(_lastStatus);
                 filterStatusSections();
+                updateHeaderStatusIndicator(_lastStatus);
             })
             .catch(function (err) {
                 if (!isCurrentLoad()) return;
@@ -375,6 +407,7 @@
                 if (options.soft && _lastStatus) {
                     container.innerHTML = renderStatusPanel(_lastStatus);
                     filterStatusSections();
+                    updateHeaderStatusIndicator(_lastStatus);
                     if (typeof showError === 'function') showError(msg);
                 } else {
                     container.innerHTML =
@@ -384,6 +417,7 @@
                     if (typeof window.setSettingsMenuCountById === 'function') {
                         window.setSettingsMenuCountById('settingsCountStatus', 0);
                     }
+                    updateHeaderStatusIndicator(null);
                 }
             })
             .finally(function () {
@@ -405,21 +439,114 @@
                 try { ctrl.abort(); } catch (e) { /* ignore */ }
             }, STATUS_FETCH_TIMEOUT_MS);
         }
+        updateHeaderStatusIndicator(_lastStatus || window._servicesStatusCache || null);
         return fetchServicesStatus(ctrl ? ctrl.signal : null)
             .then(function (res) {
                 if (res.ok) {
                     _lastStatus = res.data || null;
                     window._servicesStatusCache = _lastStatus;
                     updateStatusMenuCount(_lastStatus);
+                    updateHeaderStatusIndicator(_lastStatus);
+                } else {
+                    updateHeaderStatusIndicator(_lastStatus || null);
                 }
                 return _lastStatus;
             })
             .catch(function () {
+                updateHeaderStatusIndicator(_lastStatus || null);
                 return null;
             })
             .finally(function () {
                 if (timer) clearTimeout(timer);
             });
+    }
+
+    function canSeeHeaderStatus() {
+        return typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin();
+    }
+
+    function summarizePayloadSeverity(payload) {
+        /** @returns {'ok'|'degraded'|'error'|null} null = unknown / still loading */
+        if (!payload || !payload.services) return null;
+        var services = payload.services;
+        var ids = Object.keys(services);
+        if (!ids.length) return null;
+        var hasError = false;
+        var hasDegraded = false;
+        for (var i = 0; i < ids.length; i++) {
+            var st = (services[ids[i]] && services[ids[i]].status) || '';
+            if (st === 'error') hasError = true;
+            else if (st === 'degraded' || st === 'not_configured') hasDegraded = true;
+        }
+        // error always wins when both error and degraded are present
+        if (hasError) return 'error';
+        var overall = payload.overall;
+        if (overall === 'error') return 'error';
+        if (overall === 'degraded' || hasDegraded) return 'degraded';
+        if (overall === 'ok') return 'ok';
+        return hasDegraded ? 'degraded' : 'ok';
+    }
+
+    function updateHeaderStatusIndicator(payload) {
+        var btn = document.getElementById('headerStatusBtn');
+        if (!btn) return;
+        ensureHeaderStatusBound();
+        if (!canSeeHeaderStatus()) {
+            btn.classList.add('hidden');
+            btn.classList.remove('status-ok', 'status-warn', 'status-error', 'status-pending');
+            return;
+        }
+        btn.classList.remove('hidden', 'status-ok', 'status-warn', 'status-error', 'status-pending');
+        var severity = summarizePayloadSeverity(payload);
+        var title;
+        if (severity === null) {
+            btn.classList.add('status-pending');
+            title = t('settings.status.header_checking', 'Checking service status…');
+        } else if (severity === 'error') {
+            btn.classList.add('status-error');
+            title = t('settings.status.header_problems', 'Service status issues — open Status');
+        } else if (severity === 'degraded') {
+            btn.classList.add('status-warn');
+            title = t('settings.status.header_problems', 'Service status issues — open Status');
+        } else {
+            btn.classList.add('status-ok');
+            title = t('settings.status.header_ok', 'All services connected');
+        }
+        btn.title = title;
+        btn.setAttribute('aria-label', title);
+    }
+
+    function ensureHeaderStatusBound() {
+        if (_headerBtnBound) return;
+        var btn = document.getElementById('headerStatusBtn');
+        if (!btn) return;
+        _headerBtnBound = true;
+        btn.addEventListener('click', function () {
+            if (!canSeeHeaderStatus()) return;
+            var item = document.getElementById('settingsItemStatus');
+            if (item && !item.classList.contains('hidden')) {
+                item.click();
+                return;
+            }
+            if (typeof window.openSettingsByRoute === 'function') {
+                window.openSettingsByRoute('status');
+            }
+        });
+    }
+
+    function refreshHeaderStatusIndicator() {
+        ensureHeaderStatusBound();
+        if (!canSeeHeaderStatus()) {
+            updateHeaderStatusIndicator(null);
+            _headerPrefetchStarted = false;
+            return;
+        }
+        var cached = _lastStatus || window._servicesStatusCache || null;
+        updateHeaderStatusIndicator(cached);
+        if (!_headerPrefetchStarted) {
+            _headerPrefetchStarted = true;
+            prefetchServicesStatus();
+        }
     }
 
     window.loadSettingsStatus = loadSettingsStatus;
@@ -428,4 +555,6 @@
     window.getStatusServicesCount = getStatusServicesCount;
     window.hideSettingsStatusToolbarExtras = hideStatusToolbarExtras;
     window.cancelSettingsStatusLoad = cancelSettingsStatusLoad;
+    window.updateHeaderStatusIndicator = updateHeaderStatusIndicator;
+    window.refreshHeaderStatusIndicator = refreshHeaderStatusIndicator;
 })();

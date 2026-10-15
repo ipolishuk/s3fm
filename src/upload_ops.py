@@ -93,11 +93,19 @@ def _finish_upload_job(job_id):
     if int(state.get('processing') or 0) > 0:
         return
     job = operation_jobs.get_job(job_id)
-    if job and job.get('status') in ('done', 'error'):
+    if job and job.get('status') in ('done', 'error', 'cancelled'):
         return
     successful = int(state.get('successful') or 0)
     failed = int(state.get('failed') or 0)
     total = int(state.get('total') or 0)
+    if operation_jobs.is_cancel_requested(job_id):
+        operation_jobs.publish(job_id, {
+            'type': 'cancelled',
+            'uploaded': successful,
+            'failed': failed,
+            'total': total,
+        })
+        return
     operation_jobs.publish(job_id, {
         'type': 'done',
         'uploaded': successful,
@@ -192,5 +200,3 @@ def _run_upload_job_file(
                 'total': total,
             })
         operation_jobs.upload_processing_finished(job_id, success, _finish_upload_job)
-
-

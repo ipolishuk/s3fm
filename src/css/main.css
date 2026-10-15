@@ -1139,6 +1139,15 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
   opacity: 0.5;
 }
 
+.progressbar-cancelling .progress-text {
+  color: var(--text-muted);
+}
+
+.progressbar-cancelling .progress-fill {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
 .progressbar-collapsed {
   max-height: none;
   overflow: visible;

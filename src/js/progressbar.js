@@ -427,6 +427,7 @@
 
         updateBarLocal(0, names.length || 0, {});
 
+        var isCancelling = false;
         var handle = {
             uid: uid,
             op: op,
@@ -435,15 +436,17 @@
                 if (el) el.textContent = text;
             },
             setCounting: function () {
+                if (isCancelling) return;
                 if (meta.counting) handle.setTitle(tr(meta.counting, '...'));
             },
             setProgress: function (current, total, opts) {
                 opts = opts || {};
+                updateBarLocal(current, total, opts);
+                if (isCancelling) return;
                 var textNode = document.getElementById(id('ProgressText'));
                 if (textNode) {
                     textNode.textContent = formatProgressText(op, current, total, opts);
                 }
-                updateBarLocal(current, total, opts);
             },
             setItemStatus: function (index, kind, errorText) {
                 ensureListItem(index);
@@ -457,7 +460,14 @@
                 );
             },
             setCancelling: function (cancelling) {
-                setControlsDisabled(!!cancelling);
+                isCancelling = !!cancelling;
+                setControlsDisabled(isCancelling);
+                if (isCancelling) {
+                    handle.setTitle(tr('progress.cancelling', 'Cancelling…'));
+                    container.classList.add('progressbar-cancelling');
+                } else {
+                    container.classList.remove('progressbar-cancelling');
+                }
             },
             setOnCancel: function (fn) {
                 onCancelFn = typeof fn === 'function' ? fn : null;
@@ -551,6 +561,10 @@
                             ? event.applied
                             : (event.uploaded != null ? event.uploaded : state.current))));
             pb.setProgress(state.current, state.total, { complete: true });
+            return state;
+        }
+
+        if (event.type === 'cancelled') {
             return state;
         }
 

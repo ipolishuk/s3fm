@@ -307,6 +307,7 @@ def request_cancel(job_id: str) -> bool:
     if not job:
         if not _sync_job_from_db(job_id):
             return False
+    publish_cancelled_now = False
     with _jobs_lock:
         job = _jobs.get(job_id)
         if not job or job.get('status') not in ('pending', 'running'):
@@ -316,7 +317,14 @@ def request_cancel(job_id: str) -> bool:
             state = job.get('upload_state')
             if state:
                 state['sealed'] = True
+                # Idle-timer сам бы вызвал finish, но при cancel мы его гасим —
+                # если ничего не обрабатывается, terminal нужно опубликовать сразу,
+                # иначе тост upload зависает навсегда.
                 _cancel_upload_idle_timer(state)
+                if int(state.get('processing') or 0) == 0:
+                    publish_cancelled_now = True
+            else:
+                publish_cancelled_now = True
         snapshot = {
             'id': job['id'],
             'username': job.get('username'),
@@ -331,6 +339,8 @@ def request_cancel(job_id: str) -> bool:
             'cancel_requested': True,
         }
     _persist_job(snapshot)
+    if publish_cancelled_now:
+        publish(job_id, {'type': 'cancelled'})
     return True
 
 
@@ -378,7 +388,16 @@ def publish(job_id: str, event: Dict[str, Any]) -> None:
         try:
             listener.put_nowait(event)
         except queue.Full:
-            pass
+            # Терминальные события нельзя терять — освободим слот и повторим
+            if etype in ('done', 'error', 'cancelled'):
+                try:
+                    listener.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    listener.put_nowait(event)
+                except queue.Full:
+                    pass
 
 
 def mark_running(job_id: str) -> None:
@@ -414,14 +433,53 @@ def start_worker(job_id: str, target: Callable[[], None]) -> None:
         except Exception as exc:
             publish(job_id, {'type': 'error', 'error': str(exc)})
         finally:
-            # Safety net: если worker вышел без terminal event — зафиксируем done в БД+SSE
+            # Safety net: если worker вышел без terminal event — зафиксируем в БД+SSE
             with _jobs_lock:
                 job = _jobs.get(job_id)
                 still_running = bool(job and job.get('status') == 'running')
             if still_running:
-                publish(job_id, {'type': 'done'})
+                if is_cancel_requested(job_id):
+                    publish(job_id, {'type': 'cancelled'})
+                else:
+                    publish(job_id, {'type': 'done'})
 
     threading.Thread(target=wrapper, daemon=True).start()
+
+
+def _terminal_event_from_job(job: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Собрать terminal-событие из статуса/истории job (для SSE catch-up)."""
+    status = job.get('status')
+    history = job.get('history') or []
+    for evt in reversed(history):
+        if evt and evt.get('type') in ('done', 'error', 'cancelled'):
+            return evt
+    if status == 'cancelled':
+        return {'type': 'cancelled'}
+    if status == 'error':
+        return {'type': 'error', 'error': job.get('error') or 'error'}
+    if status == 'done':
+        return {'type': 'done'}
+    return None
+
+
+def _history_catchup_start(new_history: List[Any], last_sent: Optional[Dict[str, Any]], sent_len: int) -> int:
+    """Индекс в new_history, с которого досылать события клиенту.
+
+    При кольцевом буфере (_MAX_HISTORY) длина истории не растёт — ищем last_sent
+    по содержимому; если событие вытеснено, досылаем только «хвост» после sent_len
+    или последнее событие.
+    """
+    if not new_history:
+        return 0
+    if last_sent is not None:
+        for i in range(len(new_history) - 1, -1, -1):
+            if new_history[i] == last_sent:
+                return i + 1
+        # last_sent вытеснен из кольца — отдадим хотя бы свежий хвост
+        return max(0, len(new_history) - 1)
+    if len(new_history) > sent_len:
+        return sent_len
+    return len(new_history)
 
 
 def iter_job_events(job_id: str) -> Iterator[Dict[str, Any]]:
@@ -435,6 +493,8 @@ def iter_job_events(job_id: str) -> Iterator[Dict[str, Any]]:
     with _listeners_lock:
         _listeners.setdefault(job_id, []).append(listener)
     sent_history_len = 0
+    last_sent_event: Optional[Dict[str, Any]] = None
+    terminal_sent = False
     try:
         job = get_job(job_id)
         if not job:
@@ -453,8 +513,16 @@ def iter_job_events(job_id: str) -> Iterator[Dict[str, Any]]:
             'history': history,
         }
         sent_history_len = len(history)
+        if history:
+            last_sent_event = history[-1]
+        if any(evt and evt.get('type') in ('done', 'error', 'cancelled') for evt in history):
+            terminal_sent = True
 
         if job.get('status') in ('done', 'error', 'cancelled'):
+            if not terminal_sent:
+                term = _terminal_event_from_job(job)
+                if term:
+                    yield term
             return
 
         last_ping_at = _now()
@@ -463,42 +531,38 @@ def iter_job_events(job_id: str) -> Iterator[Dict[str, Any]]:
                 event = listener.get(timeout=_SSE_DB_POLL_SEC)
             except queue.Empty:
                 refreshed = _sync_job_from_db(job_id)
+                if not refreshed:
+                    # БД недоступна / job только in-memory — смотрим локальный снимок
+                    refreshed = get_job(job_id)
                 if refreshed:
                     new_history = refreshed.get('history') or []
-                    if len(new_history) > sent_history_len:
-                        for evt in new_history[sent_history_len:]:
-                            yield evt
-                            sent_history_len += 1
-                            if evt.get('type') in ('done', 'error', 'cancelled'):
-                                return
+                    start = _history_catchup_start(new_history, last_sent_event, sent_history_len)
+                    for evt in new_history[start:]:
+                        yield evt
+                        last_sent_event = evt
+                        sent_history_len = min(len(new_history), sent_history_len + 1)
+                        if evt.get('type') in ('done', 'error', 'cancelled'):
+                            return
                     if refreshed.get('status') in ('done', 'error', 'cancelled'):
-                        # История могла обрезаться (_MAX_HISTORY) — отдадим terminal клиенту
-                        last = (refreshed.get('history') or [])[-1:] or [None]
-                        last_evt = last[0]
-                        if not last_evt or last_evt.get('type') not in ('done', 'error', 'cancelled'):
-                            status = refreshed.get('status')
-                            if status == 'cancelled':
-                                yield {'type': 'cancelled'}
-                            elif status == 'error':
-                                yield {
-                                    'type': 'error',
-                                    'error': refreshed.get('error') or 'error',
-                                }
-                            else:
-                                yield {'type': 'done'}
+                        # История могла обрезаться или terminal не дошёл по queue —
+                        # всегда отдадим terminal, иначе тост зависает навсегда
+                        if not terminal_sent:
+                            term = _terminal_event_from_job(refreshed)
+                            if term:
+                                yield term
                         return
                 elif not is_job_active(job_id):
+                    if not terminal_sent:
+                        yield {'type': 'error', 'error': 'job_not_found'}
                     return
                 if (_now() - last_ping_at) >= _SSE_HEARTBEAT_SEC:
                     yield {'type': 'ping'}
                     last_ping_at = _now()
                 continue
             yield event
-            with _jobs_lock:
-                mem = _jobs.get(job_id)
-                if mem:
-                    sent_history_len = max(sent_history_len, len(mem.get('history') or []))
+            last_sent_event = event
             if event.get('type') in ('done', 'error', 'cancelled'):
+                terminal_sent = True
                 return
     finally:
         with _listeners_lock:

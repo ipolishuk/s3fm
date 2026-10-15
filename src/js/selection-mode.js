@@ -770,6 +770,14 @@ function clearSelection() {
         blockActionButtons(true);
     }
 }
+/** Снять select сразу при старте copy/move/delete/acl (без reload списка). */
+async function clearSelectionOnBulkOpStart() {
+    clearSelectionWithoutBlocking();
+    if (getSelectionMode()) {
+        await toggleSelectionMode();
+    }
+}
+
 /** Сброс выделения и обновление списка после массовой операции. */
 async function resetSelectionAfterMultiFileAction() {
     clearSelectionWithoutBlocking();
@@ -800,6 +808,7 @@ async function resetSelectionAfterMultiFileAction() {
     global.reconcileSelectionWithDom = reconcileSelectionWithDom;
     global.selectAllInScope = selectAllInScope;
     global.clearSelection = clearSelection;
+    global.clearSelectionOnBulkOpStart = clearSelectionOnBulkOpStart;
     global.resetSelectionAfterMultiFileAction = resetSelectionAfterMultiFileAction;
     global.hideSelectAllScopeInline = hideSelectAllScopeInline;
 })(window);

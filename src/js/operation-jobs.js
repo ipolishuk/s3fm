@@ -444,6 +444,20 @@
         return !!(err && (err.name === 'AbortError' || err.code === 20));
     }
 
+    function clearSelectionOnBulkStart(op) {
+        if (op !== 'acl' && op !== 'delete' && op !== 'copy' && op !== 'move') return;
+        if (typeof window.clearSelectionOnBulkOpStart === 'function') {
+            Promise.resolve(window.clearSelectionOnBulkOpStart()).catch(function () { /* ignore */ });
+            return;
+        }
+        if (typeof window.clearSelectionWithoutBlocking === 'function') {
+            window.clearSelectionWithoutBlocking();
+        }
+        if (window.selectionMode && typeof window.toggleSelectionMode === 'function') {
+            Promise.resolve(window.toggleSelectionMode()).catch(function () { /* ignore */ });
+        }
+    }
+
     function startPendingJob(op, url, errorKey, body, displayNames) {
         var names = resolveDisplayNames(body, displayNames);
         body.display_names = names;
@@ -474,6 +488,8 @@
             jobId = res.data.job_id;
             migratePending(pendingId, jobId);
             subscribe(jobId, op, names, false);
+            // Select снимаем сразу при старте job, а не после тоста
+            clearSelectionOnBulkStart(op);
             return res.data;
         }).catch(function (err) {
             if (isAbortError(err) || (_handles[pendingId] && _handles[pendingId].cancelRequested && !jobId)) {

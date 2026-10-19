@@ -8,6 +8,7 @@ Live SSE listeners — in-memory; при нескольких gunicorn workers �
 from __future__ import annotations
 
 import json
+import os
 import queue
 import threading
 import time
@@ -25,6 +26,14 @@ _SSE_DB_POLL_SEC = 2.0
 _MAX_HISTORY = 500
 _JOB_RETENTION_SEC = 3600
 _UPLOAD_IDLE_FINISH_SEC = 3.0
+# Progress UPSERT в PG на каждый файл блокирует /active (DELETE/SELECT).
+# Терминальные события пишем всегда; progress — не чаще интервала.
+_PROGRESS_PERSIST_MIN_INTERVAL_SEC = float(
+    os.environ.get('OPERATION_PROGRESS_PERSIST_SEC', '2.0')
+)
+_PURGE_MIN_INTERVAL_SEC = float(os.environ.get('OPERATION_PURGE_MIN_INTERVAL_SEC', '60'))
+_STALE_RUNNING_SEC = int(os.environ.get('OPERATION_STALE_RUNNING_SEC', str(6 * 3600)))
+_last_purge_at = 0.0
 
 
 def _now() -> float:
@@ -151,11 +160,37 @@ def _purge_stale_jobs() -> None:
                 del _jobs[job_id]
                 with _listeners_lock:
                     _listeners.pop(job_id, None)
+            elif (
+                job.get('status') in ('pending', 'running')
+                and _STALE_RUNNING_SEC > 0
+                and (now - float(job.get('started_at') or job.get('created_at') or now))
+                > _STALE_RUNNING_SEC
+            ):
+                job['status'] = 'error'
+                job['error'] = 'stale_timeout'
+                job['finished_at'] = now
     try:
         from db import get_connection
         conn = get_connection()
         try:
             with conn.cursor() as cur:
+                # Не ждать вечно за UPSERT progress с другого процесса
+                cur.execute("SET LOCAL lock_timeout = '2s'")
+                cur.execute("SET LOCAL statement_timeout = '10s'")
+                if _STALE_RUNNING_SEC > 0:
+                    cur.execute(
+                        """
+                        UPDATE operation_jobs
+                        SET status = 'error',
+                            error = COALESCE(NULLIF(error, ''), 'stale_timeout'),
+                            finished_at = COALESCE(finished_at, NOW()),
+                            updated_at = NOW()
+                        WHERE status IN ('pending', 'running')
+                          AND COALESCE(updated_at, started_at, created_at)
+                              < NOW() - (%s * INTERVAL '1 second')
+                        """,
+                        (int(_STALE_RUNNING_SEC),),
+                    )
                 cur.execute(
                     """
                     DELETE FROM operation_jobs
@@ -171,8 +206,18 @@ def _purge_stale_jobs() -> None:
         pass
 
 
-def create_job(username: str, op: str, meta: Optional[Dict[str, Any]] = None) -> str:
+def _purge_stale_jobs_maybe() -> None:
+    """Rate-limit purge: на каждый /active DELETE под нагрузкой лочит таблицу."""
+    global _last_purge_at
+    now = _now()
+    if _PURGE_MIN_INTERVAL_SEC > 0 and (now - _last_purge_at) < _PURGE_MIN_INTERVAL_SEC:
+        return
+    _last_purge_at = now
     _purge_stale_jobs()
+
+
+def create_job(username: str, op: str, meta: Optional[Dict[str, Any]] = None) -> str:
+    _purge_stale_jobs_maybe()
     job_id = str(uuid.uuid4())
     job = {
         'id': job_id,
@@ -194,41 +239,39 @@ def create_job(username: str, op: str, meta: Optional[Dict[str, Any]] = None) ->
 
 
 def get_job(job_id: str) -> Optional[Dict[str, Any]]:
+    """Снимок job. При external worker всегда подтягиваем PG — иначе web
+    отдаёт устаревший in-memory status/meta без result от worker-процесса.
+    """
+    loaded = _sync_job_from_db(job_id)
+    if loaded:
+        return {
+            'id': loaded['id'],
+            'username': loaded['username'],
+            'op': loaded['op'],
+            'meta': dict(loaded.get('meta') or {}),
+            'status': loaded['status'],
+            'created_at': loaded['created_at'],
+            'started_at': loaded.get('started_at'),
+            'finished_at': loaded.get('finished_at'),
+            'history': list(loaded.get('history') or []),
+            'error': loaded.get('error'),
+        }
     with _jobs_lock:
         job = _jobs.get(job_id)
-        if job:
-            return {
-                'id': job['id'],
-                'username': job['username'],
-                'op': job['op'],
-                'meta': dict(job.get('meta') or {}),
-                'status': job['status'],
-                'created_at': job['created_at'],
-                'started_at': job.get('started_at'),
-                'finished_at': job.get('finished_at'),
-                'history': list(job.get('history') or []),
-                'error': job.get('error'),
-            }
-    loaded = _load_job_from_db(job_id)
-    if not loaded:
-        return None
-    with _jobs_lock:
-        # Не затираем более свежий in-memory job, если появился параллельно
-        if job_id not in _jobs:
-            _jobs[job_id] = dict(loaded)
-            _jobs[job_id].setdefault('cancel_requested', False)
-    return {
-        'id': loaded['id'],
-        'username': loaded['username'],
-        'op': loaded['op'],
-        'meta': dict(loaded.get('meta') or {}),
-        'status': loaded['status'],
-        'created_at': loaded['created_at'],
-        'started_at': loaded.get('started_at'),
-        'finished_at': loaded.get('finished_at'),
-        'history': list(loaded.get('history') or []),
-        'error': loaded.get('error'),
-    }
+        if not job:
+            return None
+        return {
+            'id': job['id'],
+            'username': job['username'],
+            'op': job['op'],
+            'meta': dict(job.get('meta') or {}),
+            'status': job['status'],
+            'created_at': job['created_at'],
+            'started_at': job.get('started_at'),
+            'finished_at': job.get('finished_at'),
+            'history': list(job.get('history') or []),
+            'error': job.get('error'),
+        }
 
 
 def job_belongs_to_user(job_id: str, username: str) -> bool:
@@ -237,16 +280,12 @@ def job_belongs_to_user(job_id: str, username: str) -> bool:
 
 
 def is_job_active(job_id: str) -> bool:
-    with _jobs_lock:
-        job = _jobs.get(job_id)
-        if job:
-            return job.get('status') in ('pending', 'running')
-    loaded = _load_job_from_db(job_id)
-    return bool(loaded and loaded.get('status') in ('pending', 'running'))
+    job = get_job(job_id)
+    return bool(job and job.get('status') in ('pending', 'running'))
 
 
 def _sync_job_from_db(job_id: str) -> Optional[Dict[str, Any]]:
-    """Подтянуть актуальный status/history/cancel из БД (несколько gunicorn workers)."""
+    """Подтянуть актуальный status/meta/history/cancel из БД (web ↔ worker)."""
     loaded = _load_job_from_db(job_id)
     if not loaded:
         return None
@@ -258,12 +297,12 @@ def _sync_job_from_db(job_id: str) -> Optional[Dict[str, Any]]:
             # upload_state живёт только in-memory на worker, создавшем job
         else:
             mem['status'] = loaded.get('status')
+            mem['meta'] = dict(loaded.get('meta') or {})
             mem['history'] = list(loaded.get('history') or [])
             mem['error'] = loaded.get('error')
             mem['finished_at'] = loaded.get('finished_at')
             mem['started_at'] = loaded.get('started_at')
-            if loaded.get('cancel_requested'):
-                mem['cancel_requested'] = True
+            mem['cancel_requested'] = bool(loaded.get('cancel_requested'))
     return {
         'id': loaded['id'],
         'username': loaded['username'],
@@ -346,6 +385,8 @@ def request_cancel(job_id: str) -> bool:
 
 def publish(job_id: str, event: Dict[str, Any]) -> None:
     snapshot = None
+    should_persist = True
+    etype = None
     with _jobs_lock:
         job = _jobs.get(job_id)
         if not job:
@@ -355,29 +396,41 @@ def publish(job_id: str, event: Dict[str, Any]) -> None:
         if len(history) > _MAX_HISTORY:
             job['history'] = history[-_MAX_HISTORY:]
         etype = event.get('type')
+        now = _now()
         if etype == 'error':
             job['status'] = 'error'
             job['error'] = event.get('error')
-            job['finished_at'] = _now()
+            job['finished_at'] = now
         elif etype == 'done':
             job['status'] = 'done'
-            job['finished_at'] = _now()
+            job['finished_at'] = now
         elif etype == 'cancelled':
             job['status'] = 'cancelled'
-            job['finished_at'] = _now()
-        snapshot = {
-            'id': job['id'],
-            'username': job.get('username'),
-            'op': job.get('op'),
-            'meta': dict(job.get('meta') or {}),
-            'status': job.get('status'),
-            'created_at': job.get('created_at'),
-            'started_at': job.get('started_at'),
-            'finished_at': job.get('finished_at'),
-            'history': list(job.get('history') or []),
-            'error': job.get('error'),
-            'cancel_requested': bool(job.get('cancel_requested')),
-        }
+            job['finished_at'] = now
+        elif etype == 'progress':
+            # In-memory + SSE всегда; в PG — throttled, иначе /active ждёт row lock
+            last_persist = float(job.get('_last_progress_persist_at') or 0)
+            if (
+                _PROGRESS_PERSIST_MIN_INTERVAL_SEC > 0
+                and (now - last_persist) < _PROGRESS_PERSIST_MIN_INTERVAL_SEC
+            ):
+                should_persist = False
+            else:
+                job['_last_progress_persist_at'] = now
+        if should_persist:
+            snapshot = {
+                'id': job['id'],
+                'username': job.get('username'),
+                'op': job.get('op'),
+                'meta': dict(job.get('meta') or {}),
+                'status': job.get('status'),
+                'created_at': job.get('created_at'),
+                'started_at': job.get('started_at'),
+                'finished_at': job.get('finished_at'),
+                'history': list(job.get('history') or []),
+                'error': job.get('error'),
+                'cancel_requested': bool(job.get('cancel_requested')),
+            }
 
     if snapshot:
         _persist_job(snapshot)
@@ -398,6 +451,38 @@ def publish(job_id: str, event: Dict[str, Any]) -> None:
                     listener.put_nowait(event)
                 except queue.Full:
                     pass
+
+
+def sync_job_from_db(job_id: str) -> Optional[Dict[str, Any]]:
+    """Публичная обёртка для worker-процесса."""
+    return _sync_job_from_db(job_id)
+
+
+def update_job_meta(job_id: str, patch: Dict[str, Any]) -> None:
+    """Обновить meta (например result размера бакета) и персистить в PG."""
+    snapshot = None
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job:
+            return
+        meta = dict(job.get('meta') or {})
+        meta.update(patch or {})
+        job['meta'] = meta
+        snapshot = {
+            'id': job['id'],
+            'username': job.get('username'),
+            'op': job.get('op'),
+            'meta': meta,
+            'status': job.get('status'),
+            'created_at': job.get('created_at'),
+            'started_at': job.get('started_at'),
+            'finished_at': job.get('finished_at'),
+            'history': list(job.get('history') or []),
+            'error': job.get('error'),
+            'cancel_requested': bool(job.get('cancel_requested')),
+        }
+    if snapshot:
+        _persist_job(snapshot)
 
 
 def mark_running(job_id: str) -> None:
@@ -573,7 +658,8 @@ def iter_job_events(job_id: str) -> Iterator[Dict[str, Any]]:
 
 
 def list_jobs_for_user(username: str, *, active_only: bool = True) -> List[Dict[str, Any]]:
-    _purge_stale_jobs()
+    # Не полный purge на каждый poll — DELETE ждёт UPSERT progress и «вешает» /active.
+    _purge_stale_jobs_maybe()
     by_id: Dict[str, Dict[str, Any]] = {}
 
     def _add(job_id: str, op: str, status: str, meta: Dict[str, Any], created_at) -> None:
@@ -599,16 +685,21 @@ def list_jobs_for_user(username: str, *, active_only: bool = True) -> List[Dict[
                 job.get('created_at'),
             )
 
-    # Jobs, созданные на другом gunicorn worker
+    # Jobs, созданные на другом gunicorn worker / external worker
     try:
         from db import get_connection
         conn = get_connection()
         try:
             with conn.cursor() as cur:
+                cur.execute("SET LOCAL lock_timeout = '2s'")
+                cur.execute("SET LOCAL statement_timeout = '5s'")
                 if active_only:
+                    # meta нужна только для display_names — без тяжёлого history
                     cur.execute(
                         """
-                        SELECT id, op, status, meta, created_at
+                        SELECT id, op, status,
+                               COALESCE(meta - 'payload', '{}'::jsonb) AS meta,
+                               created_at
                         FROM operation_jobs
                         WHERE username = %s AND status IN ('pending', 'running')
                         """,
@@ -617,9 +708,13 @@ def list_jobs_for_user(username: str, *, active_only: bool = True) -> List[Dict[
                 else:
                     cur.execute(
                         """
-                        SELECT id, op, status, meta, created_at
+                        SELECT id, op, status,
+                               COALESCE(meta - 'payload', '{}'::jsonb) AS meta,
+                               created_at
                         FROM operation_jobs
                         WHERE username = %s
+                        ORDER BY created_at DESC
+                        LIMIT 200
                         """,
                         (username,),
                     )

@@ -2,7 +2,7 @@
 
 ## Docker Compose
 
-Поднимает PostgreSQL, Meilisearch и web из корневого [`docker-compose.yml`](../docker-compose.yml).
+Поднимает PostgreSQL, Meilisearch, web и worker из корневого [`docker-compose.yml`](../docker-compose.yml).
 Файл `.env` **не нужен**: тестовые значения уже в compose.
 
 ```bash
@@ -40,3 +40,14 @@ docker compose down
 - `pip install -r requirements.txt`;
 - `COPY src/` + shortcut `s3` → `python config.py`;
 - `CMD gunicorn` на порту `3000`.
+
+## Образ worker
+
+Образ worker ([`docker/worker/Dockerfile`](../docker/worker/Dockerfile)):
+- тот же Python-стек и `COPY src/`, что у web;
+- `OPERATION_WORKER_MODE=external` по умолчанию;
+- `CMD python worker.py` (очередь copy/move/delete/acl и S3-fallback размера бакета).
+
+```bash
+docker build -f docker/worker/Dockerfile -t s3fm-worker .
+```

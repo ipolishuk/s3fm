@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from urllib.parse import unquote
 
@@ -17,6 +18,7 @@ from bucket_access import (
 from logs import LOG_CONFIG, log_error, log_s3_exception
 import meilisearch
 import operation_jobs
+from worker_jobs import JobCancelled, cancel_check_every
 from roles import (
     role_copy_file,
     role_copy_files_multi,
@@ -122,6 +124,7 @@ def _iter_copy_folder_tree(
     dst_folder_prefix,
     use_server_copy,
     dst_bucket_id,
+    cancel_check=None,
 ):
     if not src_folder_prefix.endswith('/'):
         src_folder_prefix += '/'
@@ -129,13 +132,22 @@ def _iter_copy_folder_tree(
         dst_folder_prefix += '/'
 
     seen_keys = set()
+    keys_since_check = 0
+    every = cancel_check_every()
     paginator = src_client.get_paginator('list_objects_v2')
     for page in paginator.paginate(Bucket=src_bucket_name, Prefix=src_folder_prefix):
+        if cancel_check and cancel_check():
+            raise JobCancelled()
         for obj in page.get('Contents', []):
             key = obj['Key']
             if key in seen_keys:
                 continue
             seen_keys.add(key)
+            keys_since_check += 1
+            if cancel_check and keys_since_check >= every:
+                keys_since_check = 0
+                if cancel_check():
+                    raise JobCancelled()
             rel = key[len(src_folder_prefix):] if key.startswith(src_folder_prefix) else key
             dst_key = dst_folder_prefix + rel
             _copy_s3_object(
@@ -147,6 +159,8 @@ def _iter_copy_folder_tree(
             yield dst_key
 
     if src_folder_prefix not in seen_keys:
+        if cancel_check and cancel_check():
+            raise JobCancelled()
         try:
             src_client.head_object(Bucket=src_bucket_name, Key=src_folder_prefix)
             _copy_s3_object(
@@ -416,6 +430,7 @@ def _iter_copy_events(job, context, cancel_check=None):
                     job['src_bucket_name'], job['dst_bucket_name'],
                     path, item['dst_target_prefix'],
                     job['use_server_copy'], job['dst_bucket_id'],
+                    cancel_check=cancel_check,
                 ):
                     stop, total_evt = emit_total()
                     if total_evt:
@@ -460,6 +475,14 @@ def _iter_copy_events(job, context, cancel_check=None):
                     key=dst_key,
                 )
             yield {'type': 'item_done', 'index': item_index, 'success': True}
+        except JobCancelled:
+            total = count_state['total']
+            yield _job_cancelled_event(
+                current=current,
+                total=total if total is not None else current,
+                copied=copied_total,
+            )
+            return
         except ClientError as e:
             log_s3_exception(context, e, job['src_display'])
             errors.append(f"{path}: {e.response.get('Error', {}).get('Code', 'Error')}")
@@ -487,8 +510,11 @@ def _iter_copy_events(job, context, cancel_check=None):
     }
 
 
-def _delete_s3_path(s3_client, bucket_name, bucket_id, object_path):
-    """Удалить файл или папку (рекурсивно). Возвращает число удалённых ключей."""
+def _delete_s3_path(s3_client, bucket_name, bucket_id, object_path, cancel_check=None):
+    """Удалить файл или папку (рекурсивно). Возвращает число удалённых ключей.
+
+    cancel_check вызывается между страницами list и батчами delete_objects.
+    """
     if not object_path:
         return 0
     is_folder = object_path.endswith('/')
@@ -498,12 +524,17 @@ def _delete_s3_path(s3_client, bucket_name, bucket_id, object_path):
         objects_to_delete = []
         paginator = s3_client.get_paginator('list_objects_v2')
         for page in paginator.paginate(Bucket=bucket_name, Prefix=object_path):
+            if cancel_check and cancel_check():
+                raise JobCancelled()
             for obj in page.get('Contents', []):
                 objects_to_delete.append({'Key': obj['Key']})
 
         if objects_to_delete:
-            max_batch_size = 1000
+            max_batch_size = int(os.environ.get('OPERATION_DELETE_BATCH_SIZE', '100') or 100)
+            max_batch_size = max(1, min(1000, max_batch_size))
             for i in range(0, len(objects_to_delete), max_batch_size):
+                if cancel_check and cancel_check():
+                    raise JobCancelled()
                 batch = objects_to_delete[i:i + max_batch_size]
                 s3_client.delete_objects(
                     Bucket=bucket_name,
@@ -667,6 +698,7 @@ def _iter_move_events(job, context, cancel_check=None):
                     job['src_bucket_name'], job['dst_bucket_name'],
                     path, item['dst_target_prefix'],
                     job['use_server_copy'], job['dst_bucket_id'],
+                    cancel_check=cancel_check,
                 ):
                     stop, total_evt = emit_total()
                     if total_evt:
@@ -713,8 +745,17 @@ def _iter_move_events(job, context, cancel_check=None):
 
             _delete_s3_path(
                 job['src_client'], job['src_bucket_name'], job['src_bucket_id'], path,
+                cancel_check=cancel_check,
             )
             yield {'type': 'item_done', 'index': item_index, 'success': True}
+        except JobCancelled:
+            total = count_state['total']
+            yield _job_cancelled_event(
+                current=current,
+                total=total if total is not None else current,
+                moved=moved_total,
+            )
+            return
         except ClientError as e:
             log_s3_exception(context, e, job['src_display'])
             errors.append(f"{path}: {e.response.get('Error', {}).get('Code', 'Error')}")
@@ -825,10 +866,14 @@ def _iter_delete_batch_events(batch_job, context, cancel_check=None):
                 batch_job['bucket_name'],
                 batch_job['bucket_id'],
                 path,
+                cancel_check=cancel_check,
             )
             deleted_count += 1
             yield {'type': 'progress', 'current': index + 1, 'total': total, 'item_index': index}
             yield {'type': 'item_done', 'index': index, 'success': True}
+        except JobCancelled:
+            yield _job_cancelled_event(current=deleted_count, total=total, deleted=deleted_count)
+            return
         except ClientError as e:
             log_s3_exception(context, e, batch_job['display_name'])
             errors.append(f"{path}: {e.response.get('Error', {}).get('Code', 'Error')}")

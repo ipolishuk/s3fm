@@ -1800,6 +1800,8 @@
         else window.selectionMode = !!value;
     }
 
+    var _selectBucketSeq = 0;
+
     async function selectBucket(bucket, initialPath) {
         initialPath = typeof initialPath === 'string' ? initialPath : '';
         if (!bucket || !bucket.bucket_id) {
@@ -1814,6 +1816,7 @@
             return;
         }
 
+        var selectSeq = ++_selectBucketSeq;
         console.log('Selecting bucket:', bucket.bucket_id, 'Current bucket:', currentBucket, 'Initial path:', initialPath || '(root)');
 
         if (typeof window.exitSearchMode === 'function') window.exitSearchMode();
@@ -1844,6 +1847,22 @@
         if (typeof window.setupUserPermissions === 'function') window.setupUserPermissions();
         setCurrentPath('');
         resetBucketPagingState();
+
+        // URL сразу при клике — иначе после await/setTimeout старые selectBucket
+        // перезаписывают адресную строку при быстром переключении.
+        var pathToLoad = initialPath.replace(/\/+$/, '') + (initialPath ? '/' : '');
+        if (typeof window.updateURL === 'function') {
+            var replaceUrl = false;
+            try {
+                var segs = (window.location.pathname || '').split('/').filter(Boolean);
+                if (segs[0] === 'bucket' && segs[1] && typeof window.findBucketByRouteSlug === 'function') {
+                    var existing = window.findBucketByRouteSlug(decodeURIComponent(segs[1]));
+                    if (existing && existing.bucket_id === bucket.bucket_id) replaceUrl = true;
+                }
+            } catch (e) { /* ignore */ }
+            window.updateURL(bucket.bucket_id, pathToLoad, replaceUrl);
+        }
+        if (typeof window.updateBreadcrumb === 'function') window.updateBreadcrumb(pathToLoad);
 
         var searchInput = document.getElementById('searchInput');
         var clearSearchBtn = document.getElementById('clearSearchBtn');
@@ -1897,17 +1916,18 @@
         }
 
         try {
-            var pathToLoad = initialPath.replace(/\/+$/, '') + (initialPath ? '/' : '');
-            if (typeof window.updateBreadcrumb === 'function') window.updateBreadcrumb(pathToLoad);
             await Promise.all([
                 loadBucketSize(),
                 (typeof window.loadFiles === 'function' ? window.loadFiles(pathToLoad) : Promise.resolve())
             ]);
+            if (selectSeq !== _selectBucketSeq || getCurrentBucket() !== bucket.bucket_id) {
+                return;
+            }
             if (typeof window.updateBreadcrumb === 'function') window.updateBreadcrumb(pathToLoad);
-            setTimeout(function () {
-                if (typeof window.updateURL === 'function') window.updateURL(bucket.bucket_id, pathToLoad, false);
-            }, 100);
         } catch (error) {
+            if (selectSeq !== _selectBucketSeq || getCurrentBucket() !== bucket.bucket_id) {
+                return;
+            }
             console.error('Error loading bucket data:', error);
             if (typeof window.showError === 'function') {
                 var tr2 = window.I18N || {};
@@ -1980,6 +2000,11 @@
         if (objectsEl) objectsEl.removeAttribute('title');
     }
 
+    var _bucketSizeLoadSeq = 0;
+    var _bucketSizeInflight = null;
+    var _lastBucketSizeErrorAt = 0;
+    var _lastBucketSizeErrorText = '';
+
     async function fetchBucketSizePayload(targetBucket) {
         var response = await fetch('/api/bucket-size/' + encodeURIComponent(targetBucket), {
             credentials: 'include'
@@ -1999,9 +2024,58 @@
         return new Promise(function (resolve) { setTimeout(resolve, ms); });
     }
 
+    function showBucketSizeErrorOnce(message, duration) {
+        var now = Date.now();
+        if (message === _lastBucketSizeErrorText && (now - _lastBucketSizeErrorAt) < 5000) {
+            return;
+        }
+        _lastBucketSizeErrorText = message;
+        _lastBucketSizeErrorAt = now;
+        if (typeof window.showError === 'function') {
+            window.showError(message, duration);
+        }
+    }
+
+    var _bucketSizeBgTimer = null;
+
+    function scheduleBucketSizeBackgroundPoll(targetBucket, loadSeq) {
+        if (_bucketSizeBgTimer) {
+            clearTimeout(_bucketSizeBgTimer);
+            _bucketSizeBgTimer = null;
+        }
+        var tries = 0;
+        function tick() {
+            _bucketSizeBgTimer = null;
+            if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
+            tries += 1;
+            fetchBucketSizePayload(targetBucket).then(function (result) {
+                if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
+                if (result.response.ok && result.data && !result.data.pending) {
+                    var sizeText = document.getElementById('sizeText');
+                    var objectsText = document.getElementById('objectsText');
+                    applyBucketSizeData(result.data, sizeText, objectsText, window.I18N || {});
+                    return;
+                }
+                if (tries < 60) {
+                    _bucketSizeBgTimer = setTimeout(tick, 10000);
+                }
+            }).catch(function () {
+                if (tries < 60 && loadSeq === _bucketSizeLoadSeq && getCurrentBucket() === targetBucket) {
+                    _bucketSizeBgTimer = setTimeout(tick, 10000);
+                }
+            });
+        }
+        _bucketSizeBgTimer = setTimeout(tick, 10000);
+    }
+
     async function loadBucketSize() {
         var targetBucket = getCurrentBucket();
         if (!targetBucket) return;
+
+        // Параллельные selectBucket/URL-init не должны давать два одинаковых toast
+        if (_bucketSizeInflight === targetBucket) return;
+        var loadSeq = ++_bucketSizeLoadSeq;
+        _bucketSizeInflight = targetBucket;
 
         var sizeText = document.getElementById('sizeText');
         var objectsText = document.getElementById('objectsText');
@@ -2016,24 +2090,47 @@
 
         try {
             var result = await fetchBucketSizePayload(targetBucket);
-            if (getCurrentBucket() !== targetBucket) return;
+            if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
 
             // Proxy may 504 while the worker still finishes and fills the size cache.
             // Retry once quietly before showing a timeout toast.
             if (!(result.response.ok && result.data) && result.response.status === 504) {
                 await sleepMs(1500);
-                if (getCurrentBucket() !== targetBucket) return;
+                if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
                 result = await fetchBucketSizePayload(targetBucket);
-                if (getCurrentBucket() !== targetBucket) return;
+                if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
             }
 
-            if (result.response.ok && result.data) {
+            // Async S3 size job on worker — крупные бакеты считаются минутами
+            var pendingTries = 0;
+            var delayMs = 2000;
+            var maxPendingTries = 180; // до ~10–15 мин с backoff
+            while (
+                result.response.status === 202 &&
+                result.data &&
+                result.data.pending &&
+                pendingTries < maxPendingTries
+            ) {
+                pendingTries += 1;
+                await sleepMs(delayMs);
+                if (delayMs < 5000) delayMs = Math.min(5000, delayMs + 500);
+                if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
+                result = await fetchBucketSizePayload(targetBucket);
+                if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
+            }
+            if (result.response.status === 202 && result.data && result.data.pending) {
+                // Продолжаем фоновый poll, не бросая Loading навсегда
+                scheduleBucketSizeBackgroundPoll(targetBucket, loadSeq);
+                return;
+            }
+
+            if (result.response.ok && result.data && !result.data.pending) {
                 applyBucketSizeData(result.data, sizeText, objectsText, tr);
                 return;
             }
 
             showBucketSizeNoData(sizeText, objectsText, tr);
-            if (getCurrentBucket() !== targetBucket) return;
+            if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
 
             var errorText = tr['msg.unknown_error'] || '';
             if (result.response.status === 504) errorText = tr['msg.timeout_bucket'] || errorText;
@@ -2045,11 +2142,9 @@
             }
 
             var duration = (result.response.status === 504 || errorText.indexOf('Таймаут') !== -1 || errorText.indexOf('Timeout') !== -1) ? 8000 : 10000;
-            if (typeof window.showError === 'function') {
-                window.showError((tr['msg.load_bucket_size_failed'] || '') + ': ' + errorText, duration);
-            }
+            showBucketSizeErrorOnce((tr['msg.load_bucket_size_failed'] || '') + ': ' + errorText, duration);
         } catch (error) {
-            if (getCurrentBucket() !== targetBucket) return;
+            if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
             showBucketSizeNoData(sizeText, objectsText, tr);
 
             var errorMsg = error.message || '';
@@ -2059,9 +2154,9 @@
             if (errorMsg.indexOf("Unexpected token '<'") !== -1 || errorMsg.indexOf('is not valid JSON') !== -1) {
                 errorText2 = tr['msg.timeout_or_server'] || errorText2;
             }
-            if (typeof window.showError === 'function') {
-                window.showError((tr['msg.load_bucket_size_failed'] || '') + ': ' + errorText2, 8000);
-            }
+            showBucketSizeErrorOnce((tr['msg.load_bucket_size_failed'] || '') + ': ' + errorText2, 8000);
+        } finally {
+            if (_bucketSizeInflight === targetBucket) _bucketSizeInflight = null;
         }
     }
 

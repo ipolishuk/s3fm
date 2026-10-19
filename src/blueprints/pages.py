@@ -7,13 +7,24 @@ import os
 from flask import Blueprint, g, jsonify, redirect, render_template, send_from_directory, session, url_for
 
 from auth_session import login_required
-from bucket_access import check_bucket_access, find_bucket_config_by_bucket_id
+from bucket_access import check_bucket_access, resolve_bucket_from_route_slug
 from docs import get_help_documentation, get_help_support
 from settings_helpers import _can_open_settings, _settings_buckets_only
 
 bp = Blueprint('pages', __name__)
 
 _APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _serve_bucket_page(slug):
+    """SPA shell для /bucket/<bucket_name> (legacy: bucket_id тоже принимается)."""
+    info = resolve_bucket_from_route_slug(slug)
+    if not info:
+        return redirect(url_for('pages.index'))
+    bucket_id = info.get('bucket_id') or ''
+    if not check_bucket_access(bucket_id):
+        return redirect(url_for('pages.index'))
+    return render_template('index.html')
 
 
 @bp.route('/css/<path:filename>')
@@ -39,24 +50,16 @@ def index():
     return render_template('index.html')
 
 
-@bp.route('/bucket/<bucket_id>/<path:subpath>')
+@bp.route('/bucket/<bucket_slug>/<path:subpath>')
 @login_required
-def bucket_view_with_path(bucket_id, subpath):
-    if not check_bucket_access(bucket_id):
-        return redirect(url_for('pages.index'))
-    if not find_bucket_config_by_bucket_id(bucket_id):
-        return redirect(url_for('pages.index'))
-    return render_template('index.html')
+def bucket_view_with_path(bucket_slug, subpath):
+    return _serve_bucket_page(bucket_slug)
 
 
-@bp.route('/bucket/<bucket_id>')
+@bp.route('/bucket/<bucket_slug>')
 @login_required
-def bucket_view(bucket_id):
-    if not check_bucket_access(bucket_id):
-        return redirect(url_for('pages.index'))
-    if not find_bucket_config_by_bucket_id(bucket_id):
-        return redirect(url_for('pages.index'))
-    return render_template('index.html')
+def bucket_view(bucket_slug):
+    return _serve_bucket_page(bucket_slug)
 
 
 @bp.route('/settings')

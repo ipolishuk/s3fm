@@ -45,12 +45,65 @@ function updateSettingsURL(tab, replaceState = true) {
     method.call(window.history, state, I18N['app.title'] || 'S3 File Manager', target);
 }
 
+/** Сегмент /bucket/<slug>: bucket_name (fallback — bucket_id). */
+function bucketSlugForUrl(bucketId) {
+    var bid = (bucketId || '').trim();
+    if (!bid) return '';
+    var list = window.availableBuckets || [];
+    for (var i = 0; i < list.length; i++) {
+        var b = list[i];
+        if (b && b.bucket_id === bid) {
+            var name = (b.bucket_name || b.name || '').trim();
+            return name || bid;
+        }
+    }
+    if (
+        bid === (window.fileManagerCurrentBucketId || '')
+        && typeof window.fileManagerCurrentBucketName === 'string'
+        && window.fileManagerCurrentBucketName.trim()
+    ) {
+        return window.fileManagerCurrentBucketName.trim();
+    }
+    return bid;
+}
+
+/** Найти бакет по сегменту URL: сначала bucket_name, затем bucket_id (legacy). */
+function findBucketByRouteSlug(slug) {
+    var key = (slug || '').trim();
+    if (!key) return null;
+    var list = window.availableBuckets || [];
+    var i;
+    for (i = 0; i < list.length; i++) {
+        var byName = list[i];
+        if (!byName) continue;
+        var bn = (byName.bucket_name || byName.name || '').trim();
+        if (bn && bn === key) return byName;
+    }
+    for (i = 0; i < list.length; i++) {
+        var byId = list[i];
+        if (byId && byId.bucket_id === key) return byId;
+    }
+    return null;
+}
+
 function updateURL(bucketId = '', path = '', replaceState = false) {
     try {
         // Пока пользователь в /settings/* или /help/*, фоновые обновления URL
         // не должны перетирать адрес.
         if (!replaceState && (getSettingsTabFromLocation() || getHelpTabFromLocation())) {
             return;
+        }
+        // Устаревший вызов после смены бакета (loadFiles/selectBucket race)
+        if (bucketId && bucketId.trim()) {
+            var liveBucket = '';
+            if (typeof window.__getCurrentBucket === 'function') {
+                liveBucket = window.__getCurrentBucket() || '';
+            } else {
+                liveBucket = window.currentBucket || window.fileManagerCurrentBucketId || '';
+            }
+            if (liveBucket && liveBucket !== bucketId) {
+                return;
+            }
         }
         // Если нет бакета - это главная страница
         if (!bucketId || bucketId.trim() === '') {
@@ -68,8 +121,8 @@ function updateURL(bucketId = '', path = '', replaceState = false) {
             return;
         }
 
-        // Кодируем bucket_id
-        const encodedBucket = encodeURIComponent(bucketId);
+        // В адресной строке — bucket_name; в history.state — bucket_id
+        const encodedBucket = encodeURIComponent(bucketSlugForUrl(bucketId));
         let url = `/bucket/${encodedBucket}`;
 
         // Если есть путь, добавляем его
@@ -121,6 +174,8 @@ function updateURL(bucketId = '', path = '', replaceState = false) {
     }
 }
 window.updateURL = updateURL;
+window.bucketSlugForUrl = bucketSlugForUrl;
+window.findBucketByRouteSlug = findBucketByRouteSlug;
 
 // Обработчик событий изменения истории
 window.addEventListener('popstate', function(event) {
@@ -225,17 +280,11 @@ window.addEventListener('popstate', function(event) {
 });
 
 // Функция обработки состояния из URL
-async function handleURLState(bucketId, path = '') {
-    console.log('handleURLState called:', bucketId, path);
+async function handleURLState(bucketSlug, path = '') {
+    console.log('handleURLState called:', bucketSlug, path);
 
-    // Находим конфигурацию бакета по bucket_id
-    const bucketConfig = window.availableBuckets.find(b => b.bucket_id === bucketId);
+    const bucketConfig = findBucketByRouteSlug(bucketSlug);
     if (bucketConfig) {
-        // При загрузке из истории используем replaceState=false
-        // чтобы сохранить запись в истории браузера
-        const shouldReplaceState = false;
-
-        // Выбираем бакет
         await window.selectBucket(bucketConfig);
 
         // Если есть путь, загружаем его
@@ -278,7 +327,7 @@ function initializeFromURL() {
         const pathSegments = window.location.pathname.split('/').filter(segment => segment);
 
         if (pathSegments.length >= 2 && pathSegments[0] === 'bucket') {
-            const bucketId = decodeURIComponent(pathSegments[1]);
+            const bucketSlug = decodeURIComponent(pathSegments[1]);
             let path = '';
 
             if (pathSegments.length > 2) {
@@ -292,7 +341,7 @@ function initializeFromURL() {
             let selectStarted = false;
             const selectFromBuckets = () => {
                 if (selectStarted) return true;
-                const bucketConfig = (window.availableBuckets || []).find(b => b.bucket_id === bucketId);
+                const bucketConfig = findBucketByRouteSlug(bucketSlug);
                 if (bucketConfig) {
                     selectStarted = true;
                     // Загружаем бакет и сразу нужный путь (без мелькания корня)
@@ -301,7 +350,7 @@ function initializeFromURL() {
                 }
                 if (window.bucketsSidebarLoaded) {
                     selectStarted = true;
-                    window.showWarning(I18N['msg.bucket_not_found_or_unavailable'].replace('{name}', bucketId));
+                    window.showWarning(I18N['msg.bucket_not_found_or_unavailable'].replace('{name}', bucketSlug));
                     window.goToHome();
                     return true;
                 }

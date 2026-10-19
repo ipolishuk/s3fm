@@ -34,6 +34,7 @@ services:
         BASE: python:3.11.9-bookworm
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      OPERATION_WORKER_MODE: external
       BUCKET_METRICS_PROMETHEUS_URL: ${BUCKET_METRICS_PROMETHEUS_URL:-https://vmselect.example.com/select/0/prometheus}
       BUCKET_METRICS_TIMEOUT: ${BUCKET_METRICS_TIMEOUT:-5}
       # Локально корпоративный CA часто не вшит в образ
@@ -67,6 +68,32 @@ services:
     depends_on:
       - postgres
       - meilisearch
+
+  # Фоновые copy/move/delete/acl + S3-fallback размера бакета
+  worker:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: docker/worker/Dockerfile
+      args:
+        BASE: python:3.11.9-bookworm
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      OPERATION_WORKER_MODE: external
+      OPERATION_WORKER_POLL_SEC: "1"
+      OPERATION_CANCEL_CHECK_EVERY: "10"
+      OPERATION_DELETE_BATCH_SIZE: "100"
+      MEILI_ENABLED: "true"
+      MEILI_HOST: http://meilisearch:7700
+      MEILI_API_KEY: test_master_key
+      APP_SECRET_KEY: test_app_secret_key
+      BUCKET_METRICS_PROMETHEUS_URL: ${BUCKET_METRICS_PROMETHEUS_URL:-https://vmselect.example.com/select/0/prometheus}
+      BUCKET_METRICS_TLS_VERIFY: ${BUCKET_METRICS_TLS_VERIFY:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
 
 volumes:
   pgdata:

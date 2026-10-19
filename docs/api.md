@@ -11,8 +11,8 @@
 - `GET /login` — страница входа;
 - `GET /settings` — настройки;
 - `GET /settings/<tab>` — вкладка настроек (`users`, `buckets`, `clouds`, `roles`, `search`, …);
-- `GET /bucket/<bucket_id>` — открыть бакет;
-- `GET /bucket/<bucket_id>/<path:subpath>` — открыть путь внутри бакета.
+- `GET /bucket/<bucket_name>` — открыть бакет (legacy: принимается и `bucket_id`);
+- `GET /bucket/<bucket_name>/<path:subpath>` — открыть путь внутри бакета.
 
 ### Auth и профиль
 - `POST /api/login`

@@ -500,6 +500,9 @@ CREATE INDEX IF NOT EXISTS idx_operation_jobs_username_status
     ON public.operation_jobs (username, status);
 CREATE INDEX IF NOT EXISTS idx_operation_jobs_finished_at
     ON public.operation_jobs (finished_at);
+CREATE INDEX IF NOT EXISTS idx_operation_jobs_pending_created
+    ON public.operation_jobs (created_at)
+    WHERE status = 'pending';
 """
 
 

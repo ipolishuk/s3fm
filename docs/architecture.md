@@ -26,6 +26,7 @@
 - `src/css/*.css` — стили интерфейса.
 - `src/config.md` — стандартизация проекта (логирование, API, i18n, security, …).
 - `docker/web/Dockerfile` — образ web (`python:3.11.9-bookworm` + `pip install` + `COPY src/`);
+- `docker/worker/Dockerfile` — образ worker (`CMD python worker.py`);
 - `docker/meilisearch/Dockerfile` — образ Meilisearch с `aws-cli`;
 
 ## Модель данных

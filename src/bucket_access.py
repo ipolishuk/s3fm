@@ -46,6 +46,7 @@ def find_bucket_config(bucket_name):
                     'display_name': display_name,
                     'bucket_config': cfg,
                     'bucket_id': bucket_id,
+                    'bucket_name': cfg.get('bucket_name'),
                 }
     return None
 
@@ -73,6 +74,16 @@ def find_bucket_config_by_bucket_id(bucket_id):
                     'skip_tls_verify': cfg.get('skip_tls_verify'),
                 }
     return None
+
+
+def resolve_bucket_from_route_slug(slug):
+    """Резолв сегмента /bucket/<slug>: сначала bucket_name, затем bucket_id (legacy)."""
+    if not slug:
+        return None
+    info = find_bucket_config(slug)
+    if info:
+        return info
+    return find_bucket_config_by_bucket_id(slug)
 
 def _session_has_bucket_grant(bucket_id):
     if not bucket_id:

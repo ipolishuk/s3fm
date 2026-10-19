@@ -594,29 +594,11 @@ def file_metadata_acl_batch_impl():
             )
         display_names = [str(n) for n in raw_names]
 
-        job_id = operation_jobs.create_job(
-            batch_job['username'], 'acl', {'display_names': display_names},
+        from worker_jobs import enqueue_job, serialize_acl_job
+
+        job_id = enqueue_job(
+            batch_job['username'], 'acl', display_names, serialize_acl_job(batch_job),
         )
-
-        def worker():
-            try:
-                cancel_check = lambda: operation_jobs.is_cancel_requested(job_id)
-                for event in _iter_acl_batch_events(batch_job, context, cancel_check=cancel_check):
-                    operation_jobs.publish(job_id, event)
-                    if event.get('type') == 'done':
-                        log_user_action(
-                            batch_job['username'], context,
-                            f"Batch ACL in {batch_job['display_name']}, "
-                            f"files={len(batch_job['paths'])}, applied={event.get('applied', 0)}",
-                        )
-                        break
-                    if event.get('type') == 'cancelled':
-                        break
-            except Exception as e:
-                log_error('Unexpected ACL batch job error', context, e, LOG_CONFIG['show_traceback'])
-                operation_jobs.publish(job_id, {'type': 'error', 'error': _('error.unexpected')})
-
-        operation_jobs.start_worker(job_id, worker)
         return jsonify({'job_id': job_id, 'op': 'acl'}), 202
     except Exception as e:
         log_error('Unexpected ACL batch error', context, e, LOG_CONFIG['show_traceback'])
@@ -1102,30 +1084,11 @@ def copy_objects_impl():
             if not isinstance(raw_names, list):
                 raw_names = _display_names_from_items(data.get('items'))
             display_names = [str(n) for n in raw_names]
-            job_id = operation_jobs.create_job(
-                job['username'], 'copy', {'display_names': display_names},
+            from worker_jobs import enqueue_job, serialize_transfer_job
+
+            job_id = enqueue_job(
+                job['username'], 'copy', display_names, serialize_transfer_job(job),
             )
-
-            def worker():
-                try:
-                    cancel_check = lambda: operation_jobs.is_cancel_requested(job_id)
-                    for event in _iter_copy_events(job, context, cancel_check=cancel_check):
-                        operation_jobs.publish(job_id, event)
-                        if event.get('type') == 'done':
-                            copied_total = event.get('copied', 0)
-                            log_user_action(
-                                job['username'], context,
-                                f"Copy from {job['src_display']} to {job['dst_display']}, "
-                                f"dst_path=/{job['dst_path']}, objects={copied_total}",
-                            )
-                            break
-                        if event.get('type') == 'cancelled':
-                            break
-                except Exception as e:
-                    log_error('Unexpected copy job error', context, e, LOG_CONFIG['show_traceback'])
-                    operation_jobs.publish(job_id, {'type': 'error', 'error': _('error.unexpected')})
-
-            operation_jobs.start_worker(job_id, worker)
             return jsonify({'job_id': job_id, 'op': 'copy'}), 202
 
         copied_total = 0
@@ -1174,30 +1137,11 @@ def move_objects_impl():
             if not isinstance(raw_names, list):
                 raw_names = _display_names_from_items(data.get('items'))
             display_names = [str(n) for n in raw_names]
-            job_id = operation_jobs.create_job(
-                job['username'], 'move', {'display_names': display_names},
+            from worker_jobs import enqueue_job, serialize_transfer_job
+
+            job_id = enqueue_job(
+                job['username'], 'move', display_names, serialize_transfer_job(job),
             )
-
-            def worker():
-                try:
-                    cancel_check = lambda: operation_jobs.is_cancel_requested(job_id)
-                    for event in _iter_move_events(job, context, cancel_check=cancel_check):
-                        operation_jobs.publish(job_id, event)
-                        if event.get('type') == 'done':
-                            moved_total = event.get('moved', 0)
-                            log_user_action(
-                                job['username'], context,
-                                f"Move from {job['src_display']} to {job['dst_display']}, "
-                                f"dst_path=/{job['dst_path']}, objects={moved_total}",
-                            )
-                            break
-                        if event.get('type') == 'cancelled':
-                            break
-                except Exception as e:
-                    log_error('Unexpected move job error', context, e, LOG_CONFIG['show_traceback'])
-                    operation_jobs.publish(job_id, {'type': 'error', 'error': _('error.unexpected')})
-
-            operation_jobs.start_worker(job_id, worker)
             return jsonify({'job_id': job_id, 'op': 'move'}), 202
 
         moved_total = 0
@@ -1243,29 +1187,11 @@ def delete_objects_batch_impl():
         if not isinstance(raw_names, list):
             raw_names = _display_names_from_items(batch_job['items'])
         display_names = [str(n) for n in raw_names]
-        job_id = operation_jobs.create_job(
-            batch_job['username'], 'delete', {'display_names': display_names},
+        from worker_jobs import enqueue_job, serialize_delete_job
+
+        job_id = enqueue_job(
+            batch_job['username'], 'delete', display_names, serialize_delete_job(batch_job),
         )
-
-        def worker():
-            try:
-                cancel_check = lambda: operation_jobs.is_cancel_requested(job_id)
-                for event in _iter_delete_batch_events(batch_job, context, cancel_check=cancel_check):
-                    operation_jobs.publish(job_id, event)
-                    if event.get('type') == 'done':
-                        log_user_action(
-                            batch_job['username'], context,
-                            f"Batch delete in {batch_job['display_name']}, "
-                            f"items={len(batch_job['items'])}, deleted={event.get('deleted', 0)}",
-                        )
-                        break
-                    if event.get('type') == 'cancelled':
-                        break
-            except Exception as e:
-                log_error('Unexpected delete job error', context, e, LOG_CONFIG['show_traceback'])
-                operation_jobs.publish(job_id, {'type': 'error', 'error': _('error.unexpected')})
-
-        operation_jobs.start_worker(job_id, worker)
         return jsonify({'job_id': job_id, 'op': 'delete'}), 202
     except Exception as e:
         log_error('Unexpected delete batch error', context, e, LOG_CONFIG['show_traceback'])

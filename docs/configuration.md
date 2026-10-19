@@ -31,6 +31,13 @@
 - `APP_SESSION_TIMEOUT_MINUTES` — таймаут сессии в минутах (по умолчанию `60`).
 - `APP_ADMIN_PASSWORD` — пароль при **первом** создании `admin`; если учётка уже есть и ни разу не входила, на старте может быть выровнен под env (существующий пароль после смены через `config.py reset-password` не трогается).
 - `WEB_CONCURRENCY` / `GUNICORN_WORKERS`, `WEB_THREADS` / `GUNICORN_THREADS`, `GUNICORN_TIMEOUT` — параметры gunicorn в Docker.
+- `OPERATION_WORKER_MODE` — `embedded` (по умолчанию: job в thread web-процесса) или `external` (только enqueue в PG, выполняет `python worker.py`).
+- `OPERATION_WORKER_POLL_SEC` — интервал опроса очереди в worker (по умолчанию `1`).
+- `OPERATION_CANCEL_CHECK_EVERY` — проверять cancel каждые N ключей при copy папки (по умолчанию `10`).
+- `OPERATION_DELETE_BATCH_SIZE` — размер батча `delete_objects` с проверкой cancel между батчами (по умолчанию `100`, макс. `1000`).
+- `OPERATION_PROGRESS_PERSIST_SEC` — как часто писать progress-события job в PostgreSQL (по умолчанию `2`; `0` — каждый progress). Снижает блокировки `/files/operation-jobs/active`.
+- `OPERATION_PURGE_MIN_INTERVAL_SEC` — минимальный интервал purge старых job (по умолчанию `60`).
+- `OPERATION_STALE_RUNNING_SEC` — pending/running дольше N секунд помечаются error (по умолчанию `21600` = 6 ч).
 
 ### Загрузка и логирование
 - `MAX_UPLOAD_MB` — лимит загрузки (по умолчанию `100`).
@@ -43,6 +50,8 @@
 - `BUCKET_SIZE_CACHE_TTL` — TTL кэша размера бакета в секундах (по умолчанию `300`).
 - `BUCKET_MAX_OBJECTS` — лимит объектов при полном обходе для подсчёта размера (по умолчанию `500000`).
 - `BUCKET_MAX_SIZE` — лимит суммарного размера в байтах при том же обходе (по умолчанию `107000000000`).
+- `BUCKET_SIZE_PROGRESS_EVERY` — писать `bucket_size processing` каждые N объектов (по умолчанию `5000`).
+- `BUCKET_SIZE_PROGRESS_SEC` — или не реже раза в N секунд (по умолчанию `15`, минимум `5`).
 - `BUCKET_METRICS_PROMETHEUS_URL` — base URL VictoriaMetrics/Prometheus select API, например `https://vmselect.example.com/select/0/prometheus`. Если задан, размер и число объектов бакета читаются из метрик `ceph_s3_bucket_*` (label `bucket` = `bucket_name`); при ошибке или отсутствии серии — fallback на ListObjects.
 - `BUCKET_METRICS_TIMEOUT` — таймаут запроса к Prometheus в секундах (по умолчанию `5`).
 - `BUCKET_METRICS_TLS_VERIFY` — проверять TLS-сертификат VictoriaMetrics (`true` по умолчанию; `false` если корпоративный CA не в trust store).

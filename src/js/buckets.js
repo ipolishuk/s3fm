@@ -2004,33 +2004,49 @@
     var _bucketSizeInflight = null;
     var _lastBucketSizeErrorAt = 0;
     var _lastBucketSizeErrorText = '';
+    var _bucketSizeErrorCooldownUntil = Object.create(null);
+
+    function isGatewayStatus(status) {
+        return status === 502 || status === 503 || status === 504;
+    }
 
     async function fetchBucketSizePayload(targetBucket) {
         var response = await fetch('/api/bucket-size/' + encodeURIComponent(targetBucket), {
             credentials: 'include'
         });
         var contentType = response.headers.get('Content-Type') || '';
-        var isJson = contentType.includes('application/json');
+        var looksJson = contentType.indexOf('application/json') !== -1;
         var data = null;
-        if (isJson) data = await response.json();
-        else {
-            var text = await response.text();
-            try { data = JSON.parse(text); } catch (_) { data = null; }
+        var rawText = '';
+        try {
+            if (looksJson) {
+                data = await response.json();
+            } else {
+                rawText = await response.text();
+                try { data = JSON.parse(rawText); } catch (_) { data = null; }
+            }
+        } catch (_) {
+            data = null;
         }
-        return { response: response, data: data, isJson: isJson };
+        return { response: response, data: data, isJson: !!data, rawText: rawText };
     }
 
     function sleepMs(ms) {
         return new Promise(function (resolve) { setTimeout(resolve, ms); });
     }
 
-    function showBucketSizeErrorOnce(message, duration) {
+    function showBucketSizeErrorOnce(message, duration, bucketId) {
         var now = Date.now();
-        if (message === _lastBucketSizeErrorText && (now - _lastBucketSizeErrorAt) < 5000) {
+        var cooldownMs = Math.max(duration || 8000, 30000);
+        if (message === _lastBucketSizeErrorText && (now - _lastBucketSizeErrorAt) < cooldownMs) {
+            return;
+        }
+        if (bucketId && (_bucketSizeErrorCooldownUntil[bucketId] || 0) > now) {
             return;
         }
         _lastBucketSizeErrorText = message;
         _lastBucketSizeErrorAt = now;
+        if (bucketId) _bucketSizeErrorCooldownUntil[bucketId] = now + cooldownMs;
         if (typeof window.showError === 'function') {
             window.showError(message, duration);
         }
@@ -2051,11 +2067,13 @@
             fetchBucketSizePayload(targetBucket).then(function (result) {
                 if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
                 if (result.response.ok && result.data && !result.data.pending) {
+                    delete _bucketSizeErrorCooldownUntil[targetBucket];
                     var sizeText = document.getElementById('sizeText');
                     var objectsText = document.getElementById('objectsText');
                     applyBucketSizeData(result.data, sizeText, objectsText, window.I18N || {});
                     return;
                 }
+                // Gateway mid-calc — молча продолжаем, без toast
                 if (tries < 60) {
                     _bucketSizeBgTimer = setTimeout(tick, 10000);
                 }
@@ -2093,24 +2111,26 @@
             if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
 
             // Proxy may 504 while the worker still finishes and fills the size cache.
-            // Retry once quietly before showing a timeout toast.
-            if (!(result.response.ok && result.data) && result.response.status === 504) {
+            if (!(result.response.ok && result.data) && isGatewayStatus(result.response.status)) {
                 await sleepMs(1500);
                 if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
                 result = await fetchBucketSizePayload(targetBucket);
                 if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
             }
 
-            // Async S3 size job on worker — крупные бакеты считаются минутами
+            // Async S3 size job on worker — крупные бакеты считаются минутами.
+            // 502/504 посреди poll ≠ «бакет слишком большой»: job ещё может идти.
+            var sawPending = !!(result.data && result.data.pending && result.response.status === 202);
             var pendingTries = 0;
             var delayMs = 2000;
             var maxPendingTries = 180; // до ~10–15 мин с backoff
-            while (
-                result.response.status === 202 &&
-                result.data &&
-                result.data.pending &&
-                pendingTries < maxPendingTries
-            ) {
+            while (pendingTries < maxPendingTries) {
+                var pendingNow = result.response.status === 202 && result.data && result.data.pending;
+                var gatewayNow = isGatewayStatus(result.response.status);
+                if (!pendingNow && !(sawPending && gatewayNow)) {
+                    break;
+                }
+                if (pendingNow) sawPending = true;
                 pendingTries += 1;
                 await sleepMs(delayMs);
                 if (delayMs < 5000) delayMs = Math.min(5000, delayMs + 500);
@@ -2118,13 +2138,17 @@
                 result = await fetchBucketSizePayload(targetBucket);
                 if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
             }
-            if (result.response.status === 202 && result.data && result.data.pending) {
-                // Продолжаем фоновый poll, не бросая Loading навсегда
+
+            var stillPending = result.response.status === 202 && result.data && result.data.pending;
+            var gatewayAfterPending = sawPending && isGatewayStatus(result.response.status);
+            if (stillPending || gatewayAfterPending) {
+                // Без toast: worker считает дальше, UI остаётся на Loading…
                 scheduleBucketSizeBackgroundPoll(targetBucket, loadSeq);
                 return;
             }
 
             if (result.response.ok && result.data && !result.data.pending) {
+                delete _bucketSizeErrorCooldownUntil[targetBucket];
                 applyBucketSizeData(result.data, sizeText, objectsText, tr);
                 return;
             }
@@ -2133,28 +2157,49 @@
             if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
 
             var errorText = tr['msg.unknown_error'] || '';
-            if (result.response.status === 504) errorText = tr['msg.timeout_bucket'] || errorText;
-            else if (result.data && result.data.error) errorText = result.data.error;
-            else if (!result.isJson) {
-                errorText = result.response.status === 504
-                    ? (tr['msg.timeout_server'] || errorText)
-                    : (tr['msg.invalid_response'] || errorText);
+            if (isGatewayStatus(result.response.status)) {
+                // 504 прокси ≠ лимит размера бакета
+                errorText = tr['msg.timeout_or_server'] || tr['msg.timeout_server'] || errorText;
+            } else if (result.data && result.data.error) {
+                errorText = result.data.error;
+            } else if (!result.isJson) {
+                errorText = tr['msg.invalid_response'] || errorText;
             }
 
-            var duration = (result.response.status === 504 || errorText.indexOf('Таймаут') !== -1 || errorText.indexOf('Timeout') !== -1) ? 8000 : 10000;
-            showBucketSizeErrorOnce((tr['msg.load_bucket_size_failed'] || '') + ': ' + errorText, duration);
+            var duration = (
+                isGatewayStatus(result.response.status)
+                || errorText.indexOf('Таймаут') !== -1
+                || errorText.indexOf('Timeout') !== -1
+            ) ? 8000 : 10000;
+            showBucketSizeErrorOnce(
+                (tr['msg.load_bucket_size_failed'] || '') + ': ' + errorText,
+                duration,
+                targetBucket
+            );
         } catch (error) {
             if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
             showBucketSizeNoData(sizeText, objectsText, tr);
 
             var errorMsg = error.message || '';
-            var isTimeout = errorMsg.indexOf('504') !== -1 || errorMsg.indexOf('timeout') !== -1 || errorMsg.indexOf('Timeout') !== -1;
             var isNetwork = errorMsg.indexOf('network') !== -1 || errorMsg.indexOf('Network') !== -1 || errorMsg.indexOf('Failed to fetch') !== -1;
-            var errorText2 = isTimeout ? (tr['msg.timeout_bucket'] || errorMsg) : (isNetwork ? (tr['msg.network_error'] || errorMsg) : errorMsg);
-            if (errorMsg.indexOf("Unexpected token '<'") !== -1 || errorMsg.indexOf('is not valid JSON') !== -1) {
+            var errorText2 = isNetwork
+                ? (tr['msg.network_error'] || errorMsg)
+                : (tr['msg.timeout_or_server'] || tr['msg.invalid_response'] || errorMsg);
+            if (
+                errorMsg.indexOf('Unexpected token') !== -1
+                || errorMsg.indexOf('is not valid JSON') !== -1
+                || errorMsg.indexOf('upstream') !== -1
+                || errorMsg.indexOf('504') !== -1
+                || errorMsg.indexOf('timeout') !== -1
+                || errorMsg.indexOf('Timeout') !== -1
+            ) {
                 errorText2 = tr['msg.timeout_or_server'] || errorText2;
             }
-            showBucketSizeErrorOnce((tr['msg.load_bucket_size_failed'] || '') + ': ' + errorText2, 8000);
+            showBucketSizeErrorOnce(
+                (tr['msg.load_bucket_size_failed'] || '') + ': ' + errorText2,
+                8000,
+                targetBucket
+            );
         } finally {
             if (_bucketSizeInflight === targetBucket) _bucketSizeInflight = null;
         }

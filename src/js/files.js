@@ -344,12 +344,55 @@ async function loadFiles(path = '', loadOptions = {}) {
             revealKey: revealKey || null
         });
 
-        const response = await fetch(url, {
-            credentials: 'include',
-            headers: {
-                'Accept': 'application/json'
+        async function fetchFilesResponse() {
+            return fetch(url, {
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+        }
+
+        async function readFilesJson(response) {
+            // Envoy/nginx при 502/504 часто отдают текст "upstream request timeout", не JSON
+            var contentType = response.headers.get('Content-Type') || '';
+            var isJson = contentType.indexOf('application/json') !== -1;
+            var rawText = '';
+            var data = null;
+            if (isJson) {
+                try {
+                    data = await response.json();
+                } catch (e) {
+                    data = null;
+                }
+            } else {
+                rawText = await response.text();
+                try {
+                    data = JSON.parse(rawText);
+                } catch (e) {
+                    data = null;
+                }
             }
-        });
+            return { data: data, rawText: rawText, isJson: !!data };
+        }
+
+        function filesGatewayErrorText(response, rawText) {
+            var tr = global.I18N || {};
+            var status = response.status;
+            var text = String(rawText || '').toLowerCase();
+            if (
+                status === 504
+                || status === 502
+                || status === 503
+                || text.indexOf('upstream') !== -1
+                || text.indexOf('timeout') !== -1
+            ) {
+                return tr['msg.timeout_or_server'] || tr['msg.timeout_server'] || 'Server timeout';
+            }
+            return tr['msg.invalid_response'] || tr['msg.unknown_error'] || 'Invalid response';
+        }
+
+        var response = await fetchFilesResponse();
 
         // Устаревший ответ (новый loadFiles уже запущен) — не трогаем UI
         if (requestId !== loadFilesRequestId) {
@@ -386,9 +429,45 @@ async function loadFiles(path = '', loadOptions = {}) {
             return Promise.resolve();
         }
 
-        const data = await response.json();
+        // Кратковременный сбой прокси — один тихий retry
+        if (response.status === 502 || response.status === 503 || response.status === 504) {
+            await new Promise(function (resolve) { setTimeout(resolve, 1200); });
+            if (requestId !== loadFilesRequestId || getBucket() !== targetBucket) {
+                return Promise.resolve();
+            }
+            response = await fetchFilesResponse();
+            if (requestId !== loadFilesRequestId || getBucket() !== targetBucket) {
+                return Promise.resolve();
+            }
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return Promise.resolve();
+            }
+        }
+
+        var parsed = await readFilesJson(response);
+        var data = parsed.data;
 
         if (requestId !== loadFilesRequestId) {
+            return Promise.resolve();
+        }
+
+        if (!data) {
+            if (getBucket() !== targetBucket) {
+                return Promise.resolve();
+            }
+            var gatewayText = filesGatewayErrorText(response, parsed.rawText);
+            fileList.classList.remove('content-body-loading');
+            fileList.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-solid fa-triangle-exclamation empty-state-icon empty-state-icon-warning"></i>
+                    <div>${(global.I18N || {})['msg.load_files_admin']}</div>
+                </div>
+            `;
+            document.getElementById('filesHeader').style.display = 'none';
+            global.setFilesPaginationLoading(false);
+            global.updateFilesPaginationUI();
+            global.showError((global.I18N || {})['msg.load_files_failed'] + ': ' + gatewayText, 10000);
             return Promise.resolve();
         }
 
@@ -440,8 +519,7 @@ async function loadFiles(path = '', loadOptions = {}) {
 
             // Для ошибок credentials показываем пустое состояние
             const errorText = data.error || (global.I18N || {})['msg.unknown_error'] || 'Unknown error';
-            const isCredentialError = errorText.includes('credentials') || errorText.includes('Access Key') || errorText.includes('Отсутствуют');
-            const duration = isCredentialError ? 10000 : 10000;
+            const duration = 10000;
 
             fileList.classList.remove('content-body-loading');
             // ОЧИЩАЕМ СПИСОК ФАЙЛОВ ПРИ ОШИБКЕ
@@ -467,9 +545,22 @@ async function loadFiles(path = '', loadOptions = {}) {
 
         if (fileList) fileList.classList.remove('content-body-loading');
         console.error('Load files error:', error);
-        const errorText = error.message;
-        const isNetworkError = errorText.includes('network') || errorText.includes('Network') || errorText.includes('Failed to fetch');
-        const duration = isNetworkError ? 10000 : 10000;
+        var errorText = error.message || '';
+        var trCatch = global.I18N || {};
+        if (
+            errorText.indexOf('is not valid JSON') !== -1
+            || errorText.indexOf('Unexpected token') !== -1
+            || errorText.indexOf('upstream') !== -1
+        ) {
+            errorText = trCatch['msg.timeout_or_server'] || trCatch['msg.invalid_response'] || errorText;
+        } else if (
+            errorText.indexOf('network') !== -1
+            || errorText.indexOf('Network') !== -1
+            || errorText.indexOf('Failed to fetch') !== -1
+        ) {
+            errorText = trCatch['msg.network_error'] || errorText;
+        }
+        const duration = 10000;
 
         // ОЧИЩАЕМ СПИСОК ФАЙЛОВ ПРИ ОШИБКЕ СЕТИ
         if (fileList) {

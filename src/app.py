@@ -195,9 +195,36 @@ def _request_log_context(method, path):
     return 'http_request'
 
 
+def _bucket_name_for_log(bucket_id_or_slug: str) -> str:
+    """Для логов: bucket_name вместо внутреннего id (fallback — исходный slug)."""
+    slug = (bucket_id_or_slug or '').strip()
+    if not slug:
+        return slug
+    try:
+        from bucket_access import find_bucket_config_by_bucket_id, find_bucket_config
+        info = find_bucket_config_by_bucket_id(slug) or find_bucket_config(slug)
+        if not info:
+            return slug
+        bn = (info.get('bucket_name') or '').strip()
+        if not bn:
+            cfg = info.get('bucket_config') or {}
+            bn = (cfg.get('bucket_name') or '').strip()
+        return bn or slug
+    except Exception:
+        return slug
+
+
 def _format_request_path_for_log(path, query_string):
-    """Decode percent-encoding in URL for readable logs (Cyrillic paths, etc.)."""
+    """Decode percent-encoding in URL for readable logs (Cyrillic paths, bucket_name, etc.)."""
     path = unquote(path)
+    # /api/bucket-size/<id> → /api/bucket-size/<bucket_name>
+    if path.startswith('/api/bucket-size/'):
+        prefix = '/api/bucket-size/'
+        rest = path[len(prefix):]
+        slug, sep, tail = rest.partition('/')
+        if slug:
+            name = _bucket_name_for_log(slug)
+            path = prefix + name + (sep + tail if sep else '')
     if not query_string:
         return path
     qs = query_string.decode('utf-8', errors='replace')
@@ -207,7 +234,11 @@ def _format_request_path_for_log(path, query_string):
             continue
         if '=' in pair:
             key, value = pair.split('=', 1)
-            parts.append(f"{unquote(key, errors='replace')}={unquote(value, errors='replace')}")
+            key_dec = unquote(key, errors='replace')
+            val_dec = unquote(value, errors='replace')
+            if key_dec == 'bucket' and val_dec:
+                val_dec = _bucket_name_for_log(val_dec)
+            parts.append(f'{key_dec}={val_dec}')
         else:
             parts.append(unquote(pair, errors='replace'))
     return f"{path}?{'&'.join(parts)}"
@@ -383,124 +414,196 @@ def set_locale_cookie_from_query(response):
         response.set_cookie('locale', request.args.get('lang'), **_locale_cookie_kwargs())
     return response
 
+# Один gunicorn worker логирует баннер и ставит Meili/LDAP schedule (иначе × WEB_CONCURRENCY).
+_STARTUP_LEADER_LOCK_KEY = 87201402
+
+
+def _acquire_startup_leader():
+    """pg_try_advisory_lock: (conn|None, is_leader). conn нужно закрыть/unlock в finally."""
+    try:
+        from db import get_connection
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute('SELECT pg_try_advisory_lock(%s)', (_STARTUP_LEADER_LOCK_KEY,))
+                row = cur.fetchone()
+            if not row:
+                conn.close()
+                return None, False
+            won = bool(next(iter(row.values()))) if isinstance(row, dict) else bool(row[0])
+            if not won:
+                conn.close()
+                return None, False
+            return conn, True
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            return None, True
+    except Exception:
+        # БД недоступна — логируем в этом процессе (как раньше)
+        return None, True
+
+
+def _release_startup_leader(conn) -> None:
+    if not conn:
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute('SELECT pg_advisory_unlock(%s)', (_STARTUP_LEADER_LOCK_KEY,))
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+
 def _run_app_startup():
     with app.app_context():
         set_log_username('SYSTEM')
-        log_info('Starting S3 File Manager...', 'app_info')
-        log_info(f'Session timeout: {APP_SESSION_TIMEOUT_MINUTES} minutes', 'app_info')
-        if sso_module.is_sso_enabled():
-            log_info(
-                f"SSO (OIDC): enabled, sso_only={sso_module.is_sso_only()} "
-                '(client initializes on first SSO login)',
-                'app_info',
-            )
-        else:
-            log_info('SSO (OIDC): disabled (SSO_ENABLED unset or incomplete configuration)', 'app_info')
         last_db_err = None
         for attempt in range(1, 31):
             try:
                 db_init_schema()
                 ensure_startup_admin()
-                log_info('Database schema verified/created', 'app_info')
                 last_db_err = None
                 break
             except Exception as e:
                 last_db_err = e
-                log_warning(
-                    f'Database unavailable (attempt {attempt}/30): {e}',
-                    'app_info',
-                )
-                time.sleep(2)
-        if last_db_err:
-            log_warning(
-                f'Database unavailable or schema not created: {last_db_err}',
-                'app_info',
-            )
-        log_info('Checking bucket configuration...', 'app_info')
-
-        total_buckets = 0
-        buckets_with_creds = 0
-        buckets_with_ids = 0
-        bucket_id_usage = {}
-
-        for group_id, group_data in get_buckets_config().items():
-            group_buckets = len(group_data['buckets'])
-            total_buckets += group_buckets
-
-            for display_name, bucket_config in group_data['buckets'].items():
-                bucket_name = bucket_config.get('bucket_name', '')
-                bucket_id = bucket_config.get('bucket_id', display_name)
-
-                has_creds = bool(bucket_config.get('aws_access_key_id')) and bool(bucket_config.get('aws_secret_access_key'))
-                if has_creds:
-                    buckets_with_creds += 1
-
-                if bucket_id != display_name:
-                    buckets_with_ids += 1
-
-                if bucket_id in bucket_id_usage:
-                    bucket_id_usage[bucket_id].append(f"{group_id}/{display_name}")
-                else:
-                    bucket_id_usage[bucket_id] = [f"{group_id}/{display_name}"]
-
-                if not bucket_name:
-                    log_warning(f'Bucket missing bucket_name: {display_name}', 'app_info')
-
-        for bucket_id, locations in bucket_id_usage.items():
-            if len(locations) > 1:
-                log_warning(
-                    f"Non-unique bucket_id '{bucket_id}' used in {len(locations)} places: {', '.join(locations)}",
-                    'app_info',
-                )
-
-        log_info(
-            f'Total buckets: {total_buckets}, with credentials: {buckets_with_creds}, '
-            f'without credentials: {total_buckets - buckets_with_creds}',
-            'app_info',
-        )
-        log_info(f'Buckets with custom bucket_id: {buckets_with_ids}', 'app_info')
-
-        if total_buckets - buckets_with_creds > 0:
-            log_warning(
-                f'Found {total_buckets - buckets_with_creds} buckets without configured credentials',
-                'app_info',
-            )
-
-        meili = meilisearch.connection_status()
-        if meili.get('config_error'):
-            log_error(f"Meilisearch: {meili['config_error']}", 'app_info')
-        elif meili['configured']:
-            if meili['available']:
-                log_info(f"Meilisearch: connected ({meili['host']})", 'app_info')
-                meili_env = meili.get('env') or {}
-                if meili_env.get('MEILI_PERIODIC_SYNC') == 'true':
-                    log_info(
-                        'Meilisearch: auto-sync '
-                        f"{meili_env.get('MEILI_SYNC_AT', '—')} "
-                        f"({meili_env.get('MEILI_SYNC_TIMEZONE', 'UTC')}), "
-                        f"next run: {meili_env.get('MEILI_SYNC_NEXT', '—')}",
+                # Только лидер пишет retry — иначе × workers в логе
+                if attempt == 1 or attempt % 5 == 0 or attempt == 30:
+                    log_warning(
+                        f'Database unavailable (attempt {attempt}/30): {e}',
                         'app_info',
                     )
-                meilisearch.schedule_startup_reindex(
-                    get_buckets_config, get_s3_client_for_reindex, app=app,
-                )
-                meilisearch.schedule_periodic_sync(
-                    get_buckets_config, get_s3_client_for_reindex, app=app,
-                )
-            else:
-                log_warning(
-                    f"Meilisearch: unavailable at {meili['host']}, search via S3",
+                time.sleep(2)
+
+        leader_conn, is_leader = _acquire_startup_leader()
+        try:
+            if not is_leader:
+                return
+
+            log_info('Starting S3 File Manager...', 'app_info')
+            log_info(f'Session timeout: {APP_SESSION_TIMEOUT_MINUTES} minutes', 'app_info')
+            if sso_module.is_sso_enabled():
+                log_info(
+                    f"SSO (OIDC): enabled, sso_only={sso_module.is_sso_only()} "
+                    '(client initializes on first SSO login)',
                     'app_info',
                 )
-        else:
-            log_info('Meilisearch: disabled, search via S3 (set MEILI_ENABLED=true and MEILI_HOST)', 'app_info')
+            else:
+                log_info(
+                    'SSO (OIDC): disabled (SSO_ENABLED unset or incomplete configuration)',
+                    'app_info',
+                )
 
-        if last_db_err is None:
-            try:
-                import ldap_client
-                ldap_client.schedule_account_status_sync()
-            except Exception as exc:
-                log_warning(f'LDAP account sync not started: {exc}', 'ldap_account_sync')
+            if last_db_err:
+                log_warning(
+                    f'Database unavailable or schema not created: {last_db_err}',
+                    'app_info',
+                )
+            else:
+                log_info('Database schema verified/created', 'app_info')
+
+            log_info('Checking bucket configuration...', 'app_info')
+
+            total_buckets = 0
+            buckets_with_creds = 0
+            buckets_with_ids = 0
+            bucket_id_usage = {}
+
+            for group_id, group_data in get_buckets_config().items():
+                group_buckets = len(group_data['buckets'])
+                total_buckets += group_buckets
+
+                for display_name, bucket_config in group_data['buckets'].items():
+                    bucket_name = bucket_config.get('bucket_name', '')
+                    bucket_id = bucket_config.get('bucket_id', display_name)
+
+                    has_creds = bool(bucket_config.get('aws_access_key_id')) and bool(
+                        bucket_config.get('aws_secret_access_key')
+                    )
+                    if has_creds:
+                        buckets_with_creds += 1
+
+                    if bucket_id != display_name:
+                        buckets_with_ids += 1
+
+                    if bucket_id in bucket_id_usage:
+                        bucket_id_usage[bucket_id].append(f"{group_id}/{display_name}")
+                    else:
+                        bucket_id_usage[bucket_id] = [f"{group_id}/{display_name}"]
+
+                    if not bucket_name:
+                        log_warning(f'Bucket missing bucket_name: {display_name}', 'app_info')
+
+            for bucket_id, locations in bucket_id_usage.items():
+                if len(locations) > 1:
+                    log_warning(
+                        f"Non-unique bucket_id '{bucket_id}' used in {len(locations)} places: "
+                        f"{', '.join(locations)}",
+                        'app_info',
+                    )
+
+            log_info(
+                f'Total buckets: {total_buckets}, with credentials: {buckets_with_creds}, '
+                f'without credentials: {total_buckets - buckets_with_creds}',
+                'app_info',
+            )
+            log_info(f'Buckets with custom bucket_id: {buckets_with_ids}', 'app_info')
+
+            if total_buckets - buckets_with_creds > 0:
+                log_warning(
+                    f'Found {total_buckets - buckets_with_creds} buckets without configured credentials',
+                    'app_info',
+                )
+
+            meili = meilisearch.connection_status()
+            if meili.get('config_error'):
+                log_error(f"Meilisearch: {meili['config_error']}", 'app_info')
+            elif meili['configured']:
+                if meili['available']:
+                    log_info(f"Meilisearch: connected ({meili['host']})", 'app_info')
+                    meili_env = meili.get('env') or {}
+                    if meili_env.get('MEILI_PERIODIC_SYNC') == 'true':
+                        log_info(
+                            'Meilisearch: auto-sync '
+                            f"{meili_env.get('MEILI_SYNC_AT', '—')} "
+                            f"({meili_env.get('MEILI_SYNC_TIMEZONE', 'UTC')}), "
+                            f"next run: {meili_env.get('MEILI_SYNC_NEXT', '—')}",
+                            'app_info',
+                        )
+                    meilisearch.schedule_startup_reindex(
+                        get_buckets_config, get_s3_client_for_reindex, app=app,
+                    )
+                    meilisearch.schedule_periodic_sync(
+                        get_buckets_config, get_s3_client_for_reindex, app=app,
+                    )
+                else:
+                    log_warning(
+                        f"Meilisearch: unavailable at {meili['host']}, search via S3",
+                        'app_info',
+                    )
+            else:
+                log_info(
+                    'Meilisearch: disabled, search via S3 (set MEILI_ENABLED=true and MEILI_HOST)',
+                    'app_info',
+                )
+
+            if last_db_err is None:
+                try:
+                    import ldap_client
+                    ldap_client.schedule_account_status_sync()
+                except Exception as exc:
+                    log_warning(f'LDAP account sync not started: {exc}', 'ldap_account_sync')
+        finally:
+            _release_startup_leader(leader_conn)
 
 _startup_lock = threading.Lock()
 _startup_started = False

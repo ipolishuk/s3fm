@@ -193,6 +193,23 @@ function escapeAddUserHtml(text) {
         .replace(/"/g, '&quot;');
 }
 
+/** Пункт dropdown Buckets: имя слева, cloud_id справа (placeholder). */
+function buildAddUserBucketDropdownItemHtml(item) {
+    var id = item && item.id != null ? String(item.id) : '';
+    var cloudId = item && item.cloud_id != null ? String(item.cloud_id).trim() : '';
+    var displayLabel = (item && (item.label || item.id) || '').toString()
+        .replace(/\s*\([^)]*\)\s*$/, '')
+        .trim() || id;
+    var meta = cloudId
+        ? '<span class="dropdown-item-meta" title="' + escapeAddUserHtml(cloudId) + '">' +
+            escapeAddUserHtml(cloudId) + '</span>'
+        : '';
+    return '<input type="checkbox" class="checkbox" value="' + escapeAddUserHtml(id) +
+        '" data-label="' + escapeAddUserHtml(displayLabel) +
+        '" data-cloud-id="' + escapeAddUserHtml(cloudId) + '">' +
+        '<span>' + escapeAddUserHtml(displayLabel) + '</span>' + meta;
+}
+
 function userBucketRoleDropdownLabel(roleOptions, value) {
     var found = (roleOptions || []).filter(function(o) { return o.value === value; })[0];
     return (found && found.label) || value || '—';
@@ -2617,9 +2634,7 @@ function openEditUserModal(username, mode) {
             filtered.forEach(function(item) {
                 var lab = document.createElement('label');
                 lab.className = 'lables dropdown-item';
-                var cloudId = (item.cloud_id != null) ? (item.cloud_id + '').replace(/"/g, '&quot;') : '';
-                var displayLabel = (item.label || item.id || '').toString().replace(/\s*\([^)]*\)\s*$/, '').trim() || (item.id || '').toString();
-                lab.innerHTML = '<input type="checkbox" class="checkbox" value="' + (item.id + '').replace(/"/g, '&quot;') + '" data-label="' + displayLabel.replace(/"/g, '&quot;') + '" data-cloud-id="' + cloudId + '"> <span>' + displayLabel + '</span>';
+                lab.innerHTML = buildAddUserBucketDropdownItemHtml(item);
                 var searchParts = [
                     item.id,
                     item.label,
@@ -2833,9 +2848,7 @@ if (settingsAddBtn) {
                     filtered.forEach(function(item) {
                         var lab = document.createElement('label');
                         lab.className = 'lables dropdown-item';
-                        var cloudId = (item.cloud_id != null) ? (item.cloud_id + '').replace(/"/g, '&quot;') : '';
-                        var displayLabel = (item.label || item.id || '').toString().replace(/\s*\([^)]*\)\s*$/, '').trim() || (item.id || '').toString();
-                        lab.innerHTML = '<input type="checkbox" class="checkbox" value="' + (item.id + '').replace(/"/g, '&quot;') + '" data-label="' + displayLabel.replace(/"/g, '&quot;') + '" data-cloud-id="' + cloudId + '"> <span>' + displayLabel + '</span>';
+                        lab.innerHTML = buildAddUserBucketDropdownItemHtml(item);
                         var searchParts = [
                             item.id,
                             item.label,

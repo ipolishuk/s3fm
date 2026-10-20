@@ -805,7 +805,7 @@ TRANSLATIONS = {
         'modal.bucket_name_locked_hint': 'Bucket name cannot be changed',
         'modal.bucket_ca_bundle': 'CA bundle path',
         'modal.bucket_region': 'Region name',
-        'modal.bucket_skip_tls': 'Skip TLS certificate verification',
+        'modal.bucket_skip_tls': 'Skip TLS verification',
         'modal.user_buckets': 'Buckets',
         'modal.user_buckets_select_cloud_first': 'Select a cloud first',
         'modal.user_bucket_roles': 'Custom roles',

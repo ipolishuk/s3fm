@@ -404,15 +404,15 @@
 }
 
 /*
- * Add / Edit / Copy form modals: ровные колонки label | control (60%),
- * как Meilisearch settings, но value-колонка 60%.
+ * Add / Edit / Copy form modals: ровные колонки label | control (70%),
+ * как Meilisearch settings, но value-колонка 70%.
  */
 #addBucketForm > .form-group:not(.hidden),
 #addUserForm > .form-group:not(.add-user-bucket-roles-group),
 #CloudEditModal > .form-group,
 #CreateFolderModal > .form-group {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 60%;
+  grid-template-columns: minmax(0, 1fr) 70%;
   align-items: center;
   column-gap: 8px;
   row-gap: 0;

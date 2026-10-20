@@ -223,12 +223,24 @@ label.dropdown-item {
   text-overflow: ellipsis;
 }
 
-.modal-body .dropdown .dropdown-item > span {
+.modal-body .dropdown .dropdown-item > span:not(.dropdown-item-meta) {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Buckets dropdown (add/edit/copy user): cloud_id справа */
+.modal-body .dropdown .dropdown-item > .dropdown-item-meta {
+  flex: 0 0 auto;
+  margin-left: auto;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .modal-body .dropdown .dropdown-item.selected {

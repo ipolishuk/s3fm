@@ -31,7 +31,7 @@
 - `APP_SESSION_TIMEOUT_MINUTES` — таймаут сессии в минутах (по умолчанию `60`).
 - `APP_ADMIN_PASSWORD` — пароль при **первом** создании `admin`; если учётка уже есть и ни разу не входила, на старте может быть выровнен под env (существующий пароль после смены через `config.py reset-password` не трогается).
 - `WEB_CONCURRENCY` / `GUNICORN_WORKERS`, `WEB_THREADS` / `GUNICORN_THREADS`, `GUNICORN_TIMEOUT` — параметры gunicorn в Docker.
-- `OPERATION_WORKER_MODE` — `embedded` (по умолчанию: job в thread web-процесса) или `external` (только enqueue в PG, выполняет `python worker.py`).
+- `OPERATION_WORKER_MODE` — `embedded` (по умолчанию: job в thread web-процесса) или `external` (только enqueue в PG, выполняет `python worker.py`). В режиме `external` Meili reindex (ручной и `MEILI_PERIODIC_SYNC` / `MEILI_REINDEX_ON_STARTUP`) ставит в очередь и выполняет worker; web только создаёт job и отдаёт status/SSE.
 - `OPERATION_WORKER_POLL_SEC` — интервал опроса очереди в worker (по умолчанию `1`).
 - `OPERATION_CANCEL_CHECK_EVERY` — проверять cancel каждые N ключей при copy папки (по умолчанию `10`).
 - `OPERATION_DELETE_BATCH_SIZE` — размер батча `delete_objects` с проверкой cancel между батчами (по умолчанию `100`, макс. `1000`).
@@ -76,10 +76,10 @@
 - `MEILI_ENABLED` — включить Meilisearch (`true|false`, по умолчанию выключен). При `true` обязателен `MEILI_HOST`.
 - `MEILI_HOST` — URL Meilisearch (например `http://meilisearch:7700`).
 - `MEILI_API_KEY` — master key Meilisearch (если включена аутентификация).
-- `MEILI_PERIODIC_SYNC` — ежедневный sync всех бакетов в фоне (`true|false`, по умолчанию `true` при включённом Meilisearch).
+- `MEILI_PERIODIC_SYNC` — ежедневный sync всех бакетов (`true|false`, по умолчанию `true` при включённом Meilisearch). Таймер и выполнение job живут на worker (`OPERATION_WORKER_MODE=external`) или в web-thread при `embedded`.
 - `MEILI_SYNC_AT` — время суток для sync в формате `HH:MM` (24 часа, по умолчанию `03:00`; `off` / пусто отключает таймер при `MEILI_PERIODIC_SYNC=true`).
 - `MEILI_REINDEX_WORKERS` — число бакетов, индексируемых параллельно (по умолчанию `2`, максимум `32`).
-- `MEILI_REINDEX_ON_STARTUP` — фоновая синхронизация индекса при старте (`true|false`): если индекс бакета в Meilisearch **пустой** — полная переиндексация (как по кнопке в UI), если в индексе уже есть документы — **sync** (без wipe: upsert изменений, удаление устаревших). Ручная переиндексация в настройках всегда полная.
+- `MEILI_REINDEX_ON_STARTUP` — синхронизация индекса при старте worker/app (`true|false`): если индекс бакета в Meilisearch **пустой** — полная переиндексация (как по кнопке в UI), если в индексе уже есть документы — **sync** (без wipe: upsert изменений, удаление устаревших). Ручная переиндексация в настройках всегда полная и тоже идёт через worker.
 - `MEILI_SYNC_TIMEZONE` — часовой пояс для `MEILI_SYNC_AT` (IANA, например `Europe/Moscow`; по умолчанию `UTC`).
 - `MEILI_HTTP_TIMEOUT` — таймаут обычных HTTP-запросов к Meilisearch в секундах (по умолчанию `30`).
 - `MEILI_REINDEX_HTTP_TIMEOUT` — таймаут HTTP при переиндексации (по умолчанию `600`, fallback на `MEILI_HTTP_TIMEOUT`).

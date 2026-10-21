@@ -3,7 +3,6 @@ import hashlib
 import json
 import logging
 import os
-import queue
 import re
 import threading
 import time
@@ -12,7 +11,6 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from contextlib import nullcontext
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -1616,6 +1614,11 @@ def delete_bucket_index(bucket_id: str, bucket_name: Optional[str] = None) -> bo
         return False
 
 
+def reindex_workers() -> int:
+    """Публичный alias для worker_jobs / API."""
+    return _reindex_workers()
+
+
 def _reindex_workers() -> int:
     return _config_int(
         'MEILI_REINDEX_WORKERS',
@@ -1695,190 +1698,49 @@ def _with_app_context(app, fn):
     return fn()
 
 
-_batch_job_lock = threading.Lock()
-_batch_job: Dict[str, Any] = {
-    'active': False,
-    'cancel_requested': False,
-    'total': 0,
-    'completed': 0,
-    'workers': 0,
-    'bucket_ids': [],
-    'stats': {},
-    'error': None,
-}
-_batch_listener_lock = threading.Lock()
-_batch_listeners: List[queue.Queue] = []
-_BATCH_SSE_HEARTBEAT_SEC = 25.0
-
-
-def _batch_listeners_publish(payload: Dict[str, Any]) -> None:
-    with _batch_listener_lock:
-        listeners = list(_batch_listeners)
-    for listener in listeners:
-        try:
-            listener.put_nowait(payload)
-        except queue.Full:
-            pass
-
-
-def _batch_reindex_emit_progress(bucket_id: str, count: int) -> None:
-    _batch_listeners_publish({
-        'type': 'progress',
-        'bucket_id': bucket_id,
-        'count': count,
-        'job': batch_reindex_status(),
-    })
-
-
-def _batch_reindex_emit_done() -> None:
-    _batch_listeners_publish({'type': 'done', 'job': batch_reindex_status()})
-
-
 def iter_batch_reindex_events() -> Any:
     """Генератор событий фоновой переиндексации для SSE (snapshot → progress → done)."""
-    listener: queue.Queue = queue.Queue(maxsize=256)
-    with _batch_listener_lock:
-        _batch_listeners.append(listener)
-    try:
-        job = batch_reindex_status()
-        yield {'type': 'snapshot', 'job': job}
-        if not job.get('active'):
-            return
-        while True:
-            try:
-                event = listener.get(timeout=_BATCH_SSE_HEARTBEAT_SEC)
-            except queue.Empty:
-                if not batch_reindex_status().get('active'):
-                    yield {'type': 'done', 'job': batch_reindex_status()}
-                    return
-                yield {'type': 'ping'}
-                continue
-            yield event
-            if event.get('type') == 'done':
-                return
-    finally:
-        with _batch_listener_lock:
-            try:
-                _batch_listeners.remove(listener)
-            except ValueError:
-                pass
-
-
-def _batch_reindex_cancel_requested() -> bool:
-    with _batch_job_lock:
-        return bool(_batch_job.get('cancel_requested'))
-
-
-def _batch_reindex_record_done(bucket_id: str, count: int) -> None:
-    with _batch_job_lock:
-        _batch_job['stats'][bucket_id] = count
-        _batch_job['completed'] = int(_batch_job.get('completed') or 0) + 1
-    _batch_reindex_emit_progress(bucket_id, count)
-
-
-def _batch_reindex_finish() -> None:
-    with _batch_job_lock:
-        _batch_job['active'] = False
-    _batch_reindex_emit_done()
-
-
-def _batch_reindex_set_error(exc: BaseException) -> None:
-    with _batch_job_lock:
-        _batch_job['error'] = str(exc)
+    from worker_jobs import iter_batch_reindex_events as _iter
+    yield from _iter()
 
 
 def batch_reindex_status() -> Dict[str, Any]:
-    with _batch_job_lock:
-        return {
-            'active': bool(_batch_job.get('active')),
-            'cancel_requested': bool(_batch_job.get('cancel_requested')),
-            'total': int(_batch_job.get('total') or 0),
-            'completed': int(_batch_job.get('completed') or 0),
-            'workers': int(_batch_job.get('workers') or 0),
-            'bucket_ids': list(_batch_job.get('bucket_ids') or []),
-            'stats': dict(_batch_job.get('stats') or {}),
-            'error': _batch_job.get('error'),
-        }
+    """Статус фоновой переиндексации (из operation_jobs / worker)."""
+    from worker_jobs import batch_reindex_status as _status
+    return _status()
 
 
 def request_batch_reindex_cancel() -> bool:
     """Запросить остановку после текущих бакетов. True, если шла переиндексация."""
-    with _batch_job_lock:
-        if not _batch_job.get('active'):
-            return False
-        _batch_job['cancel_requested'] = True
-        return True
+    from worker_jobs import request_batch_reindex_cancel as _cancel
+    return _cancel()
 
 
 def start_batch_reindex_background(
     bucket_ids: List[str],
-    buckets_iter: Callable[[], Dict[str, Any]],
-    get_s3_client_fn: Callable[[Dict], Any],
+    buckets_iter: Callable[[], Dict[str, Any]] = None,
+    get_s3_client_fn: Callable[[Dict], Any] = None,
     *,
     app=None,
     log_context: str = 'reindex_search',
     on_bucket_complete: Optional[Callable[[str, int], None]] = None,
     index_mode: str = 'full',
+    username: str = 'system',
 ) -> bool:
-    """Запустить переиндексацию в фоне. False, если задача уже выполняется."""
-    seen = set()
-    ordered_ids: List[str] = []
-    for raw in bucket_ids:
-        bid = (raw or '').strip()
-        if bid and bid not in seen:
-            seen.add(bid)
-            ordered_ids.append(bid)
-    ordered_ids = filter_search_index_enabled_bucket_ids(ordered_ids)
-    if not ordered_ids:
-        return False
+    """Поставить переиндексацию в очередь worker. False, если уже выполняется / пустой список.
 
-    with _batch_job_lock:
-        if _batch_job.get('active'):
-            return False
-        _batch_job.clear()
-        _batch_job.update({
-            'active': True,
-            'cancel_requested': False,
-            'total': len(ordered_ids),
-            'completed': 0,
-            'workers': _reindex_workers(),
-            'bucket_ids': list(ordered_ids),
-            'stats': {},
-            'error': None,
-        })
-
-    def _worker() -> None:
-        set_reindex_log_context(log_context)
-        ctx = app.app_context() if app is not None else nullcontext()
-
-        def _on_done(bucket_id: str, count: int) -> None:
-            _batch_reindex_record_done(bucket_id, count)
-            if on_bucket_complete:
-                try:
-                    on_bucket_complete(bucket_id, count)
-                except Exception as exc:
-                    logger.warning('on_bucket_complete failed for %s: %s', bucket_id, exc)
-
-        try:
-            with ctx:
-                reindex_buckets_parallel(
-                    ordered_ids,
-                    buckets_iter,
-                    get_s3_client_fn,
-                    app=app,
-                    cancel_check=_batch_reindex_cancel_requested,
-                    on_bucket_complete=_on_done,
-                    index_mode=index_mode,
-                )
-        except Exception as exc:
-            _batch_reindex_set_error(exc)
-            _log_reindex_warning(f'Reindex batch failed: {exc}')
-        finally:
-            _batch_reindex_finish()
-            reset_reindex_log_context()
-
-    threading.Thread(target=_worker, name='meili-batch-reindex', daemon=True).start()
-    return True
+    buckets_iter / get_s3_client_fn / app / on_bucket_complete — legacy no-op
+    (воркер сам берёт конфиг и обновляет search_reindexed_at).
+    """
+    del buckets_iter, get_s3_client_fn, app, on_bucket_complete  # executed on worker
+    from worker_jobs import enqueue_reindex
+    job_id = enqueue_reindex(
+        bucket_ids,
+        index_mode=index_mode,
+        log_context=log_context,
+        username=username or 'system',
+    )
+    return bool(job_id)
 
 
 def reindex_buckets_parallel(
@@ -1985,24 +1847,17 @@ def periodic_sync_enabled() -> bool:
     return _env_bool('MEILI_PERIODIC_SYNC', default=True)
 
 
-def _on_bucket_index_complete(bucket_id: str, count: int) -> None:
-    if count is not None and count >= 0:
-        try:
-            from db import set_bucket_search_reindexed_at
-            set_bucket_search_reindexed_at(bucket_id, datetime.now(timezone.utc))
-        except Exception as exc:
-            logger.warning('Failed to update search_reindexed_at for %s: %s', bucket_id, exc)
-
-
 def schedule_all_buckets_background_sync(
     buckets_iter: Callable[[], Dict[str, Any]],
-    get_s3_client_fn: Callable[[Dict], Any],
+    get_s3_client_fn: Callable[[Dict], Any] = None,
     *,
     app=None,
     log_context: str = 'meilisearch',
     index_mode: str = 'auto',
+    username: str = 'system',
 ) -> bool:
-    """Фоновая индексация всех бакетов (auto: пустой индекс → full, иначе sync). False, если job уже идёт."""
+    """Фоновая индексация всех бакетов через worker (auto: пустой индекс → full, иначе sync)."""
+    del get_s3_client_fn, app
     if not is_configured():
         return False
     bucket_ids = filter_search_index_enabled_bucket_ids(
@@ -2012,12 +1867,9 @@ def schedule_all_buckets_background_sync(
         return False
     return start_batch_reindex_background(
         bucket_ids,
-        buckets_iter,
-        get_s3_client_fn,
-        app=app,
         log_context=log_context,
-        on_bucket_complete=_on_bucket_index_complete,
         index_mode=index_mode,
+        username=username or 'system',
     )
 
 

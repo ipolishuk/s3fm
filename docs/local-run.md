@@ -34,9 +34,9 @@ python app.py
 
 Сервис стартует на `http://0.0.0.0:3000`. В Docker-образе по умолчанию запускается **gunicorn**. Пароли в БД — werkzeug hash; `aws_secret_access_key` бакетов шифруются at-rest (`enc:v1:…`). CSRF: заголовок `X-CSRF-Token` (токен из `/api/check-auth` / meta).
 
-### Фоновый worker (copy/move/delete/acl / S3 size)
+### Фоновый worker (copy/move/delete/acl/reindex / S3 size)
 
-По умолчанию локально `OPERATION_WORKER_MODE=embedded` — job выполняются в thread внутри web (как раньше).
+По умолчанию локально `OPERATION_WORKER_MODE=embedded` — job выполняются в thread внутри web (как раньше), включая Meili startup/nightly sync.
 
 Для отдельного процесса (как в Docker Compose):
 
@@ -44,11 +44,11 @@ python app.py
 export OPERATION_WORKER_MODE=external
 # терминал 1 — API
 gunicorn -c gunicorn.conf.py app:app
-# терминал 2 — worker
+# терминал 2 — worker (очередь + Meili startup/nightly)
 python worker.py
 ```
 
-В `docker-compose.yml` сервис `worker` уже добавлен; у `web` стоит `OPERATION_WORKER_MODE=external`.
+В `docker-compose.yml` сервис `worker` уже добавлен; у `web` стоит `OPERATION_WORKER_MODE=external`. Ручная переиндексация из Settings и плановый sync идут в очередь worker.
 
 Тесты (из `src/`):
 

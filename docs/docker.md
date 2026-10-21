@@ -46,7 +46,7 @@ docker compose down
 Образ worker ([`docker/worker/Dockerfile`](../docker/worker/Dockerfile)):
 - тот же Python-стек и `COPY src/`, что у web;
 - `OPERATION_WORKER_MODE=external` по умолчанию;
-- `CMD python worker.py` (очередь copy/move/delete/acl и S3-fallback размера бакета).
+- `CMD python worker.py` (очередь copy/move/delete/acl/reindex, S3-fallback размера бакета, Meili startup/nightly sync).
 
 ```bash
 docker build -f docker/worker/Dockerfile -t s3fm-worker .

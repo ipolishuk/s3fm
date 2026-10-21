@@ -13,7 +13,82 @@ from typing import Any, Dict, List, Optional
 from logs import LOG_CONFIG, log_error, log_info, log_user_action
 from translations import _
 
-WORKER_OPS = frozenset({'copy', 'move', 'delete', 'acl', 'bucket_size'})
+WORKER_OPS = frozenset({'copy', 'move', 'delete', 'acl', 'bucket_size', 'reindex'})
+
+# Singleton enqueue + Meili scheduler (несколько worker-реплик)
+_REINDEX_ENQUEUE_LOCK_KEY = 87201411
+_MEILI_SCHEDULER_LOCK_KEY = 87201412
+_meili_scheduler_leader_conn = None
+
+_OP_LOG_CONTEXT = {
+    'copy': 'copy_objects',
+    'move': 'move_objects',
+    'delete': 'delete_objects',
+    'acl': 'file_metadata_acl_batch',
+    'bucket_size': 'bucket_size',
+    'reindex': 'reindex_search',
+}
+
+
+def _op_log_context(op: str, payload: Optional[Dict[str, Any]] = None) -> str:
+    if op == 'reindex' and isinstance(payload, dict):
+        ctx = (payload.get('log_context') or '').strip()
+        if ctx:
+            return ctx
+    return _OP_LOG_CONTEXT.get(op, 'worker')
+
+
+def _job_log_suffix(op: str, job: Optional[Dict[str, Any]]) -> str:
+    """Доп. поля для bucket_size: bucket='…' id=…"""
+    if op != 'bucket_size' or not job:
+        return ''
+    bucket_id = job.get('bucket_id') or ''
+    display = job.get('display_name') or bucket_id
+    return f' bucket={display!r} id={bucket_id}'
+
+
+def _progress_log_interval_sec() -> float:
+    try:
+        sec = float(os.environ.get('OPERATION_PROGRESS_LOG_SEC', '30'))
+    except (TypeError, ValueError):
+        sec = 30.0
+    return max(5.0, sec)
+
+
+def _make_progress_logger(job_id: str, context: str, username: str, suffix: str = ''):
+    """Throttled Processing-логи, чтобы было видно что job жив.
+
+    Первый лог не сразу после Start — только после OPERATION_PROGRESS_LOG_SEC
+    (короткие job: Start → Finished без Processing).
+    """
+    started_at = time.time()
+    last_log_at = [0.0]
+    interval = _progress_log_interval_sec()
+
+    def maybe_log(event: Dict[str, Any]) -> None:
+        if not event or event.get('type') != 'progress':
+            return
+        now = time.time()
+        # Не дублируем Start в ту же секунду
+        if last_log_at[0] <= 0 and (now - started_at) < interval:
+            return
+        if last_log_at[0] > 0 and (now - last_log_at[0]) < interval:
+            return
+        current = event.get('current')
+        total = event.get('total')
+        extra = ''
+        if current is not None and total not in (None, 0) and not event.get('total_pending'):
+            extra = f' current={current}/{total}'
+        elif current is not None:
+            extra = f' current={current}'
+        log_info(
+            f'Processing job={job_id}{suffix}{extra}',
+            context,
+            username=username or 'SYSTEM',
+        )
+        last_log_at[0] = now
+
+    return maybe_log
 
 
 class JobCancelled(Exception):
@@ -80,6 +155,115 @@ def serialize_bucket_size_job(bucket_id: str, username: str) -> Dict[str, Any]:
         'bucket_id': bucket_id,
         'username': username or 'unknown',
     }
+
+
+def serialize_reindex_job(
+    bucket_ids: List[str],
+    *,
+    index_mode: str = 'full',
+    log_context: str = 'reindex_search',
+    username: str = 'system',
+) -> Dict[str, Any]:
+    return {
+        'bucket_ids': list(bucket_ids or []),
+        'index_mode': index_mode or 'full',
+        'log_context': log_context or 'reindex_search',
+        'username': username or 'system',
+    }
+
+
+def _pg_try_advisory_lock(conn, key: int) -> bool:
+    with conn.cursor() as cur:
+        cur.execute('SELECT pg_try_advisory_lock(%s)', (key,))
+        row = cur.fetchone()
+    if not row:
+        return False
+    return bool(next(iter(row.values()))) if isinstance(row, dict) else bool(row[0])
+
+
+def _pg_advisory_unlock(conn, key: int) -> None:
+    with conn.cursor() as cur:
+        cur.execute('SELECT pg_advisory_unlock(%s)', (key,))
+
+
+def enqueue_reindex(
+    bucket_ids: List[str],
+    *,
+    index_mode: str = 'full',
+    log_context: str = 'reindex_search',
+    username: str = 'system',
+) -> Optional[str]:
+    """Создать pending reindex job. None, если уже есть активный reindex или список пуст."""
+    import meilisearch
+    import operation_jobs
+    from db import get_connection
+
+    seen = set()
+    ordered: List[str] = []
+    for raw in bucket_ids or []:
+        bid = (raw or '').strip()
+        if bid and bid not in seen:
+            seen.add(bid)
+            ordered.append(bid)
+    ordered = meilisearch.filter_search_index_enabled_bucket_ids(ordered)
+    if not ordered:
+        return None
+
+    workers = meilisearch.reindex_workers()
+    display_names = ordered[:5]
+    if len(ordered) > 5:
+        display_names = display_names + [f'+{len(ordered) - 5}']
+
+    payload = serialize_reindex_job(
+        ordered,
+        index_mode=index_mode,
+        log_context=log_context,
+        username=username,
+    )
+    meta = {
+        'display_names': display_names,
+        'payload': payload,
+        'total': len(ordered),
+        'completed': 0,
+        'workers': workers,
+        'bucket_ids': list(ordered),
+        'stats': {},
+        'error': None,
+        'last_bucket_id': None,
+        'last_count': None,
+        'index_mode': index_mode or 'full',
+        'log_context': log_context or 'reindex_search',
+    }
+
+    conn = None
+    locked = False
+    job_id = None
+    try:
+        conn = get_connection()
+        locked = _pg_try_advisory_lock(conn, _REINDEX_ENQUEUE_LOCK_KEY)
+        if not locked:
+            # Другой процесс как раз ставит reindex — не дублируем.
+            return None
+        if operation_jobs.find_active_job_by_op('reindex'):
+            return None
+        job_id = operation_jobs.create_job(username or 'system', 'reindex', meta)
+    finally:
+        if conn is not None:
+            if locked:
+                try:
+                    _pg_advisory_unlock(conn, _REINDEX_ENQUEUE_LOCK_KEY)
+                except Exception:
+                    pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    if not job_id:
+        return None
+    if not use_external_worker():
+        operation_jobs.start_worker(job_id, lambda: execute_job(job_id))
+    return job_id
 
 
 def _hydrate_s3_clients(payload: Dict[str, Any], op: str) -> Dict[str, Any]:
@@ -212,6 +396,11 @@ def execute_job(job_id: str) -> None:
     op = snap.get('op') or ''
     meta = snap.get('meta') or {}
     payload = meta.get('payload')
+    username = snap.get('username') or (payload.get('username') if isinstance(payload, dict) else None) or 'SYSTEM'
+    context = _op_log_context(op, payload if isinstance(payload, dict) else None)
+    suffix = ''
+    started = False
+
     if not isinstance(payload, dict):
         operation_jobs.publish(job_id, {'type': 'error', 'error': _('error.unexpected')})
         return
@@ -227,7 +416,16 @@ def execute_job(job_id: str) -> None:
             operation_jobs.publish(job_id, {'type': 'cancelled'})
             return
 
+        if op == 'reindex':
+            log_info(f'Start job={job_id}', context, username=username)
+            started = True
+            _run_reindex(job_id, payload, cancel_check)
+            return
+
         job = _hydrate_s3_clients(payload, op)
+        suffix = _job_log_suffix(op, job)
+        log_info(f'Start job={job_id}{suffix}', context, username=username)
+        started = True
 
         if op == 'copy':
             _run_copy(job_id, job, cancel_check)
@@ -244,8 +442,17 @@ def execute_job(job_id: str) -> None:
     except JobCancelled:
         operation_jobs.publish(job_id, {'type': 'cancelled'})
     except Exception as exc:
-        log_error(f'Worker job failed op={op}', 'worker', exc, LOG_CONFIG['show_traceback'])
+        log_error(
+            f'Job failed job={job_id}{suffix}',
+            context,
+            exc,
+            LOG_CONFIG['show_traceback'],
+            username=username,
+        )
         operation_jobs.publish(job_id, {'type': 'error', 'error': _('error.unexpected')})
+    finally:
+        if started:
+            log_info(f'Finished job={job_id}{suffix}', context, username=username)
 
 
 def _run_copy(job_id: str, job: Dict[str, Any], cancel_check) -> None:
@@ -253,11 +460,14 @@ def _run_copy(job_id: str, job: Dict[str, Any], cancel_check) -> None:
     from file_ops import _iter_copy_events
 
     context = 'copy_objects'
+    username = job.get('username') or 'SYSTEM'
+    log_progress = _make_progress_logger(job_id, context, username)
     for event in _iter_copy_events(job, context, cancel_check=cancel_check):
         operation_jobs.publish(job_id, event)
+        log_progress(event)
         if event.get('type') == 'done':
             log_user_action(
-                job.get('username', 'unknown'), context,
+                username, context,
                 f"Copy from {job.get('src_display')} to {job.get('dst_display')}, "
                 f"dst_path=/{job.get('dst_path')}, objects={event.get('copied', 0)}",
             )
@@ -271,11 +481,14 @@ def _run_move(job_id: str, job: Dict[str, Any], cancel_check) -> None:
     from file_ops import _iter_move_events
 
     context = 'move_objects'
+    username = job.get('username') or 'SYSTEM'
+    log_progress = _make_progress_logger(job_id, context, username)
     for event in _iter_move_events(job, context, cancel_check=cancel_check):
         operation_jobs.publish(job_id, event)
+        log_progress(event)
         if event.get('type') == 'done':
             log_user_action(
-                job.get('username', 'unknown'), context,
+                username, context,
                 f"Move from {job.get('src_display')} to {job.get('dst_display')}, "
                 f"dst_path=/{job.get('dst_path')}, objects={event.get('moved', 0)}",
             )
@@ -289,11 +502,14 @@ def _run_delete(job_id: str, job: Dict[str, Any], cancel_check) -> None:
     from file_ops import _iter_delete_batch_events
 
     context = 'delete_objects'
+    username = job.get('username') or 'SYSTEM'
+    log_progress = _make_progress_logger(job_id, context, username)
     for event in _iter_delete_batch_events(job, context, cancel_check=cancel_check):
         operation_jobs.publish(job_id, event)
+        log_progress(event)
         if event.get('type') == 'done':
             log_user_action(
-                job.get('username', 'unknown'), context,
+                username, context,
                 f"Batch delete in {job.get('display_name')}, "
                 f"items={len(job.get('items') or [])}, deleted={event.get('deleted', 0)}",
             )
@@ -307,11 +523,14 @@ def _run_acl(job_id: str, job: Dict[str, Any], cancel_check) -> None:
     from acl_ops import _iter_acl_batch_events
 
     context = 'file_metadata_acl_batch'
+    username = job.get('username') or 'SYSTEM'
+    log_progress = _make_progress_logger(job_id, context, username)
     for event in _iter_acl_batch_events(job, context, cancel_check=cancel_check):
         operation_jobs.publish(job_id, event)
+        log_progress(event)
         if event.get('type') == 'done':
             log_user_action(
-                job.get('username', 'unknown'), context,
+                username, context,
                 f"Batch ACL in {job.get('display_name')}, "
                 f"files={len(job.get('paths') or [])}, applied={event.get('applied', 0)}",
             )
@@ -327,24 +546,24 @@ def _run_bucket_size(job_id: str, job: Dict[str, Any], cancel_check) -> None:
 
     bucket_id = job.get('bucket_id') or ''
     display = job.get('display_name') or bucket_id
-    log_info(f'bucket_size start job_id={job_id} bucket={display!r} id={bucket_id}', 'worker')
+    username = job.get('username') or 'SYSTEM'
+    context = 'bucket_size'
+    suffix = f' bucket={display!r} id={bucket_id}'
+    log_progress = _make_progress_logger(job_id, context, username, suffix)
 
     if cancel_check():
         operation_jobs.publish(job_id, {'type': 'cancelled'})
         return
 
     def on_progress(objects_count, size_bytes, pages):
-        log_info(
-            f'bucket_size processing job_id={job_id} bucket={display!r} '
-            f'objects={objects_count} size={size_bytes} pages={pages}',
-            'worker',
-        )
-        operation_jobs.publish(job_id, {
+        event = {
             'type': 'progress',
             'current': objects_count,
             'size': size_bytes,
             'pages': pages,
-        })
+        }
+        log_progress(event)
+        operation_jobs.publish(job_id, event)
 
     payload = compute_bucket_size_via_s3(
         bucket_id,
@@ -352,9 +571,9 @@ def _run_bucket_size(job_id: str, job: Dict[str, Any], cancel_check) -> None:
         display,
         cancel_check=cancel_check,
         progress_callback=on_progress,
+        username=username,
     )
     if payload is None:
-        log_info(f'bucket_size cancelled job_id={job_id} bucket={display!r}', 'worker')
         operation_jobs.publish(job_id, {'type': 'cancelled'})
         return
 
@@ -365,29 +584,239 @@ def _run_bucket_size(job_id: str, job: Dict[str, Any], cancel_check) -> None:
         'size': payload.get('size'),
         'objects_count': payload.get('objects_count'),
     })
-    log_info(
-        f'bucket_size done job_id={job_id} bucket={display!r} '
-        f'size={payload.get("size")} objects={payload.get("objects_count")} '
-        f'truncated={payload.get("truncated")}',
-        'worker',
-    )
+
+
+def _reindex_status_from_job(job: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Форма статуса для /api/search/reindex/status и SSE (совместима с UI)."""
+    if not job:
+        return {
+            'active': False,
+            'cancel_requested': False,
+            'total': 0,
+            'completed': 0,
+            'workers': 0,
+            'bucket_ids': [],
+            'stats': {},
+            'error': None,
+        }
+    meta = job.get('meta') or {}
+    status = job.get('status') or ''
+    return {
+        'active': status in ('pending', 'running'),
+        'cancel_requested': bool(job.get('cancel_requested')),
+        'total': int(meta.get('total') or 0),
+        'completed': int(meta.get('completed') or 0),
+        'workers': int(meta.get('workers') or 0),
+        'bucket_ids': list(meta.get('bucket_ids') or []),
+        'stats': dict(meta.get('stats') or {}),
+        'error': job.get('error') or meta.get('error'),
+        'job_id': job.get('id'),
+    }
+
+
+def batch_reindex_status() -> Dict[str, Any]:
+    import operation_jobs
+    return _reindex_status_from_job(operation_jobs.find_active_job_by_op('reindex'))
+
+
+def request_batch_reindex_cancel() -> bool:
+    import operation_jobs
+    job = operation_jobs.find_active_job_by_op('reindex')
+    if not job:
+        return False
+    return operation_jobs.request_cancel(job['id'])
+
+
+def iter_batch_reindex_events():
+    """SSE-события reindex в формате UI (snapshot → progress → done).
+
+    Poll meta в PG — web и worker в разных процессах, in-memory queue недоступна.
+    """
+    import operation_jobs
+
+    job = operation_jobs.find_active_job_by_op('reindex')
+    if not job:
+        yield {'type': 'snapshot', 'job': _reindex_status_from_job(None)}
+        return
+
+    job_id = job['id']
+    status = _reindex_status_from_job(job)
+    yield {'type': 'snapshot', 'job': status}
+    last_completed = int(status.get('completed') or 0)
+    last_stats_keys = set((status.get('stats') or {}).keys())
+    last_ping_at = time.monotonic()
+    poll_sec = 1.0
+    heartbeat_sec = 25.0
+
+    while True:
+        time.sleep(poll_sec)
+        refreshed = operation_jobs.get_job_with_cancel(job_id)
+        if not refreshed:
+            yield {'type': 'done', 'job': _reindex_status_from_job(None)}
+            return
+        st = _reindex_status_from_job(refreshed)
+        completed = int(st.get('completed') or 0)
+        stats_keys = set((st.get('stats') or {}).keys())
+        if completed != last_completed or stats_keys != last_stats_keys:
+            meta = refreshed.get('meta') or {}
+            yield {
+                'type': 'progress',
+                'bucket_id': meta.get('last_bucket_id'),
+                'count': meta.get('last_count'),
+                'job': st,
+            }
+            last_completed = completed
+            last_stats_keys = stats_keys
+        if refreshed.get('status') in ('done', 'error', 'cancelled') or not st.get('active'):
+            yield {'type': 'done', 'job': st}
+            return
+        if (time.monotonic() - last_ping_at) >= heartbeat_sec:
+            yield {'type': 'ping'}
+            last_ping_at = time.monotonic()
+
+
+def _run_reindex(job_id: str, payload: Dict[str, Any], cancel_check) -> None:
+    import meilisearch
+    import operation_jobs
+    from buckets import get_buckets_config
+    from db import set_bucket_search_reindexed_at
+    from s3_client import get_s3_client_for_reindex
+    from datetime import datetime, timezone
+
+    bucket_ids = list(payload.get('bucket_ids') or [])
+    index_mode = payload.get('index_mode') or 'full'
+    log_context = payload.get('log_context') or 'reindex_search'
+    username = payload.get('username') or 'system'
+
+    if not bucket_ids:
+        operation_jobs.publish(job_id, {'type': 'error', 'error': _('error.reindex_buckets_empty')})
+        return
+    if cancel_check():
+        operation_jobs.publish(job_id, {
+            'type': 'done',
+            'job': _reindex_status_from_job(operation_jobs.get_job_with_cancel(job_id)),
+        })
+        return
+
+    context = log_context or 'reindex_search'
+    meilisearch.set_reindex_log_context(log_context)
+
+    def _on_bucket_complete(bucket_id: str, count: int) -> None:
+        snap = operation_jobs.get_job_with_cancel(job_id) or {}
+        meta = dict(snap.get('meta') or {})
+        stats = dict(meta.get('stats') or {})
+        stats[bucket_id] = count
+        completed = int(meta.get('completed') or 0) + 1
+        meta.update({
+            'stats': stats,
+            'completed': completed,
+            'last_bucket_id': bucket_id,
+            'last_count': count,
+        })
+        operation_jobs.update_job_meta(job_id, meta)
+        if count is not None and count >= 0:
+            try:
+                set_bucket_search_reindexed_at(bucket_id, datetime.now(timezone.utc))
+            except Exception as exc:
+                log_error(
+                    f'Failed to update search_reindexed_at for {bucket_id}',
+                    context,
+                    exc,
+                    LOG_CONFIG['show_traceback'],
+                    username=username,
+                )
+        log_info(
+            f'Processing job={job_id} bucket_id={bucket_id} count={count} '
+            f'completed={completed}/{meta.get("total") or "?"}',
+            context,
+            username=username,
+        )
+        st = _reindex_status_from_job(operation_jobs.get_job_with_cancel(job_id))
+        operation_jobs.publish(job_id, {
+            'type': 'progress',
+            'bucket_id': bucket_id,
+            'count': count,
+            'job': st,
+        })
+
+    try:
+        meilisearch.reindex_buckets_parallel(
+            bucket_ids,
+            get_buckets_config,
+            get_s3_client_for_reindex,
+            app=None,
+            cancel_check=cancel_check,
+            on_bucket_complete=_on_bucket_complete,
+            index_mode=index_mode,
+        )
+    except Exception as exc:
+        log_error(
+            f'Job failed job={job_id}',
+            context,
+            exc,
+            LOG_CONFIG['show_traceback'],
+            username=username,
+        )
+        try:
+            operation_jobs.update_job_meta(job_id, {'error': str(exc)})
+        except Exception:
+            pass
+        operation_jobs.publish(job_id, {
+            'type': 'error',
+            'error': _('error.unexpected'),
+            'job': _reindex_status_from_job(operation_jobs.get_job_with_cancel(job_id)),
+        })
+        return
+    finally:
+        meilisearch.reset_reindex_log_context()
+
+    st = _reindex_status_from_job(operation_jobs.get_job_with_cancel(job_id))
+    operation_jobs.publish(job_id, {'type': 'done', 'job': st})
+
+
+def start_meili_schedulers() -> None:
+    """Startup + nightly Meili sync: ставить в очередь worker (вызывать из worker.py / embedded app).
+
+    При нескольких репликах worker только лидер (pg advisory lock) поднимает таймеры.
+    """
+    global _meili_scheduler_leader_conn
+    try:
+        import meilisearch
+        from buckets import get_buckets_config
+        from db import get_connection
+        from s3_client import get_s3_client_for_reindex
+
+        if not meilisearch.is_configured():
+            return
+
+        if _meili_scheduler_leader_conn is None:
+            conn = get_connection()
+            if not _pg_try_advisory_lock(conn, _MEILI_SCHEDULER_LOCK_KEY):
+                conn.close()
+                log_info('Meilisearch schedulers skipped: another worker is leader', 'worker')
+                return
+            # Держим соединение — session-level lock живёт, пока процесс жив.
+            _meili_scheduler_leader_conn = conn
+
+        meilisearch.schedule_startup_reindex(
+            get_buckets_config, get_s3_client_for_reindex, app=None,
+        )
+        meilisearch.schedule_periodic_sync(
+            get_buckets_config, get_s3_client_for_reindex, app=None,
+        )
+    except Exception as exc:
+        log_error('Failed to start Meilisearch schedulers', 'worker', exc, LOG_CONFIG['show_traceback'])
 
 
 def worker_loop(poll_sec: float = 1.0) -> None:
     """Бесконечный цикл claim → execute (для `python worker.py`)."""
     log_info(f'Operation worker started mode={worker_mode()} ops={sorted(WORKER_OPS)}', 'worker')
+    start_meili_schedulers()
     while True:
         try:
             job_id = claim_next_job()
             if job_id:
-                import operation_jobs
-                snap = operation_jobs.get_job(job_id) or {}
-                log_info(
-                    f'Claimed job {job_id} op={snap.get("op")} user={snap.get("username")}',
-                    'worker',
-                )
                 execute_job(job_id)
-                log_info(f'Finished job {job_id} op={snap.get("op")}', 'worker')
                 continue
         except Exception as exc:
             log_error('Worker loop error', 'worker', exc, LOG_CONFIG['show_traceback'])

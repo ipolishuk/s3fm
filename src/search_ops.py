@@ -217,19 +217,12 @@ def reindex_search_impl():
             if not is_bucket_search_index_enabled(bucket_id):
                 return jsonify({'error': _('error.search_index_disabled')}), 400
 
-            def _on_one_bucket_complete(bid: str, count: int) -> None:
-                if count is not None and count >= 0:
-                    set_bucket_search_reindexed_at(bid, datetime.now(timezone.utc))
-
             log_info(f"Reindex request (background): bucket_id={bucket_id}", context)
             started = meilisearch.start_batch_reindex_background(
                 [bucket_id],
-                get_buckets_config,
-                get_s3_client_for_reindex,
-                app=current_app._get_current_object(),
                 log_context=context,
-                on_bucket_complete=_on_one_bucket_complete,
                 index_mode='full',
+                username=session.get('username') or 'admin',
             )
             if not started:
                 return jsonify({
@@ -259,18 +252,12 @@ def reindex_search_impl():
 
         run_background = data.get('background', True)
         if run_background is not False and str(run_background).lower() not in ('0', 'false', 'no', 'off'):
-            def _on_bucket_complete(bid: str, count: int) -> None:
-                if count is not None and count >= 0:
-                    set_bucket_search_reindexed_at(bid, datetime.now(timezone.utc))
-
             log_info(f"Reindex batch request (background): buckets={len(bucket_ids)}", context)
             started = meilisearch.start_batch_reindex_background(
                 bucket_ids,
-                get_buckets_config,
-                get_s3_client_for_reindex,
-                app=current_app._get_current_object(),
                 log_context=context,
-                on_bucket_complete=_on_bucket_complete,
+                index_mode='full',
+                username=session.get('username') or 'admin',
             )
             if not started:
                 return jsonify({

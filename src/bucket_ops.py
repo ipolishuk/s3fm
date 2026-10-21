@@ -84,6 +84,7 @@ def compute_bucket_size_via_s3(
     display_name,
     cancel_check=None,
     progress_callback=None,
+    username=None,
 ):
     """Медленный fallback: list_objects_v2. Для worker-процесса.
 
@@ -164,6 +165,7 @@ def compute_bucket_size_via_s3(
         f"Bucket {display_name}: {total_size} bytes, {total_objects} objects"
         + (" (calculation truncated)" if truncated else ""),
         context,
+        username=username,
     )
     return {
         'size': total_size,
@@ -276,10 +278,12 @@ def get_bucket_size_impl(bucket_id):
                 'truncated': False,
                 'source': 'prometheus',
             }
+            username = session.get('username') or 'SYSTEM'
             log_info(
                 f"Bucket {display_name}: {payload['size']} bytes, "
                 f"{payload['objects_count']} objects (prometheus)",
                 context,
+                username=username,
             )
             store_bucket_size_cache(bucket_id, payload)
             return jsonify(payload)

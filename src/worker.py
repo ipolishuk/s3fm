@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Отдельный процесс для copy/move/delete/acl/bucket_size.
+"""Отдельный процесс для copy/move/delete/acl/bucket_size/reindex.
 
   OPERATION_WORKER_MODE=external  — web только enqueue
   python worker.py                — этот процесс забирает pending из PostgreSQL
+                                     и ставит Meili startup/nightly sync в очередь
 
 Переменные:
   OPERATION_WORKER_POLL_SEC  — пауза между poll (по умолчанию 1.0)
+  MEILI_*                    — те же, что у web (HOST, PERIODIC_SYNC, SYNC_AT, …)
 """
 
 from __future__ import annotations

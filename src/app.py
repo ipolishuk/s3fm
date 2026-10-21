@@ -52,7 +52,6 @@ from rate_limit import (
     client_ip_from_request,
 )
 import meilisearch
-from s3_client import get_s3_client_for_reindex
 from translations import (
     get_locale_from_request,
     get_translations,
@@ -579,12 +578,19 @@ def _run_app_startup():
                             f"next run: {meili_env.get('MEILI_SYNC_NEXT', '—')}",
                             'app_info',
                         )
-                    meilisearch.schedule_startup_reindex(
-                        get_buckets_config, get_s3_client_for_reindex, app=app,
-                    )
-                    meilisearch.schedule_periodic_sync(
-                        get_buckets_config, get_s3_client_for_reindex, app=app,
-                    )
+                    # Индексация (startup + nightly) выполняется на worker:
+                    # external — schedule в worker.py; embedded — здесь.
+                    try:
+                        from worker_jobs import start_meili_schedulers, use_external_worker
+                        if use_external_worker():
+                            log_info(
+                                'Meilisearch: reindex/sync scheduled on external worker',
+                                'app_info',
+                            )
+                        else:
+                            start_meili_schedulers()
+                    except Exception as exc:
+                        log_warning(f'Meilisearch schedulers not started: {exc}', 'app_info')
                 else:
                     log_warning(
                         f"Meilisearch: unavailable at {meili['host']}, search via S3",

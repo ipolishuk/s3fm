@@ -657,6 +657,85 @@ def iter_job_events(job_id: str) -> Iterator[Dict[str, Any]]:
                 pass
 
 
+def find_active_job_by_op(op: str) -> Optional[Dict[str, Any]]:
+    """Первый pending/running job с данным op (глобально, для singleton-операций вроде reindex)."""
+    op = (op or '').strip()
+    if not op:
+        return None
+
+    with _jobs_lock:
+        candidates = [
+            j for j in _jobs.values()
+            if j.get('op') == op and j.get('status') in ('pending', 'running')
+        ]
+    if candidates:
+        candidates.sort(key=lambda j: j.get('created_at') or 0)
+        job = candidates[0]
+        loaded = _sync_job_from_db(job['id'])
+        return loaded or {
+            'id': job['id'],
+            'username': job.get('username') or '',
+            'op': job.get('op') or '',
+            'meta': dict(job.get('meta') or {}),
+            'status': job.get('status') or 'pending',
+            'created_at': job.get('created_at'),
+            'started_at': job.get('started_at'),
+            'finished_at': job.get('finished_at'),
+            'history': list(job.get('history') or []),
+            'error': job.get('error'),
+            'cancel_requested': bool(job.get('cancel_requested')),
+        }
+
+    try:
+        from db import get_connection
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM operation_jobs
+                    WHERE op = %s AND status IN ('pending', 'running')
+                    ORDER BY created_at ASC
+                    LIMIT 1
+                    """,
+                    (op,),
+                )
+                row = cur.fetchone()
+            if not row:
+                return None
+            job_id = str(row['id'] if isinstance(row, dict) else row[0])
+        finally:
+            conn.close()
+    except Exception:
+        return None
+    return _sync_job_from_db(job_id)
+
+
+def get_job_with_cancel(job_id: str) -> Optional[Dict[str, Any]]:
+    """Как get_job, но с cancel_requested (нужно для статуса reindex)."""
+    loaded = _sync_job_from_db(job_id)
+    if loaded:
+        return loaded
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job:
+            return None
+        return {
+            'id': job['id'],
+            'username': job.get('username') or '',
+            'op': job.get('op') or '',
+            'meta': dict(job.get('meta') or {}),
+            'status': job.get('status') or 'pending',
+            'created_at': job.get('created_at'),
+            'started_at': job.get('started_at'),
+            'finished_at': job.get('finished_at'),
+            'history': list(job.get('history') or []),
+            'error': job.get('error'),
+            'cancel_requested': bool(job.get('cancel_requested')),
+        }
+
+
 def list_jobs_for_user(username: str, *, active_only: bool = True) -> List[Dict[str, Any]]:
     # Не полный purge на каждый poll — DELETE ждёт UPSERT progress и «вешает» /active.
     _purge_stale_jobs_maybe()

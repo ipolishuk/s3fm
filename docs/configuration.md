@@ -37,7 +37,8 @@
 - `OPERATION_DELETE_BATCH_SIZE` — размер батча `delete_objects` с проверкой cancel между батчами (по умолчанию `100`, макс. `1000`).
 - `OPERATION_PROGRESS_PERSIST_SEC` — как часто писать progress-события job в PostgreSQL (по умолчанию `2`; `0` — каждый progress). Снижает блокировки `/files/operation-jobs/active`.
 - `OPERATION_PURGE_MIN_INTERVAL_SEC` — минимальный интервал purge старых job (по умолчанию `60`).
-- `OPERATION_STALE_RUNNING_SEC` — pending/running дольше N секунд помечаются error (по умолчанию `21600` = 6 ч).
+- `OPERATION_STALE_PENDING_SEC` — `pending` дольше N секунд (worker не забрал) → `error` / уходит из `/active` (по умолчанию `600` = 10 мин).
+- `OPERATION_STALE_RUNNING_SEC` — `running` без обновлений дольше N секунд → `error` (по умолчанию `21600` = 6 ч).
 
 ### Загрузка и логирование
 - `MAX_UPLOAD_MB` — лимит загрузки (по умолчанию `100`).

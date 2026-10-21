@@ -32,6 +32,8 @@ _PROGRESS_PERSIST_MIN_INTERVAL_SEC = float(
     os.environ.get('OPERATION_PROGRESS_PERSIST_SEC', '2.0')
 )
 _PURGE_MIN_INTERVAL_SEC = float(os.environ.get('OPERATION_PURGE_MIN_INTERVAL_SEC', '60'))
+# pending без worker: короткий таймаут (тост иначе висит в /active часами)
+_STALE_PENDING_SEC = int(os.environ.get('OPERATION_STALE_PENDING_SEC', '600'))
 _STALE_RUNNING_SEC = int(os.environ.get('OPERATION_STALE_RUNNING_SEC', str(6 * 3600)))
 _last_purge_at = 0.0
 
@@ -150,6 +152,17 @@ def _load_job_from_db(job_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _job_is_stale(job: Dict[str, Any], now: float) -> bool:
+    status = job.get('status')
+    if status == 'pending' and _STALE_PENDING_SEC > 0:
+        age = now - float(job.get('created_at') or now)
+        return age > _STALE_PENDING_SEC
+    if status == 'running' and _STALE_RUNNING_SEC > 0:
+        age = now - float(job.get('started_at') or job.get('created_at') or now)
+        return age > _STALE_RUNNING_SEC
+    return False
+
+
 def _purge_stale_jobs() -> None:
     now = _now()
     with _jobs_lock:
@@ -160,12 +173,7 @@ def _purge_stale_jobs() -> None:
                 del _jobs[job_id]
                 with _listeners_lock:
                     _listeners.pop(job_id, None)
-            elif (
-                job.get('status') in ('pending', 'running')
-                and _STALE_RUNNING_SEC > 0
-                and (now - float(job.get('started_at') or job.get('created_at') or now))
-                > _STALE_RUNNING_SEC
-            ):
+            elif _job_is_stale(job, now):
                 job['status'] = 'error'
                 job['error'] = 'stale_timeout'
                 job['finished_at'] = now
@@ -177,6 +185,29 @@ def _purge_stale_jobs() -> None:
                 # Не ждать вечно за UPSERT progress с другого процесса
                 cur.execute("SET LOCAL lock_timeout = '2s'")
                 cur.execute("SET LOCAL statement_timeout = '10s'")
+                # cancel запрошен, но worker не взял — не держим в /active
+                cur.execute(
+                    """
+                    UPDATE operation_jobs
+                    SET status = 'cancelled',
+                        finished_at = COALESCE(finished_at, NOW()),
+                        updated_at = NOW()
+                    WHERE status = 'pending' AND cancel_requested = true
+                    """
+                )
+                if _STALE_PENDING_SEC > 0:
+                    cur.execute(
+                        """
+                        UPDATE operation_jobs
+                        SET status = 'error',
+                            error = COALESCE(NULLIF(error, ''), 'stale_timeout'),
+                            finished_at = COALESCE(finished_at, NOW()),
+                            updated_at = NOW()
+                        WHERE status = 'pending'
+                          AND created_at < NOW() - (%s * INTERVAL '1 second')
+                        """,
+                        (int(_STALE_PENDING_SEC),),
+                    )
                 if _STALE_RUNNING_SEC > 0:
                     cur.execute(
                         """
@@ -185,7 +216,7 @@ def _purge_stale_jobs() -> None:
                             error = COALESCE(NULLIF(error, ''), 'stale_timeout'),
                             finished_at = COALESCE(finished_at, NOW()),
                             updated_at = NOW()
-                        WHERE status IN ('pending', 'running')
+                        WHERE status = 'running'
                           AND COALESCE(updated_at, started_at, created_at)
                               < NOW() - (%s * INTERVAL '1 second')
                         """,
@@ -352,7 +383,10 @@ def request_cancel(job_id: str) -> bool:
         if not job or job.get('status') not in ('pending', 'running'):
             return False
         job['cancel_requested'] = True
-        if job.get('op') == 'upload':
+        # pending: worker ещё не взял job — сразу terminal, иначе висит в /active
+        if job.get('status') == 'pending':
+            publish_cancelled_now = True
+        elif job.get('op') == 'upload':
             state = job.get('upload_state')
             if state:
                 state['sealed'] = True

@@ -341,12 +341,24 @@ def claim_next_job() -> Optional[str]:
     try:
         conn.autocommit = False
         with conn.cursor() as cur:
+            # Interactive ops раньше bucket_size/reindex — иначе delete висит в pending.
             cur.execute(
                 """
                 SELECT id
                 FROM operation_jobs
-                WHERE status = 'pending' AND op = ANY(%s)
-                ORDER BY created_at ASC
+                WHERE status = 'pending'
+                  AND op = ANY(%s)
+                  AND COALESCE(cancel_requested, false) = false
+                ORDER BY
+                  CASE op
+                    WHEN 'delete' THEN 0
+                    WHEN 'copy' THEN 1
+                    WHEN 'move' THEN 1
+                    WHEN 'acl' THEN 2
+                    WHEN 'bucket_size' THEN 3
+                    ELSE 4
+                  END,
+                  created_at ASC
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
                 """,

@@ -164,21 +164,37 @@
             });
     }
 
+    // pending дольше этого — worker не забрал job (тост иначе висит вечно)
+    var PENDING_STUCK_MS = 10 * 60 * 1000;
+
     function reconcileStaleHandles() {
         fetch('/files/operation-jobs/active', { credentials: 'include' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 var active = Object.create(null);
                 (data.items || []).forEach(function (item) {
-                    if (item.job_id) active[item.job_id] = true;
+                    if (item.job_id) active[item.job_id] = item;
                 });
                 Object.keys(_handles).forEach(function (jobId) {
                     var handle = _handles[jobId];
                     if (!handle || handle.finished) return;
                     if (String(jobId).indexOf('_pending_') === 0) return;
-                    if (!active[jobId]) {
+                    var item = active[jobId];
+                    if (!item) {
                         // Сервер уже не считает job активным, а тост ещё открыт
                         finishHandle(handle, false, null, null);
+                        return;
+                    }
+                    // Зависший pending: worker не claim'ит (нет процесса / очередь)
+                    if (item.status === 'pending' && item.created_at) {
+                        var createdMs = Number(item.created_at) * 1000;
+                        if (createdMs > 0 && (Date.now() - createdMs) >= PENDING_STUCK_MS) {
+                            finishHandle(
+                                handle,
+                                true,
+                                tr('progress.worker_unavailable', 'Background worker is not processing jobs'),
+                            );
+                        }
                     }
                 });
             })

@@ -5,10 +5,15 @@ function isCurrentUserAdmin() {
 function isCurrentUserStorageAdmin() {
     return !!(currentUser && String(currentUser.role || '').toLowerCase() === 'storage_admin');
 }
-function canOpenSettings() {
-    if (isCurrentUserAdmin() || isCurrentUserStorageAdmin()) return true;
-    return typeof window.userHasPermission === 'function' && window.userHasPermission('add_bucket');
+function canAddBucket() {
+    // Любой зарегистрированный пользователь
+    return !!(currentUser || window.fileManagerCurrentUser);
 }
+function canOpenSettings() {
+    if (isCurrentUserAdmin()) return true;
+    return canAddBucket();
+}
+window.canAddBucket = canAddBucket;
 function isSettingsBucketsOnly() {
     return canOpenSettings() && !isCurrentUserAdmin();
 }

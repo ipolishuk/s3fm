@@ -22,12 +22,6 @@
             .replace(/'/g, '&#39;');
     }
 
-    function noAccessFooterHtml(I18N) {
-        var linkText = (I18N && I18N['buckets.no_access_help']) || 'Support';
-        return '<div class="no-buckets-message-support">' +
-            '<a href="/help/support">' + escapeHtml(linkText) + '</a></div>';
-    }
-
     function setSearchFieldLocked(input, locked) {
         if (!input) return;
         if (!input.classList.contains('search-input')) {
@@ -292,11 +286,9 @@
     }
 
     function canManageBucketAccessUi() {
-        // Align with server open-settings / add_bucket; API still enforces creator for non-admin.
-        if (typeof window.isCurrentUserAdmin === 'function' && window.isCurrentUserAdmin()) return true;
-        if (typeof window.isCurrentUserStorageAdmin === 'function' && window.isCurrentUserStorageAdmin()) return true;
-        if (typeof window.userHasPermission === 'function' && window.userHasPermission('add_bucket')) return true;
-        return false;
+        // Align with server: любой залогиненный может открывать Settings → Buckets;
+        // API по-прежнему ограничивает чужие бакеты (creator + ACL).
+        return canCurrentUserAddBucket() || isCurrentUserAdmin();
     }
 
     function skipTlsValueFromRaw(raw) {
@@ -550,9 +542,9 @@
     }
 
     function canShowBucketTestBtn() {
-        var user = window.fileManagerCurrentUser;
-        if (user && String(user.role || '').toLowerCase() === 'admin') return true;
-        return typeof window.userHasPermission === 'function' && window.userHasPermission('add_bucket');
+        // Та же политика, что и Add bucket: любой залогиненный пользователь
+        if (typeof window.canAddBucket === 'function') return window.canAddBucket();
+        return !!(window.fileManagerCurrentUser);
     }
 
     function updateAddBucketTestBtnVisibility() {
@@ -1420,20 +1412,45 @@
     window.availableBuckets = window.availableBuckets || [];
     window.bucketsSidebarLoaded = window.bucketsSidebarLoaded || false;
 
+    function canCurrentUserAddBucket() {
+        if (typeof window.canAddBucket === 'function') return window.canAddBucket();
+        return !!(window.fileManagerCurrentUser);
+    }
+
     function updateBucketsAddBtnVisibility() {
-        if (typeof window.setupUserPermissions === 'function') {
-            window.setupUserPermissions();
-            return;
-        }
         var option = document.getElementById('addBucketOption');
         if (!option) return;
-        var canAdd = typeof window.userHasPermission === 'function' && window.userHasPermission('add_bucket');
-        if (canAdd) {
+        if (canCurrentUserAddBucket()) {
             option.classList.remove('hidden');
+            option.disabled = false;
+            option.title = (window.I18N && window.I18N['buckets.add']) || 'Add bucket';
         } else {
             option.classList.add('hidden');
+            option.disabled = true;
         }
     }
+
+    function getBucketsListBody() {
+        return document.getElementById('bucketsListBody') || document.getElementById('bucketsList');
+    }
+
+    function setBucketsListBodyHtml(html) {
+        var body = getBucketsListBody();
+        if (body) body.innerHTML = html || '';
+    }
+
+    function bindAddBucketSidebarBtn() {
+        var option = document.getElementById('addBucketOption');
+        if (!option || option.dataset.bound === '1') return;
+        option.dataset.bound = '1';
+        option.addEventListener('click', function () {
+            if (option.disabled || option.classList.contains('hidden')) return;
+            if (typeof window.openAddBucketModal === 'function') {
+                window.openAddBucketModal();
+            }
+        });
+    }
+    bindAddBucketSidebarBtn();
 
     function getDefaultGroupName(groupId) {
         var id = String(groupId || '');
@@ -1465,15 +1482,13 @@
                 if (typeof window.showError === 'function') {
                     window.showError((I18N['msg.load_buckets_failed'] || 'Failed to load buckets') + ': ' + (response.statusText || 'Unknown error'));
                 }
-                var bucketsList = document.getElementById('bucketsList');
-                if (bucketsList) {
-                    bucketsList.innerHTML =
-                        '<div class="no-buckets-message">' +
-                        '<i class="fa-solid fa-triangle-exclamation empty-state-icon empty-state-icon-warning"></i>' +
-                        '<div>' + (I18N['msg.load_buckets_failed'] || '') + '</div>' +
-                        '<div style="font-size: 12px; margin-top: 5px;">' + response.status + ': ' + response.statusText + '</div>' +
-                        '</div>';
-                }
+                setBucketsListBodyHtml(
+                    '<div class="no-buckets-message">' +
+                    '<i class="fa-solid fa-triangle-exclamation empty-state-icon empty-state-icon-warning"></i>' +
+                    '<div>' + (I18N['msg.load_buckets_failed'] || '') + '</div>' +
+                    '<div style="font-size: 12px; margin-top: 5px;">' + response.status + ': ' + response.statusText + '</div>' +
+                    '</div>'
+                );
             }
         } catch (error) {
             console.error('Network error loading buckets:', error);
@@ -1481,21 +1496,19 @@
             if (typeof window.showError === 'function') {
                 window.showError((I18N2['msg.load_buckets_failed'] || 'Failed to load buckets') + ': ' + (error && error.message ? error.message : ''));
             }
-            var bucketsList2 = document.getElementById('bucketsList');
-            if (bucketsList2) {
-                bucketsList2.innerHTML =
-                    '<div class="no-buckets-message">' +
-                    '<i class="fa-solid fa-triangle-exclamation empty-state-icon empty-state-icon-warning"></i>' +
-                    '<div>' + (I18N2['login.error_network'] || I18N2['msg.network_error'] || '') + '</div>' +
-                    '<div style="font-size: 12px; margin-top: 5px;">' + (error && error.message ? error.message : '') + '</div>' +
-                    '</div>';
-            }
+            setBucketsListBodyHtml(
+                '<div class="no-buckets-message">' +
+                '<i class="fa-solid fa-triangle-exclamation empty-state-icon empty-state-icon-warning"></i>' +
+                '<div>' + (I18N2['login.error_network'] || I18N2['msg.network_error'] || '') + '</div>' +
+                '<div style="font-size: 12px; margin-top: 5px;">' + (error && error.message ? error.message : '') + '</div>' +
+                '</div>'
+            );
         }
     }
 
     function displayBuckets() {
-        var bucketsList = document.getElementById('bucketsList');
-        if (!bucketsList) return;
+        var bucketsListBody = getBucketsListBody();
+        if (!bucketsListBody) return;
         updateBucketsAddBtnVisibility();
         var searchInput = document.getElementById('bucketSearchInput');
         var searchQuery = (searchInput && searchInput.value || '').trim().toLowerCase();
@@ -1521,12 +1534,12 @@
             return cu.allowedClouds.indexOf('*') !== -1 || cu.allowedClouds.indexOf(cloudId) !== -1;
         }
         if (!list || list.length === 0) {
-            bucketsList.innerHTML =
+            setBucketsListBodyHtml(
                 '<div class="no-buckets-message">' +
                 '<i class="fa-solid fa-triangle-exclamation empty-state-icon empty-state-icon-warning"></i>' +
                 '<div class="empty-state-title">' + (I18N['buckets.no_buckets'] || '') + '</div>' +
-                noAccessFooterHtml(I18N) +
-                '</div>';
+                '</div>'
+            );
             return;
         }
         var groups = {};
@@ -1545,7 +1558,6 @@
             groups[groupId].buckets.push(bucket);
         });
         console.log('Grouped buckets:', groups);
-        bucketsList.innerHTML = '';
         function renderBucketGroup(groupId, groupData, expandedGroupId) {
             if (!groupData.buckets || groupData.buckets.length === 0) return '';
             var sortedBuckets = groupData.buckets.slice().sort(function (a, b) {
@@ -1639,14 +1651,14 @@
             html = searchQuery
                 ? '<div class="no-buckets-message"><i class="fa-solid fa-magnifying-glass empty-state-icon"></i><div>' + (I18N['search.nothing_found'] || '') + '</div>' +
                   '<div style="font-size: 12px; margin-top: 5px;">' + (I18N['search.try_different_query'] || '') + '</div></div>'
-                : '<div class="no-buckets-message"><i class="fa-solid fa-info empty-state-icon"></i><div class="empty-state-title">' + (I18N['buckets.no_buckets'] || '') + '</div>' +
-                  noAccessFooterHtml(I18N) + '</div>';
+                : '<div class="no-buckets-message"><i class="fa-solid fa-info empty-state-icon"></i><div class="empty-state-title">' + (I18N['buckets.no_buckets'] || '') + '</div></div>';
         }
-        bucketsList.innerHTML = html;
+        setBucketsListBodyHtml(html);
         initBucketGroupItemsScrollChaining();
         var activeId = typeof window.fileManagerCurrentBucketId !== 'undefined' ? window.fileManagerCurrentBucketId : '';
         if (activeId) {
-            var selectedItem = document.querySelector('.bucket-list-item[data-bucket-id="' + activeId.replace(/"/g, '\\"') + '"]');
+            var selectedItem = document.querySelector('#bucketsListBody .bucket-list-item[data-bucket-id="' + activeId.replace(/"/g, '\\"') + '"]')
+                || document.querySelector('.bucket-list-item[data-bucket-id="' + activeId.replace(/"/g, '\\"') + '"]');
             if (selectedItem) {
                 selectedItem.classList.add('active');
             }
@@ -2010,6 +2022,21 @@
         return status === 502 || status === 503 || status === 504;
     }
 
+    function isTransientBucketSizeFailure(result) {
+        if (!result || !result.response) return false;
+        if (isGatewayStatus(result.response.status)) return true;
+        var statusText = String((result.response && result.response.statusText) || '').toLowerCase();
+        var err = String((result.data && result.data.error) || '').toLowerCase();
+        var raw = String(result.rawText || '').toLowerCase();
+        var blob = statusText + ' ' + err + ' ' + raw;
+        return (
+            blob.indexOf('service unavailable') !== -1
+            || blob.indexOf('bad gateway') !== -1
+            || blob.indexOf('gateway timeout') !== -1
+            || blob.indexOf('upstream') !== -1
+        );
+    }
+
     async function fetchBucketSizePayload(targetBucket) {
         var response = await fetch('/api/bucket-size/' + encodeURIComponent(targetBucket), {
             credentials: 'include'
@@ -2073,9 +2100,16 @@
                     applyBucketSizeData(result.data, sizeText, objectsText, window.I18N || {});
                     return;
                 }
-                // Gateway mid-calc — молча продолжаем, без toast
+                // Gateway / mid-calc — молча продолжаем, без toast
                 if (tries < 60) {
                     _bucketSizeBgTimer = setTimeout(tick, 10000);
+                } else {
+                    // Долго нет ответа — «Нет данных», без Error toast
+                    showBucketSizeNoData(
+                        document.getElementById('sizeText'),
+                        document.getElementById('objectsText'),
+                        window.I18N || {}
+                    );
                 }
             }).catch(function () {
                 if (tries < 60 && loadSeq === _bucketSizeLoadSeq && getCurrentBucket() === targetBucket) {
@@ -2083,7 +2117,7 @@
                 }
             });
         }
-        _bucketSizeBgTimer = setTimeout(tick, 10000);
+        _bucketSizeBgTimer = setTimeout(tick, 3000);
     }
 
     async function loadBucketSize() {
@@ -2110,27 +2144,35 @@
             var result = await fetchBucketSizePayload(targetBucket);
             if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
 
-            // Proxy may 504 while the worker still finishes and fills the size cache.
-            if (!(result.response.ok && result.data) && isGatewayStatus(result.response.status)) {
-                await sleepMs(1500);
+            // Краткий 502/503/504 при reload (прокси/gunicorn) — несколько тихих retry.
+            var gatewayRetries = 0;
+            while (
+                !(result.response.ok && result.data) &&
+                isTransientBucketSizeFailure(result) &&
+                gatewayRetries < 4
+            ) {
+                gatewayRetries += 1;
+                await sleepMs(800 * gatewayRetries);
                 if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
                 result = await fetchBucketSizePayload(targetBucket);
                 if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
             }
 
             // Async S3 size job on worker — крупные бакеты считаются минутами.
-            // 502/504 посреди poll ≠ «бакет слишком большой»: job ещё может идти.
+            // 502/503/504 посреди poll ≠ фатальная ошибка: job ещё может идти.
             var sawPending = !!(result.data && result.data.pending && result.response.status === 202);
+            var sawTransient = isTransientBucketSizeFailure(result);
             var pendingTries = 0;
             var delayMs = 2000;
             var maxPendingTries = 180; // до ~10–15 мин с backoff
             while (pendingTries < maxPendingTries) {
                 var pendingNow = result.response.status === 202 && result.data && result.data.pending;
-                var gatewayNow = isGatewayStatus(result.response.status);
-                if (!pendingNow && !(sawPending && gatewayNow)) {
+                var transientNow = isTransientBucketSizeFailure(result);
+                if (!pendingNow && !(sawPending && transientNow) && !(sawTransient && transientNow)) {
                     break;
                 }
                 if (pendingNow) sawPending = true;
+                if (transientNow) sawTransient = true;
                 pendingTries += 1;
                 await sleepMs(delayMs);
                 if (delayMs < 5000) delayMs = Math.min(5000, delayMs + 500);
@@ -2140,9 +2182,9 @@
             }
 
             var stillPending = result.response.status === 202 && result.data && result.data.pending;
-            var gatewayAfterPending = sawPending && isGatewayStatus(result.response.status);
-            if (stillPending || gatewayAfterPending) {
-                // Без toast: worker считает дальше, UI остаётся на Loading…
+            var stillTransient = isTransientBucketSizeFailure(result);
+            if (stillPending || stillTransient || (sawPending && stillTransient)) {
+                // Без toast: worker/прокси ещё недоступны, UI остаётся на Loading…
                 scheduleBucketSizeBackgroundPoll(targetBucket, loadSeq);
                 return;
             }
@@ -2156,47 +2198,42 @@
             showBucketSizeNoData(sizeText, objectsText, tr);
             if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
 
+            // Транзиентные gateway-ошибки уже ушли в background poll выше.
+            // Здесь — только устойчивые ошибки API (403/404/валидация и т.п.).
             var errorText = tr['msg.unknown_error'] || '';
-            if (isGatewayStatus(result.response.status)) {
-                // 504 прокси ≠ лимит размера бакета
-                errorText = tr['msg.timeout_or_server'] || tr['msg.timeout_server'] || errorText;
-            } else if (result.data && result.data.error) {
+            if (result.data && result.data.error) {
                 errorText = result.data.error;
             } else if (!result.isJson) {
                 errorText = tr['msg.invalid_response'] || errorText;
             }
+            // Не показываем сырой statusText вроде "Service Unavailable"
+            if (isTransientBucketSizeFailure(result) || /service unavailable|bad gateway|gateway timeout/i.test(errorText)) {
+                scheduleBucketSizeBackgroundPoll(targetBucket, loadSeq);
+                if (sizeText) sizeText.textContent = loadingLabel;
+                if (objectsText) objectsText.textContent = loadingLabel;
+                return;
+            }
 
-            var duration = (
-                isGatewayStatus(result.response.status)
-                || errorText.indexOf('Таймаут') !== -1
-                || errorText.indexOf('Timeout') !== -1
-            ) ? 8000 : 10000;
             showBucketSizeErrorOnce(
                 (tr['msg.load_bucket_size_failed'] || '') + ': ' + errorText,
-                duration,
+                10000,
                 targetBucket
             );
         } catch (error) {
             if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
-            showBucketSizeNoData(sizeText, objectsText, tr);
-
-            var errorMsg = error.message || '';
-            var isNetwork = errorMsg.indexOf('network') !== -1 || errorMsg.indexOf('Network') !== -1 || errorMsg.indexOf('Failed to fetch') !== -1;
-            var errorText2 = isNetwork
-                ? (tr['msg.network_error'] || errorMsg)
-                : (tr['msg.timeout_or_server'] || tr['msg.invalid_response'] || errorMsg);
+            // Сеть/парсинг при reload — тихий background poll, без toast
+            var errorMsg = String((error && error.message) || '');
             if (
-                errorMsg.indexOf('Unexpected token') !== -1
-                || errorMsg.indexOf('is not valid JSON') !== -1
-                || errorMsg.indexOf('upstream') !== -1
-                || errorMsg.indexOf('504') !== -1
-                || errorMsg.indexOf('timeout') !== -1
-                || errorMsg.indexOf('Timeout') !== -1
+                /network|failed to fetch|upstream|503|502|504|timeout|service unavailable|unexpected token|is not valid json/i.test(errorMsg)
             ) {
-                errorText2 = tr['msg.timeout_or_server'] || errorText2;
+                if (sizeText) sizeText.textContent = loadingLabel;
+                if (objectsText) objectsText.textContent = loadingLabel;
+                scheduleBucketSizeBackgroundPoll(targetBucket, loadSeq);
+                return;
             }
+            showBucketSizeNoData(sizeText, objectsText, tr);
             showBucketSizeErrorOnce(
-                (tr['msg.load_bucket_size_failed'] || '') + ': ' + errorText2,
+                (tr['msg.load_bucket_size_failed'] || '') + ': ' + (errorMsg || (tr['msg.unknown_error'] || '')),
                 8000,
                 targetBucket
             );

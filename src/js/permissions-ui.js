@@ -40,10 +40,11 @@ function setupUserPermissions() {
     const canUploadFiles = perms.includes('upload_files');
     const canUploadFolder = perms.includes('upload_folder');
     const canCreateFolder = perms.includes('create_folder');
-    const canAddBucket = typeof window.userHasPermission === 'function'
-        && window.userHasPermission('add_bucket');
+    const canAddBucket = typeof window.canAddBucket === 'function'
+        ? window.canAddBucket()
+        : !!(window.fileManagerCurrentUser || currentUser);
     const canEdit = canUploadFiles || canUploadFolder || canCreateFolder;
-    const canUseUploadMenu = canEdit || canAddBucket;
+    const canUseUploadMenu = canEdit;
     const canSelect = canUseSelectionMode();
     if (selectModeBtn && !selectionMode) {
         selectModeBtn.disabled = !canSelect;
@@ -88,13 +89,10 @@ function setupUserPermissions() {
         if (uploadBtn) uploadBtn.title = I18N['msg.admin_only_upload'];
     } else {
         if (uploadBtn) {
-            // Active with add_bucket even when no bucket is selected (toolbar locked)
-            uploadBtn.disabled = !!selectionMode || (toolbarLocked && !canAddBucket);
+            uploadBtn.disabled = !!selectionMode || toolbarLocked;
             uploadBtn.title = selectionMode
                 ? (I18N['msg.upload_disabled_in_select_mode'] || 'Exit selection mode to upload')
-                : (canEdit && hasBucket
-                    ? I18N['toolbar.upload']
-                    : (I18N['buckets.add'] || 'Add bucket'));
+                : (I18N['toolbar.upload'] || 'Upload');
         }
         // Bucket-scoped actions need a selected bucket
         if (uploadFilesOption) {

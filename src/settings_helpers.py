@@ -31,7 +31,6 @@ from roles import (
     is_reserved_role_name,
     KNOWN_PERMISSION_IDS,
     normalize_role_name,
-    role_add_bucket,
 )
 from security import validate_endpoint_url
 
@@ -195,12 +194,8 @@ def _validate_bucket_roles_list(bucket_roles):
 
 
 def _can_add_bucket():
-    """Admin / storage_admin или право add_bucket у роли по умолчанию."""
-    if session.get('role') == ROLE_ADMIN:
-        return True
-    if session.get('role') == ROLE_STORAGE_ADMIN:
-        return True
-    return role_add_bucket()
+    """Любой зарегистрированный (залогиненный) пользователь может добавить бакет."""
+    return bool(session.get('logged_in'))
 
 
 def _is_settings_admin():
@@ -208,7 +203,7 @@ def _is_settings_admin():
 
 
 def _can_open_settings():
-    """Полный admin или пользователь с правом добавлять бакеты (Settings → Buckets)."""
+    """Полный admin или любой пользователь, который может добавлять бакеты (Settings → Buckets)."""
     return _is_settings_admin() or _can_add_bucket()
 
 
@@ -231,15 +226,28 @@ def _is_bucket_creator(row):
     return creator.lower() == user.lower()
 
 
+def _user_still_has_bucket_access(row):
+    """Есть ли у текущей сессии доступ к бакету (allowed_buckets / clouds / grants)."""
+    if not row:
+        return False
+    bid = (row.get('bucket_id') or '').strip()
+    if not bid:
+        return False
+    return bid in _accessible_bucket_ids()
+
+
 def _can_manage_bucket_row(row):
-    """Смотреть/менять настройки бакета: admin или создатель."""
+    """Смотреть/менять настройки бакета: admin или создатель с актуальным доступом."""
     if _is_settings_admin():
         return True
-    return _is_bucket_creator(row)
+    if not _is_bucket_creator(row):
+        return False
+    # created_by не даёт обход ACL: после отзыва прав бакет пропадает из Settings
+    return _user_still_has_bucket_access(row)
 
 
 def _can_manage_bucket_access(row):
-    """ACL пользователей бакета: global admin или создатель с правом add_bucket."""
+    """ACL пользователей бакета: global admin или создатель с правом add_bucket и доступом."""
     if _is_settings_admin():
         return True
     if not row or not _can_add_bucket():
@@ -274,17 +282,24 @@ def _accessible_bucket_ids():
 
 
 def _list_buckets_for_add_form():
-    """Список бакетов для Settings → Buckets: admin — все, иначе только созданные текущим пользователем."""
+    """Список бакетов для Settings → Buckets: admin — все;
+    иначе только созданные текущим пользователем и всё ещё доступные по ACL.
+    """
     if _is_settings_admin():
         return list_buckets_rows()
     username = _current_username().lower()
     if not username:
         return []
+    accessible = _accessible_bucket_ids()
     items = []
     for row in list_buckets_rows():
         creator = (row.get('created_by') or '').strip().lower()
-        if creator == username:
-            items.append(row)
+        if creator != username:
+            continue
+        bid = (row.get('bucket_id') or '').strip()
+        if not bid or bid not in accessible:
+            continue
+        items.append(row)
     return items
 
 
@@ -340,10 +355,11 @@ def _validate_bucket_update_s3_target(bucket_name, endpoint_url, *, exclude_clou
 
 
 def _grant_created_bucket_to_current_user(bucket_id, cloud_id):
-    """После создания бакета — выдать создателю доступ с его дефолтной ролью.
+    """После создания бакета — выдать создателю доступ с custom role storage_admin.
 
-    Добавляет bucket_id (и cloud_id при необходимости) в ACL пользователя и
-    пишет grant в user_roles с users.role. Admin с полным доступом ('*') пропускается.
+    Дефолтная роль пользователя (users.role, обычно storage_viewer) не меняется.
+    В user_roles пишется grant storage_admin только на этот бакет; bucket_id / cloud_id
+    добавляются в ACL. Admin с полным доступом ('*') пропускается.
     """
     username = (session.get('username') or '').strip()
     bid = (bucket_id or '').strip()
@@ -355,12 +371,18 @@ def _grant_created_bucket_to_current_user(bucket_id, cloud_id):
         log_warning(f'Cannot grant created bucket {bid}: user {username} not found', 'grant_created_bucket')
         return False
 
-    role = (user.get('role') or session.get('role') or '').strip()
-    ok = grant_user_bucket_access(username, bid, cloud_id=cid, role=role, skip_wildcard=True)
+    # Не повышаем users.role — только per-bucket grant.
+    ok = grant_user_bucket_access(
+        username, bid, cloud_id=cid, role=ROLE_STORAGE_ADMIN, skip_wildcard=True,
+    )
     if not ok:
         return False
     sync_logged_in_session_from_db()
-    log_info(f'Granted bucket {bid} to {username} with role {role or "(default)"}', 'grant_created_bucket')
+    log_info(
+        f'Granted bucket {bid} to {username} with custom role {ROLE_STORAGE_ADMIN} '
+        f'(default role unchanged)',
+        'grant_created_bucket',
+    )
     return True
 
 

@@ -21,11 +21,7 @@ function setMainToolbarLocked(locked) {
     toolbar.classList.toggle('toolbar-locked', !!locked);
     toolbar.setAttribute('aria-disabled', locked ? 'true' : 'false');
 
-    const canAddBucket = typeof window.userHasPermission === 'function'
-        && window.userHasPermission('add_bucket');
     const uploadBtn = document.getElementById('uploadBtn');
-    // Without a selected bucket, keep "+" open for Add bucket
-    const keepUploadForAddBucket = !!locked && canAddBucket && !selectionMode;
 
     const controls = toolbar.querySelectorAll('button, input, select, textarea');
     controls.forEach(el => {
@@ -33,13 +29,6 @@ function setMainToolbarLocked(locked) {
             if (typeof window.setSearchFieldLocked === 'function') {
                 window.setSearchFieldLocked(el, locked);
             }
-            return;
-        }
-        if (keepUploadForAddBucket && el === uploadBtn) {
-            if (!Object.prototype.hasOwnProperty.call(el.dataset, 'preLockDisabled')) {
-                el.dataset.preLockDisabled = el.disabled ? '1' : '0';
-            }
-            el.disabled = false;
             return;
         }
         if (locked) {
@@ -67,9 +56,6 @@ function setMainToolbarLocked(locked) {
         if (clearSearchBtn) clearSearchBtn.classList.add('hidden');
         if (typeof window.setupUserPermissions === 'function') {
             window.setupUserPermissions();
-        }
-        if (keepUploadForAddBucket && uploadBtn) {
-            uploadBtn.disabled = false;
         }
     }
 }

@@ -98,9 +98,15 @@
                 </div>
             </div>
             <div class="menu-list" id="bucketsList">
-                <div class="no-buckets-message">
-                    <i class="fa-solid fa-spinner fa-spin empty-state-icon"></i>
-                    <div>{{ _('buckets.loading') }}</div>
+                <button type="button" class="btn buckets-add-btn" id="addBucketOption" data-action="add-bucket" title="{{ _('buckets.add') }}" aria-label="{{ _('buckets.add') }}">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>{{ _('buckets.add') }}</span>
+                </button>
+                <div id="bucketsListBody">
+                    <div class="no-buckets-message">
+                        <i class="fa-solid fa-spinner fa-spin empty-state-icon"></i>
+                        <div>{{ _('buckets.loading') }}</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -114,7 +120,6 @@
                         <span>{{ _('settings.add') }}</span>
                     </button>
                     <div class="dropdown-menu context-menu hidden" id="uploadDropdownMenu">
-                        <button type="button" class="dropdown-item hidden" id="addBucketOption" data-action="add-bucket"><i class="fa-solid fa-database"></i><span>{{ _('buckets.add') }}</span></button>
                         <button type="button" class="dropdown-item" id="createFolderOption" data-action="create-folder"><i class="fa-solid fa-folder-plus"></i><span>{{ _('toolbar.create_folder') }}</span></button>
                         <button type="button" class="dropdown-item" id="uploadFilesOption" data-action="files"><i class="fa-solid fa-file-arrow-up"></i><span>{{ _('toolbar.upload') }}</span></button>
                         <button type="button" class="dropdown-item" id="uploadFolderOption" data-action="folder"><i class="fa-solid fa-folder"></i><span>{{ _('toolbar.upload_folder') }}</span></button>

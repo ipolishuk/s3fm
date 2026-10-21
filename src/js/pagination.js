@@ -125,8 +125,12 @@
         return document.getElementById('settingsContentInner');
     }
 
+    function getBucketsScrollHost() {
+        return document.getElementById('bucketsListBody') || document.getElementById('bucketsList');
+    }
+
     function capturePaginationScrollState() {
-        var bucketsList = document.getElementById('bucketsList');
+        var bucketsList = getBucketsScrollHost();
         var settingsList = document.getElementById('settingsList');
         var fileList = getFilesScrollHost();
         var settingsInner = getSettingsScrollHost();
@@ -146,7 +150,7 @@
         if (!state) return;
         var apply = function () {
             setWindowScroll(state.windowX, state.windowY);
-            var bucketsList = document.getElementById('bucketsList');
+            var bucketsList = getBucketsScrollHost();
             var settingsList = document.getElementById('settingsList');
             var fileList = getFilesScrollHost();
             var settingsInner = getSettingsScrollHost();

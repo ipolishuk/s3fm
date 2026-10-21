@@ -1,7 +1,7 @@
 # Working with files and folders
 
 - The toolbar **+** button opens an actions menu (items depend on permissions):
-  - **Add bucket** — `add_bucket` (hidden if the permission is missing);
+  - **Add bucket** — in the buckets sidebar (any signed-in user);
   - **Create folder** — `create_folder`;
   - **Upload files** — `upload_files`, or drag-and-drop onto the file list;
   - **Upload folder** — `upload_folder`, or drag-and-drop a folder from the desktop.

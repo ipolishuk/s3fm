@@ -162,7 +162,6 @@ function setupUploadDropdown() {
     const uploadFilesOption = document.getElementById('uploadFilesOption');
     const uploadFolderOption = document.getElementById('uploadFolderOption');
     const createFolderOption = document.getElementById('createFolderOption');
-    const addBucketOption = document.getElementById('addBucketOption');
     const fileInput = document.getElementById('fileInput');
     const folderInput = document.getElementById('folderInput');
     if (!container || !trigger || !menu) return;
@@ -213,15 +212,6 @@ function setupUploadDropdown() {
             if (createFolderOption.disabled) return;
             closeMenu();
             if (typeof window.showCreateFolderModal === "function") window.showCreateFolderModal();
-        });
-    }
-    if (addBucketOption) {
-        addBucketOption.addEventListener('click', function() {
-            if (addBucketOption.disabled || addBucketOption.classList.contains('hidden')) return;
-            closeMenu();
-            if (typeof window.openAddBucketModal === 'function') {
-                window.openAddBucketModal();
-            }
         });
     }
 

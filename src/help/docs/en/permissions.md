@@ -7,13 +7,13 @@ Access is defined by your **default role**, optional **per-bucket role** overrid
 - Each user has a **default role** (`admin`, `storage_admin`, `storage_editor`, `storage_viewer`, or a custom role).
 - In **Settings → Users**, an administrator can assign a **different role per bucket**; that role applies only inside that bucket.
 - The **admin** role always keeps full access to every allowed bucket and can open **all Settings tabs**.
-- The **storage_admin** role has the same object powers and `add_bucket` as admin; it opens **Settings → Buckets only** (buckets they created: view/edit settings). Deleting buckets remains **admin-only**.
-- Seeing a bucket in the list still requires it to be granted to your account (allowed buckets / clouds) or created by you (auto-grant).
+- The **storage_admin** role has the same object powers and `add_bucket` as admin; it opens **Settings → Buckets only** (buckets they created **and** still have access to: view/edit settings). Deleting buckets remains **admin-only**.
+- Seeing a bucket in the file list or in **Settings → Buckets** requires a current grant (allowed buckets / clouds / per-bucket role). Creating a bucket auto-grants ACL access and custom role `storage_admin` on that bucket (default role unchanged); if that grant is later revoked, the bucket disappears from both lists even if you remain `created_by`.
 
 ## Built-in roles
 
 - **admin** — full Settings access and full object operations in allowed buckets (including `preview` and `add_bucket`).
-- **storage_admin** — full storage operations like admin; **Settings → Buckets** for own buckets (`created_by`); Bucket ID is server-generated and locked.
+- **storage_admin** — full storage operations like admin; **Settings → Buckets** for own buckets that you can still access (`created_by` + ACL); Bucket ID is server-generated and locked.
 - **storage_editor** — upload, download, preview, delete, copy, move, create folders, edit ACL (within assigned buckets).
 - **storage_viewer** — browse, preview, and download files only.
 
@@ -29,7 +29,7 @@ Assign a custom role as the user’s default role or as a per-bucket override in
 
 | Permission | Description |
 |------------|-------------|
-| add_bucket | Register a new bucket (toolbar **+** and Settings → Buckets). Opens Settings → Buckets for non-admin. Creator is auto-granted access; Bucket ID is server-generated. |
+| add_bucket | Legacy permission flag (any signed-in user can add buckets). Opens Settings → Buckets for non-admin. Creator is auto-granted ACL access plus custom role `storage_admin` on that bucket (default role stays unchanged); Bucket ID is server-generated. |
 
 ### Copy
 

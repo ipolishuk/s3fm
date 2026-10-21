@@ -157,6 +157,26 @@ h6 {
   min-height: 0;
 }
 
+#bucketsList.menu-list {
+  display: flex;
+  overflow: hidden;
+}
+
+#bucketsListBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.buckets-add-btn {
+  flex-shrink: 0;
+  margin-top: 4px;
+  justify-content: center;
+  gap: 8px;
+}
+
 .bucket-list-item {
   margin-top: 0 !important;
   padding: 0 13px !important;
@@ -1258,17 +1278,17 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
   color: var(--text-secondary);
 }
 
-.no-buckets-message-support {
-  margin-top: 15px;
-}
-
-.no-buckets-message a {
-  color: var(--text-secondary);
-  text-decoration: none;
-}
-
-.no-buckets-message a:hover {
-  color: var(--text-primary);
+#bucketsListBody > .no-buckets-message {
+  border: var(--border-style);
+  border-radius: var(--radius-lg);
+  margin-top: 4px;
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .bucket-group {

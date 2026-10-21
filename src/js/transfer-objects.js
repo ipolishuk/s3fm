@@ -103,27 +103,33 @@
     }
 
     function canSelectFilesInSelectionMode(bucketId) {
-        return window.userHasPermission('download_files_multi', bucketId)
-            || window.userHasPermission('delete_files_multi', bucketId)
-            || window.userHasPermission('copy_files_multi', bucketId)
-            || window.userHasPermission('copy_file', bucketId)
-            || window.userHasPermission('move_files_multi', bucketId)
-            || window.userHasPermission('move_file', bucketId)
-            || window.userHasPermission('edit_file_acl', bucketId);
+        var bid = (bucketId || '').trim();
+        if (!bid) return false;
+        return window.userHasPermission('download_files_multi', bid)
+            || window.userHasPermission('delete_files_multi', bid)
+            || window.userHasPermission('copy_files_multi', bid)
+            || window.userHasPermission('copy_file', bid)
+            || window.userHasPermission('move_files_multi', bid)
+            || window.userHasPermission('move_file', bid)
+            || window.userHasPermission('edit_file_acl', bid);
     }
 
     function canSelectFoldersInSelectionMode(bucketId) {
-        return window.userHasPermission('delete_folder_multi', bucketId)
-            || window.userHasPermission('copy_folder_multi', bucketId)
-            || window.userHasPermission('copy_folder', bucketId)
-            || window.userHasPermission('move_folder_multi', bucketId)
-            || window.userHasPermission('move_folder', bucketId)
-            || window.userHasPermission('edit_file_acl', bucketId);
+        var bid = (bucketId || '').trim();
+        if (!bid) return false;
+        return window.userHasPermission('delete_folder_multi', bid)
+            || window.userHasPermission('copy_folder_multi', bid)
+            || window.userHasPermission('copy_folder', bid)
+            || window.userHasPermission('move_folder_multi', bid)
+            || window.userHasPermission('move_folder', bid)
+            || window.userHasPermission('edit_file_acl', bid);
     }
 
     function canEnterSelectionMode(bucketId) {
-        return canSelectFilesInSelectionMode(bucketId)
-            || canSelectFoldersInSelectionMode(bucketId);
+        var bid = (bucketId || '').trim();
+        if (!bid) return false;
+        return canSelectFilesInSelectionMode(bid)
+            || canSelectFoldersInSelectionMode(bid);
     }
 
     function hasFileCopyPerm(bucketId) {

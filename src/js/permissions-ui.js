@@ -45,12 +45,20 @@ function setupUserPermissions() {
         : !!(window.fileManagerCurrentUser || currentUser);
     const canEdit = canUploadFiles || canUploadFolder || canCreateFolder;
     const canUseUploadMenu = canEdit;
-    const canSelect = canUseSelectionMode();
+    const hasBucket = !!(currentBucket || (typeof window.__getCurrentBucket === 'function' && window.__getCurrentBucket()));
+    const toolbarLocked = !!(document.getElementById('primaryToolbar')
+        && document.getElementById('primaryToolbar').classList.contains('toolbar-locked'));
+    const canSelect = hasBucket && !toolbarLocked && canUseSelectionMode();
     if (selectModeBtn && !selectionMode) {
         selectModeBtn.disabled = !canSelect;
-        var selectTitle = canSelect
-            ? (I18N['toolbar.select'] || 'Select')
-            : (I18N['files.select_requires_permissions'] || 'Selection requires permissions');
+        var selectTitle;
+        if (!hasBucket || toolbarLocked) {
+            selectTitle = I18N['msg.select_bucket_first'] || I18N['files.empty_select_bucket'] || 'Select a bucket';
+        } else if (canSelect) {
+            selectTitle = I18N['toolbar.select'] || 'Select';
+        } else {
+            selectTitle = I18N['files.select_requires_permissions'] || 'Selection requires permissions';
+        }
         selectModeBtn.title = selectTitle;
         selectModeBtn.setAttribute('aria-label', selectTitle);
     }
@@ -78,9 +86,6 @@ function setupUserPermissions() {
             addBucketOption.disabled = true;
         }
     }
-    const hasBucket = !!currentBucket;
-    const toolbarLocked = !!(document.getElementById('primaryToolbar')
-        && document.getElementById('primaryToolbar').classList.contains('toolbar-locked'));
     if (!canUseUploadMenu) {
         if (uploadBtn) uploadBtn.disabled = true;
         if (uploadFilesOption) uploadFilesOption.disabled = true;

@@ -326,10 +326,15 @@ def _validate_bucket_endpoint_for_form(cloud_id, endpoint_url, *, is_admin):
     )
     if not ok:
         return err_key
-    if not is_admin and not get_cloud_row(cid):
+    cloud_row = get_cloud_row(cid)
+    if not is_admin and not cloud_row:
         return 'error.cloud_not_registered'
-    # Не требуем cloud в allowed_clouds сессии: форма бакета показывает весь каталог,
-    # доступ к облаку выдаётся создателю через _grant_created_bucket_to_current_user.
+    if not is_admin and cloud_row:
+        from db import normalize_cloud_available
+        if not normalize_cloud_available(cloud_row.get('available')):
+            return 'error.cloud_admins_only'
+    # Не требуем cloud в allowed_clouds сессии: форма бакета показывает каталог
+    # (без admin-only для не-admin); доступ выдаётся через _grant_created_bucket_to_current_user.
     return None
 
 

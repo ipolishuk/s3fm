@@ -128,7 +128,7 @@ except Exception as e:
 - Общие хелперы: `window.S3FM` (`escapeHtml`, `escapeAttr`, CSRF).
 - Пути объектов в DOM — атрибут `data-path`; обработчики через делегирование (спецсимволы в именах).
 - Тема: `data-theme` + `localStorage` (`s3fm-theme`).
-- Deep links: `/`, `/bucket/<bucket_name>/…` (legacy: `bucket_id`), `/settings/<tab>` — сервер + [`js/routing.js`](js/routing.js).
+- Deep links: `/`, `/bucket/<bucket_name>/…`, `/settings/<tab>` — сервер + [`js/routing.js`](js/routing.js).
 - Не вставлять неэкранированный пользовательский/S3-текст в HTML.
 
 ---

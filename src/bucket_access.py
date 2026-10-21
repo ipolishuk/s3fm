@@ -77,13 +77,10 @@ def find_bucket_config_by_bucket_id(bucket_id):
 
 
 def resolve_bucket_from_route_slug(slug):
-    """Резолв сегмента /bucket/<slug>: сначала bucket_name, затем bucket_id (legacy)."""
+    """Резолв сегмента /bucket/<slug> только по bucket_name."""
     if not slug:
         return None
-    info = find_bucket_config(slug)
-    if info:
-        return info
-    return find_bucket_config_by_bucket_id(slug)
+    return find_bucket_config(slug)
 
 def _session_has_bucket_grant(bucket_id):
     if not bucket_id:
@@ -114,27 +111,43 @@ def check_cloud_access(cloud_id):
     if not session.get('logged_in'):
         return False
 
+    from roles import ROLE_ADMIN
+
+    cid = (cloud_id or '').strip()
+    if not cid:
+        return False
+    if session.get('role') != ROLE_ADMIN:
+        group = get_buckets_config().get(cid) or {}
+        if group.get('available') is False:
+            return False
+
     user_clouds = _session_allowed_list(session.get('allowed_clouds', []))
 
     # Если в allowed_clouds есть '*', разрешаем доступ ко всем облакам
     if '*' in user_clouds:
         return True
 
-    return cloud_id in user_clouds
+    return cid in user_clouds
 
 
 
 def _build_session_accessible_buckets(include_secrets, context='accessible_buckets'):
     """Список бакетов для текущей сессии по allowed_buckets / allowed_clouds или user_roles grant."""
+    from roles import ROLE_ADMIN
+
     user_buckets = _session_allowed_list(session.get('allowed_buckets', []))
     user_clouds = _session_allowed_list(session.get('allowed_clouds', []))
     grants = _bucket_roles_from_session()
     all_buckets = []
     has_all_buckets_access = '*' in user_buckets
     has_all_clouds_access = '*' in user_clouds
+    is_admin = session.get('role') == ROLE_ADMIN
 
     for group_id, group_data in get_buckets_config().items():
         cloud_id = group_data.get('cloud_id', group_id)
+        # available=false — облако и его бакеты только для admin
+        if not is_admin and group_data.get('available') is False:
+            continue
         cloud_allowed = has_all_clouds_access or cloud_id in user_clouds
 
         for display_name, bucket_config in group_data['buckets'].items():
@@ -215,6 +228,14 @@ def check_bucket_access(bucket_id):
     if not session.get('logged_in'):
         return False
 
+    from roles import ROLE_ADMIN
+
+    bucket_info = find_bucket_config_by_bucket_id(bucket_id)
+    if bucket_info and session.get('role') != ROLE_ADMIN:
+        group = get_buckets_config().get(bucket_info.get('group_id') or '') or {}
+        if group.get('available') is False:
+            return False
+
     if _session_has_bucket_grant(bucket_id):
         return True
 
@@ -225,7 +246,6 @@ def check_bucket_access(bucket_id):
     if bucket_id in user_buckets:
         return True
     # В настройках бакеты сохраняются как cloud_id:display_name; проверяем по найденному бакету
-    bucket_info = find_bucket_config_by_bucket_id(bucket_id)
     if bucket_info:
         composite = "{}:{}".format(bucket_info['group_id'], bucket_info['display_name'])
         if composite in user_buckets:

@@ -17,7 +17,7 @@ _APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _serve_bucket_page(slug):
-    """SPA shell для /bucket/<bucket_name> (legacy: bucket_id тоже принимается)."""
+    """SPA shell для /bucket/<bucket_name>."""
     info = resolve_bucket_from_route_slug(slug)
     if not info:
         return redirect(url_for('pages.index'))

@@ -432,6 +432,25 @@ ALTER TABLE public.clouds ADD COLUMN IF NOT EXISTS public_url_enabled BOOLEAN DE
 UPDATE public.clouds SET public_url_enabled = false WHERE public_url_enabled IS NULL;
 ALTER TABLE public.clouds ADD COLUMN IF NOT EXISTS virtual_hosted BOOLEAN DEFAULT false;
 UPDATE public.clouds SET virtual_hosted = false WHERE virtual_hosted IS NULL;
+ALTER TABLE public.clouds ADD COLUMN IF NOT EXISTS available BOOLEAN DEFAULT true;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'clouds'
+          AND column_name = 'visibility'
+    ) THEN
+        UPDATE public.clouds
+        SET available = CASE
+            WHEN LOWER(BTRIM(COALESCE(visibility, ''))) IN ('admins', 'admin') THEN false
+            ELSE COALESCE(available, true)
+        END;
+        ALTER TABLE public.clouds DROP COLUMN visibility;
+    END IF;
+END $$;
+UPDATE public.clouds SET available = true WHERE available IS NULL;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS given_name VARCHAR(255);
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS family_name VARCHAR(255);
@@ -941,6 +960,25 @@ def user_session_allowed(username):
             pass
 
 
+def normalize_cloud_available(value):
+    """true — доступно всем; false — только admin. По умолчанию true.
+
+    Принимает bool и строки true/false; для совместимости — all/admins.
+    """
+    if value is None:
+        return True
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    raw = str(value).strip().lower()
+    if raw in ('false', '0', 'no', 'off', 'admins', 'admin', 'f', 'n'):
+        return False
+    if raw in ('true', '1', 'yes', 'on', 'all', 't', 'y'):
+        return True
+    return True
+
+
 def get_buckets_config():
     """
     Загружает конфигурацию бакетов из таблицы buckets.
@@ -999,6 +1037,7 @@ def get_buckets_config():
                     'endpoint_url': 'https://s3.example.com',
                     'cloud_id': 'other',
                     'public_url_enabled': False,
+                    'available': True,
                     'endpoint_virtual_hosted': {},
                     'buckets': {},
                 }
@@ -1006,7 +1045,8 @@ def get_buckets_config():
                 with conn.cursor() as cur:
                     cur.execute("""
                         SELECT cloud_id,
-                               BOOL_OR(COALESCE(public_url_enabled, false)) AS public_url_enabled
+                               BOOL_OR(COALESCE(public_url_enabled, false)) AS public_url_enabled,
+                               BOOL_AND(COALESCE(available, true)) AS available
                         FROM clouds
                         GROUP BY cloud_id
                     """)
@@ -1014,6 +1054,7 @@ def get_buckets_config():
                         cid = crow['cloud_id']
                         if cid in result:
                             result[cid]['public_url_enabled'] = bool(crow['public_url_enabled'])
+                            result[cid]['available'] = bool(crow.get('available', True))
                     cur.execute("""
                         SELECT cloud_id,
                                BTRIM(endpoint_url) AS endpoint_url,
@@ -1036,6 +1077,8 @@ def get_buckets_config():
             for cid in result:
                 if 'public_url_enabled' not in result[cid]:
                     result[cid]['public_url_enabled'] = False
+                if 'available' not in result[cid]:
+                    result[cid]['available'] = True
                 if 'endpoint_virtual_hosted' not in result[cid]:
                     result[cid]['endpoint_virtual_hosted'] = {}
             return result
@@ -1117,22 +1160,44 @@ def bucket_s3_target_exists(bucket_name, endpoint_url, exclude_cloud_id=None, ex
     return False
 
 
-def list_cloud_endpoints():
-    """Endpoint URL только из таблицы clouds (без утечки из чужих бакетов)."""
+def list_cloud_endpoints(*, include_admin_only=True):
+    """Endpoint URL только из таблицы clouds (без утечки из чужих бакетов).
+
+    include_admin_only=False — скрыть облака с available=false (для не-admin).
+    """
     try:
         conn = get_connection()
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT DISTINCT cloud_id, ''::varchar(255) AS bucket_display_name,
-                           BTRIM(endpoint_url) AS endpoint_url
-                    FROM clouds
-                    WHERE endpoint_url IS NOT NULL
-                      AND BTRIM(endpoint_url) <> ''
-                    ORDER BY cloud_id, endpoint_url
-                    """
-                )
+                if include_admin_only:
+                    cur.execute(
+                        """
+                        SELECT DISTINCT cloud_id, ''::varchar(255) AS bucket_display_name,
+                               BTRIM(endpoint_url) AS endpoint_url
+                        FROM clouds
+                        WHERE endpoint_url IS NOT NULL
+                          AND BTRIM(endpoint_url) <> ''
+                        ORDER BY cloud_id, endpoint_url
+                        """
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT DISTINCT c.cloud_id, ''::varchar(255) AS bucket_display_name,
+                               BTRIM(c.endpoint_url) AS endpoint_url
+                        FROM clouds c
+                        WHERE c.endpoint_url IS NOT NULL
+                          AND BTRIM(c.endpoint_url) <> ''
+                          AND EXISTS (
+                              SELECT 1
+                              FROM clouds g
+                              WHERE g.cloud_id = c.cloud_id
+                              GROUP BY g.cloud_id
+                              HAVING BOOL_AND(COALESCE(g.available, true)) = true
+                          )
+                        ORDER BY c.cloud_id, endpoint_url
+                        """
+                    )
                 return [dict(r) for r in cur.fetchall()]
         finally:
             conn.close()
@@ -1426,8 +1491,11 @@ def delete_bucket(cloud_id, display_name):
         conn.close()
 
 
-def list_clouds():
-    """Список облаков из таблицы clouds для выбора при добавлении пользователя/бакета."""
+def list_clouds(*, include_admin_only=True):
+    """Список облаков из таблицы clouds для выбора при добавлении пользователя/бакета.
+
+    include_admin_only=False — скрыть облака с available=false (для не-admin).
+    """
     try:
         conn = get_connection()
         try:
@@ -1446,12 +1514,21 @@ def list_clouds():
                     )
                 """)
                 conn.commit()
-                cur.execute("""
-                    SELECT cloud_id, COALESCE(MAX(display_name), MAX(name), cloud_id) AS label
-                    FROM clouds
-                    GROUP BY cloud_id
-                    ORDER BY cloud_id
-                """)
+                if include_admin_only:
+                    cur.execute("""
+                        SELECT cloud_id, COALESCE(MAX(display_name), MAX(name), cloud_id) AS label
+                        FROM clouds
+                        GROUP BY cloud_id
+                        ORDER BY cloud_id
+                    """)
+                else:
+                    cur.execute("""
+                        SELECT cloud_id, COALESCE(MAX(display_name), MAX(name), cloud_id) AS label
+                        FROM clouds
+                        GROUP BY cloud_id
+                        HAVING BOOL_AND(COALESCE(available, true)) = true
+                        ORDER BY cloud_id
+                    """)
                 rows = cur.fetchall()
                 return [{"id": r["cloud_id"], "label": r["label"] or r["cloud_id"]} for r in rows]
         finally:
@@ -1475,11 +1552,14 @@ def _aggregate_cloud_setting_rows(rows):
                 'endpoint_url': [],
                 'endpoints': [],
                 'public_url_enabled': False,
+                'available': True,
             }
             grouped[cid] = item
             order.append(cid)
         if r.get('public_url_enabled'):
             item['public_url_enabled'] = True
+        if not normalize_cloud_available(r.get('available')):
+            item['available'] = False
         ep = (r.get('endpoint_url') or '').strip()
         if not ep or ep in item['endpoint_url']:
             continue
@@ -1550,7 +1630,8 @@ def list_cloud_rows():
                         COALESCE(display_name, name, cloud_id) AS display_name,
                         NULLIF(BTRIM(endpoint_url), '') AS endpoint_url,
                         COALESCE(public_url_enabled, false) AS public_url_enabled,
-                        COALESCE(virtual_hosted, false) AS virtual_hosted
+                        COALESCE(virtual_hosted, false) AS virtual_hosted,
+                        COALESCE(available, true) AS available
                     FROM clouds
                     ORDER BY cloud_id, endpoint_url NULLS FIRST
                 """)
@@ -1577,7 +1658,8 @@ def get_cloud_row(cloud_id):
                         COALESCE(display_name, name, cloud_id) AS display_name,
                         NULLIF(BTRIM(endpoint_url), '') AS endpoint_url,
                         COALESCE(public_url_enabled, false) AS public_url_enabled,
-                        COALESCE(virtual_hosted, false) AS virtual_hosted
+                        COALESCE(virtual_hosted, false) AS virtual_hosted,
+                        COALESCE(available, true) AS available
                     FROM clouds
                     WHERE cloud_id = %s
                     ORDER BY endpoint_url NULLS FIRST
@@ -1600,11 +1682,13 @@ def insert_cloud(
     public_url_enabled=False,
     virtual_hosted=False,
     endpoint_virtual_hosted=None,
+    available=None,
 ):
     """Добавить облако в таблицу clouds."""
     cid = (cloud_id or "").strip()
     disp = (display_name or "").strip() or cid
     pub_url = bool(public_url_enabled)
+    avail = normalize_cloud_available(True if available is None else available)
     pairs = _endpoint_flag_pairs(endpoint_url, virtual_hosted, endpoint_virtual_hosted)
     conn = get_connection()
     try:
@@ -1612,21 +1696,21 @@ def insert_cloud(
             if not pairs:
                 cur.execute(
                     """
-                    INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted, available)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (cloud_id, COALESCE(NULLIF(BTRIM(endpoint_url), ''), '')) DO NOTHING
                     """,
-                    (cid, disp, disp, None, pub_url, False),
+                    (cid, disp, disp, None, pub_url, False, avail),
                 )
             else:
                 for ep, virt in pairs:
                     cur.execute(
                         """
-                        INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted)
-                        VALUES (%s, %s, %s, %s, %s, %s)
+                        INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted, available)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (cloud_id, COALESCE(NULLIF(BTRIM(endpoint_url), ''), '')) DO NOTHING
                         """,
-                        (cid, disp, disp, ep, pub_url, virt),
+                        (cid, disp, disp, ep, pub_url, virt, avail),
                     )
         conn.commit()
     finally:
@@ -1640,6 +1724,7 @@ def update_cloud(
     public_url_enabled=None,
     virtual_hosted=None,
     endpoint_virtual_hosted=None,
+    available=None,
 ):
     """Обновить display_name/endpoint_url облака и синхронизировать buckets по cloud_id."""
     cid = (cloud_id or "").strip()
@@ -1651,6 +1736,11 @@ def update_cloud(
         bool(public_url_enabled)
         if public_url_enabled is not None
         else bool(current.get('public_url_enabled'))
+    )
+    new_available = (
+        normalize_cloud_available(available)
+        if available is not None
+        else normalize_cloud_available(current.get('available'))
     )
     existing_pairs = [
         (item.get('url'), bool(item.get('virtual_hosted')))
@@ -1679,19 +1769,19 @@ def update_cloud(
             if not pairs:
                 cur.execute(
                     """
-                    INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted, available)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
-                    (cid, new_display, new_display, None, new_public_url, False),
+                    (cid, new_display, new_display, None, new_public_url, False, new_available),
                 )
             else:
                 for ep, virt in pairs:
                     cur.execute(
                         """
-                        INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted)
-                        VALUES (%s, %s, %s, %s, %s, %s)
+                        INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted, available)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
                         """,
-                        (cid, new_display, new_display, ep, new_public_url, virt),
+                        (cid, new_display, new_display, ep, new_public_url, virt, new_available),
                     )
             cur.execute(
                 """
@@ -2216,6 +2306,64 @@ def insert_user(username, password_hash, role, buckets=None, clouds=None, bucket
     finally:
         if own:
             conn.close()
+
+
+def rename_user(old_username, new_username):
+    """Переименовать пользователя (PK) и связанные ссылки. admin нельзя переименовать."""
+    old = (old_username or '').strip()
+    new = (new_username or '').strip()
+    if not old or not new:
+        return False
+    if old == new:
+        return True
+    if old.lower() == 'admin' or new.lower() == 'admin':
+        return False
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM users WHERE username = %s", (old,))
+            if not cur.fetchone():
+                return False
+            cur.execute("SELECT 1 FROM users WHERE username = %s", (new,))
+            if cur.fetchone():
+                return False
+            # Копия строки → перенос FK → удаление старой (нет ON UPDATE CASCADE)
+            cur.execute(
+                """
+                INSERT INTO users (
+                    username, password, role, buckets, clouds,
+                    email, given_name, family_name, middle_name, full_name,
+                    created_at, last_login_at, is_active, active_until
+                )
+                SELECT
+                    %s, password, role, buckets, clouds,
+                    email, given_name, family_name, middle_name, full_name,
+                    created_at, last_login_at, is_active, active_until
+                FROM users
+                WHERE username = %s
+                """,
+                (new, old),
+            )
+            cur.execute(
+                "UPDATE user_roles SET username = %s WHERE username = %s",
+                (new, old),
+            )
+            cur.execute(
+                "UPDATE operation_jobs SET username = %s WHERE username = %s",
+                (new, old),
+            )
+            cur.execute(
+                "UPDATE buckets SET created_by = %s WHERE created_by = %s",
+                (new, old),
+            )
+            cur.execute("DELETE FROM users WHERE username = %s", (old,))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def update_user(username, role, buckets=None, clouds=None, password_hash=None, bucket_roles=None, email=None, full_name=None, is_active=None, active_until=_ACTIVE_UNTIL_UNSET):

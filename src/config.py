@@ -835,11 +835,21 @@ def _import_clouds(conn, clouds_list):
             "display_name": display_name,
             "endpoints": [],
             "public_url_enabled": False,
+            "available": True,
         })
         if display_name:
             entry["display_name"] = display_name
         if item.get("public_url_enabled"):
             entry["public_url_enabled"] = True
+        if "available" in item:
+            from db import normalize_cloud_available
+            entry["available"] = normalize_cloud_available(item.get("available"))
+        else:
+            vis = (item.get("visibility") or "").strip().lower()
+            if vis in ("admins", "admin"):
+                entry["available"] = False
+            elif vis in ("all", "true", "1"):
+                entry["available"] = True
         detailed = item.get("endpoints")
         if isinstance(detailed, list) and any(isinstance(part, dict) for part in detailed):
             raw_parts = []
@@ -871,19 +881,21 @@ def _import_clouds(conn, clouds_list):
             display_name = payload["display_name"] or cloud_id
             normalized = payload["endpoints"] or [(None, False)]
             public_url_enabled = bool(payload.get("public_url_enabled"))
+            available = bool(payload.get("available", True))
             cur.execute("DELETE FROM clouds WHERE cloud_id = %s", (cloud_id,))
             for endpoint_url, virtual_hosted in normalized:
                 cur.execute(
                     """
-                    INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO clouds (cloud_id, name, display_name, endpoint_url, public_url_enabled, virtual_hosted, available)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (cloud_id, COALESCE(NULLIF(BTRIM(endpoint_url), ''), '')) DO UPDATE SET
                         name = EXCLUDED.name,
                         display_name = EXCLUDED.display_name,
                         public_url_enabled = EXCLUDED.public_url_enabled,
-                        virtual_hosted = EXCLUDED.virtual_hosted
+                        virtual_hosted = EXCLUDED.virtual_hosted,
+                        available = EXCLUDED.available
                     """,
-                    (cloud_id, display_name, display_name, endpoint_url, public_url_enabled, virtual_hosted),
+                    (cloud_id, display_name, display_name, endpoint_url, public_url_enabled, virtual_hosted, available),
                 )
             imported.append(cloud_id)
     return 0, imported

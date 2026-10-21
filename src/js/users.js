@@ -983,10 +983,21 @@ function loadSettingsClouds() {
             var endpointHeader = (typeof window.settingsSortableHeader === 'function')
                 ? window.settingsSortableHeader(t['settings.table_endpoint'] || 'Endpoint', 'endpoint')
                 : '<div class="content-table-header">' + (t['settings.table_endpoint'] || 'Endpoint') + '</div>';
+            var publicUrlTh = (t['settings.table_public_url'] || 'Public URL').replace(/"/g, '&quot;');
+            var publicUrlThTitle = (t['settings.table_public_url_th_title'] || '').replace(/"/g, '&quot;');
+            var publicUrlHeader = (typeof window.settingsSortableHeader === 'function')
+                ? window.settingsSortableHeader(t['settings.table_public_url'] || 'Public URL', 'public_url')
+                : '<div class="content-table-header">' + publicUrlTh + '</div>';
+            var availableThTitle = (t['settings.table_available_th_title'] || '').replace(/"/g, '&quot;');
+            var availableHeader = (typeof window.settingsSortableHeader === 'function')
+                ? window.settingsSortableHeader(t['settings.table_available'] || 'Available', 'available')
+                : '<div class="content-table-header">' + escapeHtml(t['settings.table_available'] || 'Available') + '</div>';
             var html = '<table class="content-table"><thead><tr>'
                 + '<th>' + cloudIdHeader + '</th>'
                 + '<th class="settings-col-display">' + displayHeader + '</th>'
                 + '<th>' + endpointHeader + '</th>'
+                + '<th class="content-table-col-compact settings-col-public-url" title="' + publicUrlThTitle + '">' + publicUrlHeader + '</th>'
+                + '<th class="content-table-col-compact settings-col-available" title="' + availableThTitle + '">' + availableHeader + '</th>'
                 + '</tr></thead><tbody id="settingsTableBody">';
             items.forEach(function(row) {
                 var cloudId = (row && row.cloud_id) ? String(row.cloud_id) : '';
@@ -998,10 +1009,33 @@ function loadSettingsClouds() {
                         return entry.url;
                     }).join(', ')
                     : '—';
+                var publicUrlOn = !!(row && (
+                    row.public_url_enabled === true
+                    || row.public_url_enabled === 'true'
+                    || row.public_url_enabled === 1
+                    || row.public_url_enabled === 't'
+                ));
+                var publicUrlCellTitle = (publicUrlOn
+                    ? (t['settings.table_public_url_on_title'] || '')
+                    : (t['settings.table_public_url_off_title'] || '')
+                ).replace(/"/g, '&quot;');
+                var publicUrlCell = publicUrlOn
+                    ? '<span class="content-table-bool-yes" title="' + publicUrlCellTitle + '"><i class="fa-solid fa-check" aria-hidden="true"></i></span>'
+                    : '<span class="content-table-bool-no" title="' + publicUrlCellTitle + '"><i class="fa-solid fa-xmark" aria-hidden="true"></i></span>';
+                var availableOn = cloudAvailableValueFromRaw(row && (row.available !== undefined ? row.available : row.visibility));
+                var availableCellTitle = (availableOn
+                    ? (t['settings.table_available_on_title'] || '')
+                    : (t['settings.table_available_off_title'] || '')
+                ).replace(/"/g, '&quot;');
+                var availableCell = availableOn
+                    ? '<span class="content-table-bool-yes" title="' + availableCellTitle + '"><i class="fa-solid fa-check" aria-hidden="true"></i></span>'
+                    : '<span class="content-table-bool-no" title="' + availableCellTitle + '"><i class="fa-solid fa-xmark" aria-hidden="true"></i></span>';
                 html += '<tr data-cloud-id="' + cloudIdAttr + '">';
                 html += '<td>' + escapeHtml(cloudId) + '</td>';
                 html += '<td class="settings-col-display">' + escapeHtml(display) + '</td>';
                 html += '<td>' + escapeHtml(endpointText) + '</td>';
+                html += '<td class="content-table-col-compact settings-col-public-url" data-sort-value="' + (publicUrlOn ? '1' : '0') + '" title="' + publicUrlCellTitle + '">' + publicUrlCell + '</td>';
+                html += '<td class="content-table-col-compact settings-col-available" data-sort-value="' + (availableOn ? '1' : '0') + '" title="' + availableCellTitle + '">' + availableCell + '</td>';
                 html += '</tr>';
             });
             html += '</tbody></table>';
@@ -1427,6 +1461,7 @@ function hideCloudEditModal() {
     var epEl = document.getElementById('cloudEditEndpointInput');
     if (epEl) epEl.value = '';
     setCloudEditPublicUrl(false);
+    setCloudEditAvailable(true);
     resetCloudEndpointsInputs(['']);
     var err = document.getElementById('cloudEditError');
     if (err) err.textContent = '';
@@ -1456,6 +1491,84 @@ function setCloudEditPublicUrl(value) {
 function getCloudEditPublicUrl() {
     var hidden = document.getElementById('cloudEditPublicUrlEnabled');
     return cloudPublicUrlValueFromRaw(hidden ? hidden.value : 'false');
+}
+
+function cloudAvailableValueFromRaw(raw) {
+    if (raw === false || raw === 0 || raw === '0') return false;
+    var v = String(raw == null ? '' : raw).trim().toLowerCase();
+    if (v === 'false' || v === 'f' || v === 'no' || v === 'off' || v === 'admins' || v === 'admin') return false;
+    return true;
+}
+
+function setCloudEditAvailable(value) {
+    var on = cloudAvailableValueFromRaw(value);
+    var hidden = document.getElementById('cloudEditAvailable');
+    var label = document.getElementById('cloudEditAvailableLabel');
+    var panel = document.getElementById('cloudEditAvailablePanel');
+    if (hidden) hidden.value = on ? 'true' : 'false';
+    if (label) {
+        label.textContent = on ? 'true' : 'false';
+        label.classList.add('has-selection');
+    }
+    if (panel) {
+        panel.querySelectorAll('.dropdown-item').forEach(function (item) {
+            item.classList.toggle('selected', item.getAttribute('data-value') === (on ? 'true' : 'false'));
+        });
+    }
+}
+
+function getCloudEditAvailable() {
+    var hidden = document.getElementById('cloudEditAvailable');
+    return cloudAvailableValueFromRaw(hidden ? hidden.value : 'true');
+}
+
+function initCloudEditAvailableDropdown() {
+    var wrap = document.getElementById('cloudEditAvailableWrap');
+    var trigger = document.getElementById('cloudEditAvailableTrigger');
+    var panel = document.getElementById('cloudEditAvailablePanel');
+    if (!wrap || !trigger || !panel || wrap._availableDdBound) return;
+    wrap._availableDdBound = true;
+    trigger.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var willOpen = !wrap.classList.contains('open');
+        wrap.classList.remove('open');
+        if (typeof window.resetDropdownMenuOverlay === 'function') {
+            window.resetDropdownMenuOverlay(wrap);
+        }
+        if (willOpen) {
+            wrap.classList.add('open');
+            trigger.setAttribute('aria-expanded', 'true');
+            panel.classList.remove('hidden');
+            if (typeof window.fitDropdownMenuOverlay === 'function') {
+                window.fitDropdownMenuOverlay(wrap);
+            }
+        } else {
+            trigger.setAttribute('aria-expanded', 'false');
+            panel.classList.add('hidden');
+        }
+    });
+    panel.querySelectorAll('.dropdown-item').forEach(function (item) {
+        item.addEventListener('click', function (ev) {
+            ev.stopPropagation();
+            setCloudEditAvailable(item.getAttribute('data-value'));
+            wrap.classList.remove('open');
+            trigger.setAttribute('aria-expanded', 'false');
+            panel.classList.add('hidden');
+            if (typeof window.resetDropdownMenuOverlay === 'function') {
+                window.resetDropdownMenuOverlay(wrap);
+            }
+        });
+    });
+    document.addEventListener('click', function (e) {
+        if (!wrap.classList.contains('open')) return;
+        if (e.target.closest && e.target.closest('#cloudEditAvailableWrap')) return;
+        wrap.classList.remove('open');
+        trigger.setAttribute('aria-expanded', 'false');
+        panel.classList.add('hidden');
+        if (typeof window.resetDropdownMenuOverlay === 'function') {
+            window.resetDropdownMenuOverlay(wrap);
+        }
+    });
 }
 
 function closeCloudEndpointStyleMenus(exceptWrap) {
@@ -1721,6 +1834,7 @@ function openAddCloudModal() {
     if (nameEl) nameEl.value = '';
     if (epEl) epEl.value = '';
     setCloudEditPublicUrl(false);
+    setCloudEditAvailable(true);
     resetCloudEndpointsInputs(['']);
     if (err) err.textContent = '';
     if (title) title.textContent = t['modal.add_cloud'] || 'Add cloud';
@@ -1747,6 +1861,7 @@ function openCopyCloudModal(cloudId) {
     if (nameEl) nameEl.value = '';
     resetCloudEndpointsInputs(['']);
     setCloudEditPublicUrl(false);
+    setCloudEditAvailable(true);
     if (err) err.textContent = '';
     if (title) title.textContent = t['modal.copy_cloud'] || 'Copy cloud';
     if (icon) icon.className = 'fa-solid fa-copy modal-icon modal-icon-info';
@@ -1758,6 +1873,7 @@ function openCopyCloudModal(cloudId) {
             var endpointEntries = cloudEndpointEntriesFromRow(row);
             resetCloudEndpointsInputs(endpointEntries.length ? endpointEntries : ['']);
             setCloudEditPublicUrl(cloudPublicUrlValueFromRaw(row && row.public_url_enabled));
+            setCloudEditAvailable(row && (row.available !== undefined ? row.available : row.visibility));
             var modal = document.getElementById('cloudEditModal');
             if (modal) modal.style.display = 'flex';
         })
@@ -1785,6 +1901,7 @@ function openEditCloudModal(cloudId) {
     if (epEl) epEl.value = '';
     resetCloudEndpointsInputs(['']);
     setCloudEditPublicUrl(false);
+    setCloudEditAvailable(true);
     if (err) err.textContent = '';
     if (title) title.textContent = t['modal.edit_cloud'] || 'Edit cloud';
     if (icon) icon.className = 'fa-solid fa-pen-to-square modal-icon modal-icon-info';
@@ -1797,6 +1914,7 @@ function openEditCloudModal(cloudId) {
             if (epEl) epEl.value = (endpointEntries[0] && endpointEntries[0].url) || '';
             resetCloudEndpointsInputs(endpointEntries);
             setCloudEditPublicUrl(cloudPublicUrlValueFromRaw(row && row.public_url_enabled));
+            setCloudEditAvailable(row && (row.available !== undefined ? row.available : row.visibility));
             var modal = document.getElementById('cloudEditModal');
             if (modal) modal.style.display = 'flex';
         })
@@ -2389,10 +2507,8 @@ function wireAddUserLdapSearch() {
                 return;
             }
             if (ev.key !== 'Enter') return;
-            // In add/copy mode Enter triggers LDAP lookup instead of submitting the form.
+            // Enter в поле username — LDAP lookup (add/copy/edit), не submit формы.
             if (usernameEl.disabled) return;
-            var editUsername = (document.getElementById('addUserEditUsername') || {}).value || '';
-            if (editUsername) return;
             ev.preventDefault();
             lookupAddUserFromLdap();
         });
@@ -2418,8 +2534,10 @@ function openEditUserModal(username, mode) {
     wireAddUserLdapSearch();
     document.getElementById('addUserEditUsername').value = isCopy ? '' : username;
     document.getElementById('addUserUsername').value = isCopy ? '' : username;
-    document.getElementById('addUserUsername').disabled = !isCopy;
-    applyAddUserLdapAvailability(isCopy);
+    // Username + LDAP: доступны при создании/копировании и при редактировании (кроме учётки admin)
+    var usernameLocked = !isCopy && isSelfAdminUser(username);
+    document.getElementById('addUserUsername').disabled = usernameLocked;
+    applyAddUserLdapAvailability(!usernameLocked);
     closeAddUserLdapResults();
     if (isCopy) {
         fillAddUserGeneratedPassword();
@@ -2533,7 +2651,7 @@ function openEditUserModal(username, mode) {
         roleLabel.classList.add('has-selection');
         var emailEl = document.getElementById('addUserEmail');
         var fullNameEl = document.getElementById('addUserFullName');
-        // Copy = new identity (LDAP search); edit keeps existing profile fields.
+        // Copy = new identity; edit — LDAP/username как при создании (кроме учётки admin).
         if (isCopy) {
             if (emailEl) emailEl.value = '';
             if (fullNameEl) fullNameEl.value = '';
@@ -2546,7 +2664,10 @@ function openEditUserModal(username, mode) {
         } else {
             if (emailEl) emailEl.value = (user && user.email) ? String(user.email).trim() : '';
             if (fullNameEl) fullNameEl.value = (user && user.display_name) ? String(user.display_name).trim() : '';
-            applyAddUserLdapAvailability(false);
+            var usernameLockedEdit = isSelfAdminUser(username);
+            var usernameElEdit = document.getElementById('addUserUsername');
+            if (usernameElEdit) usernameElEdit.disabled = usernameLockedEdit;
+            applyAddUserLdapAvailability(!usernameLockedEdit);
         }
         var userClouds = (user && Array.isArray(user.clouds)) ? user.clouds : [];
         var userBuckets = (user && Array.isArray(user.buckets)) ? user.buckets : [];
@@ -3002,8 +3123,12 @@ document.getElementById('addUserSubmitBtn').addEventListener('click', function()
     var clouds = acl.clouds;
     var errEl = document.getElementById('addUserError');
     if (errEl) errEl.textContent = '';
-    if (!isEdit && !username) { toastFormError((window.I18N && window.I18N['error.username_required']) || ''); return; }
+    if (!username) { toastFormError((window.I18N && window.I18N['error.username_required']) || ''); return; }
     if (!isEdit && isUsernameTaken(username)) { toastFormError((window.I18N && window.I18N['error.user_exists']) || ''); return; }
+    if (isEdit && username !== editUsername && isUsernameTaken(username)) {
+        toastFormError((window.I18N && window.I18N['error.user_exists']) || '');
+        return;
+    }
     if (!isEdit && !password) { toastFormError((window.I18N && window.I18N['error.password_required']) || ''); return; }
     var url = isEdit ? ('/api/settings/users/' + encodeURIComponent(editUsername)) : '/api/settings/users';
     var method = isEdit ? 'PUT' : 'POST';
@@ -3026,8 +3151,11 @@ document.getElementById('addUserSubmitBtn').addEventListener('click', function()
     if (!isEdit) {
         body.username = username;
         body.password = password;
-    } else if (password && String(password).trim()) {
-        body.password = password;
+    } else {
+        body.username = username;
+        if (password && String(password).trim()) {
+            body.password = password;
+        }
     }
     fetch(url, {
         method: method,
@@ -3130,6 +3258,7 @@ if (cloudEditSubmitBtn) {
         var endpoints = endpointEntries.map(function(entry) { return entry.url; });
         var endpointFlags = endpointEntries.map(function(entry) { return entry.virtual_hosted; });
         var publicUrlEnabled = getCloudEditPublicUrl();
+        var available = getCloudEditAvailable();
         if (errEl) errEl.textContent = '';
         if (!cloudId) {
             toastFormError(t['error.cloud_id_invalid'] || 'Cloud ID is required');
@@ -3138,8 +3267,8 @@ if (cloudEditSubmitBtn) {
         var url = isEdit ? ('/api/settings/clouds/' + encodeURIComponent(orig)) : '/api/settings/clouds';
         var method = isEdit ? 'PUT' : 'POST';
         var body = isEdit
-            ? { display_name: displayName || cloudId, endpoint_url: endpoints, endpoint_virtual_hosted: endpointFlags, public_url_enabled: publicUrlEnabled }
-            : { cloud_id: cloudId, display_name: displayName || cloudId, endpoint_url: endpoints, endpoint_virtual_hosted: endpointFlags, public_url_enabled: publicUrlEnabled };
+            ? { display_name: displayName || cloudId, endpoint_url: endpoints, endpoint_virtual_hosted: endpointFlags, public_url_enabled: publicUrlEnabled, available: available }
+            : { cloud_id: cloudId, display_name: displayName || cloudId, endpoint_url: endpoints, endpoint_virtual_hosted: endpointFlags, public_url_enabled: publicUrlEnabled, available: available };
         fetch(url, {
             method: method,
             headers: { 'Content-Type': 'application/json' },
@@ -3165,6 +3294,7 @@ if (cloudEditSubmitBtn) {
     });
 }
 initCloudEditPublicUrlDropdown();
+initCloudEditAvailableDropdown();
 }
 
     window.loadSettingsUsers = loadSettingsUsers;

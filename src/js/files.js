@@ -487,18 +487,10 @@ async function loadFiles(path = '', loadOptions = {}) {
             setLoadedItemsCount((data.folders?.length || 0) + (data.files?.length || 0));
             setPath(decodedPath);
             if (!loadOptions.paginate) {
-                // Не пушим историю заново: selectBucket уже выставил /bucket/<name>.
-                // replace — только если URL всё ещё про этот бакет (иначе гонка).
-                var replaceUrl = false;
-                try {
-                    var segs = (window.location.pathname || '').split('/').filter(Boolean);
-                    if (segs[0] === 'bucket' && segs[1] && typeof global.findBucketByRouteSlug === 'function') {
-                        var existing = global.findBucketByRouteSlug(decodeURIComponent(segs[1]));
-                        if (existing && existing.bucket_id === targetBucket) replaceUrl = true;
-                    }
-                } catch (e) { /* ignore */ }
+                // pushState при смене пути; updateURL сам сделает replace, если URL уже тот же
+                // (например selectBucket уже выставил /bucket/<name>/…).
                 if (getBucket() === targetBucket) {
-                    global.updateURL(targetBucket, decodedPath, replaceUrl);
+                    global.updateURL(targetBucket, decodedPath, false);
                     global.updateBreadcrumb(decodedPath);
                 }
             }

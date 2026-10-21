@@ -9,8 +9,10 @@ function renderHomeBreadcrumb() {
 }
 window.renderHomeBreadcrumb = renderHomeBreadcrumb;
 
-// Функция для перехода на главную
-function goToHome() {
+// Функция для перехода на главную.
+// options.replaceState — не пушить новый history entry (popstate уже сменил URL).
+function goToHome(options) {
+    var replaceState = !!(options && options.replaceState);
     // Если активен режим выбора, корректно выходим из него
     if (selectionMode) {
         selectionMode = true;
@@ -80,7 +82,7 @@ function goToHome() {
 
     if (typeof window.showInfo === "function") window.showInfo((window.I18N || {})['notification.home']);
 
-    window.updateURL('', '', false);
+    window.updateURL('', '', replaceState);
 }
 
 

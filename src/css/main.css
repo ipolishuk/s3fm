@@ -971,13 +971,19 @@ td.settings-col-search-reindex .settings-search-bucket-reindex {
   text-align: center;
 }
 
-.settings-col-status {
+.settings-col-status,
+.settings-col-public-url,
+.settings-col-available {
   width: 1%;
   white-space: nowrap;
 }
 
 .content-table th.settings-col-status,
-.content-table td.settings-col-status {
+.content-table td.settings-col-status,
+.content-table th.settings-col-public-url,
+.content-table td.settings-col-public-url,
+.content-table th.settings-col-available,
+.content-table td.settings-col-available {
   text-align: center;
 }
 

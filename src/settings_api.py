@@ -34,12 +34,14 @@ from db import (
     list_cloud_rows,
     list_clouds,
     list_endpoints,
+    normalize_cloud_available,
     list_roles,
     list_users,
     list_users_for_bucket_access,
     update_bucket,
     update_cloud,
     update_role,
+    rename_user,
     update_user,
     connection_status as db_connection_status,
     set_bucket_search_index_enabled,
@@ -593,13 +595,23 @@ def settings_user_by_name_impl(username):
             return jsonify({'error': _('error.role_not_found')}), 400
         password = data.get('password')
         if not get_user(username):
-            return jsonify({'error': _('error.bucket_not_found')}), 404
+            return jsonify({'error': _('error.user_not_found')}), 404
         if not _role_valid_for_user(role):
             return jsonify({'error': _('error.role_not_found')}), 400
         if not isinstance(buckets, list):
             buckets = []
         if not isinstance(clouds, list):
             clouds = []
+        new_username = (data.get('username') or '').strip()
+        rename_to = None
+        if new_username and new_username != username:
+            if is_target_admin:
+                return jsonify({'error': _('error.cannot_rename_admin')}), 400
+            if new_username.lower() == 'admin':
+                return jsonify({'error': _('error.cannot_rename_to_admin')}), 400
+            if get_user(new_username):
+                return jsonify({'error': _('error.user_exists')}), 400
+            rename_to = new_username
         password_hash = None
         if password and str(password).strip():
             password_hash = hash_password(password)
@@ -613,19 +625,30 @@ def settings_user_by_name_impl(username):
         active_until = None if (username or '').strip().lower() == 'admin' else _parse_active_until(data, is_active)
         if active_until is False:
             return jsonify({'error': _('error.user_active_until_invalid')}), 400
+        effective_username = username
+        if rename_to:
+            if not rename_user(username, rename_to):
+                return jsonify({'error': _('error.user_exists')}), 400
+            effective_username = rename_to
+            if session.get('username') == username:
+                session['username'] = rename_to
         if not update_user(
-            username, role, buckets, clouds,
+            effective_username, role, buckets, clouds,
             password_hash=password_hash, bucket_roles=bucket_roles, email=email, full_name=display_name,
             is_active=is_active, active_until=active_until,
         ):
-            return jsonify({'error': _('error.bucket_not_found')}), 404
-        if username == session.get('username') and not is_active:
+            return jsonify({'error': _('error.user_not_found')}), 404
+        if effective_username == session.get('username') and not is_active:
             session.clear()
             return jsonify({'ok': True, 'session_cleared': True})
         session_updated = False
-        if username == session.get('username'):
+        if effective_username == session.get('username'):
             session_updated = sync_logged_in_session_from_db()
-        return jsonify({'ok': True, 'session_updated': session_updated})
+        return jsonify({
+            'ok': True,
+            'session_updated': session_updated,
+            'username': effective_username,
+        })
     except Exception as e:
         log_error('Failed to update user in settings', 'settings_users_put', e, LOG_CONFIG['show_traceback'])
         return jsonify({'error': _('error.unexpected')}), 500
@@ -921,15 +944,16 @@ def settings_bucket_by_key_impl(cloud_id, display_name):
 
 
 def settings_options_clouds_impl():
-    """Все облака из каталога для формы бакета (admin или право add_bucket).
+    """Облака из каталога для формы бакета (admin или право add_bucket).
 
     Не ограничиваем allowed_clouds пользователя: при создании бакета можно
-    выбрать любое зарегистрированное облако; доступ выдаётся через grant.
+    выбрать облако из каталога; доступ выдаётся через grant.
+    Не-admin не видит облака с available=false.
     """
     if not _can_add_bucket():
         return jsonify({'error': _('error.access_denied')}), 403
     try:
-        return jsonify({'items': list_clouds()})
+        return jsonify({'items': list_clouds(include_admin_only=_is_settings_admin())})
     except Exception as e:
         log_error('Failed to list clouds for settings options', 'settings_options_clouds', e, LOG_CONFIG['show_traceback'])
         return jsonify({'error': _('error.unexpected')}), 500
@@ -1022,8 +1046,14 @@ def settings_options_endpoints_impl():
     if not _can_add_bucket():
         return jsonify({'error': _('error.access_denied')}), 403
     try:
-        # Все endpoint'ы каталога облаков — иначе при выборе «чужого» облака список URL пуст
-        return jsonify({'items': list_endpoints() if _is_settings_admin() else list_cloud_endpoints()})
+        # Admin — полный каталог; не-admin — только облака с available=true
+        return jsonify({
+            'items': (
+                list_endpoints()
+                if _is_settings_admin()
+                else list_cloud_endpoints(include_admin_only=False)
+            )
+        })
     except Exception as e:
         log_error('Failed to list endpoints for settings options', 'settings_options_endpoints', e, LOG_CONFIG['show_traceback'])
         return jsonify({'error': _('error.unexpected')}), 500
@@ -1095,12 +1125,16 @@ def settings_clouds_impl():
             return jsonify({'error': _('error.endpoint_url_array_required')}), 400
         endpoint_urls, endpoint_flags = parsed
         public_url_enabled = bool(data.get('public_url_enabled'))
+        available = normalize_cloud_available(
+            data['available'] if 'available' in data else data.get('visibility')
+        )
         insert_cloud(
             cloud_id=cloud_id,
             display_name=display_name,
             endpoint_url=endpoint_urls,
             public_url_enabled=public_url_enabled,
             endpoint_virtual_hosted=endpoint_flags,
+            available=available,
         )
         log_info(f"Created cloud: {cloud_id}", 'create_objects')
         return jsonify({'ok': True})
@@ -1143,6 +1177,7 @@ def settings_cloud_by_id_impl(cloud_id):
         endpoint_flags = None
         virtual_hosted = None
         public_url_enabled = None
+        available = None
         touches_endpoints = (
             'endpoint_url' in data
             or 'endpoints' in data
@@ -1163,6 +1198,10 @@ def settings_cloud_by_id_impl(cloud_id):
                 virtual_hosted = bool(data.get('virtual_hosted'))
         if 'public_url_enabled' in data:
             public_url_enabled = bool(data.get('public_url_enabled'))
+        if 'available' in data:
+            available = normalize_cloud_available(data.get('available'))
+        elif 'visibility' in data:
+            available = normalize_cloud_available(data.get('visibility'))
         update_cloud(
             cloud_id=cloud_id,
             display_name=display_name,
@@ -1170,6 +1209,7 @@ def settings_cloud_by_id_impl(cloud_id):
             public_url_enabled=public_url_enabled,
             virtual_hosted=virtual_hosted,
             endpoint_virtual_hosted=endpoint_flags,
+            available=available,
         )
         return jsonify({'ok': True})
     except Exception as e:

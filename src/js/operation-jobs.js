@@ -376,6 +376,11 @@
             .then(function (data) {
                 (data.items || []).forEach(function (item) {
                     if (!item.job_id || isSeen(item.job_id)) return;
+                    // Зомби pending без worker — не поднимать тост при логине
+                    if (item.status === 'pending' && item.created_at) {
+                        var ageMs = Date.now() - Number(item.created_at) * 1000;
+                        if (ageMs >= PENDING_STUCK_MS) return;
+                    }
                     subscribe(item.job_id, item.op, item.display_names || [], true);
                 });
                 if (hasOpenHandles()) scheduleReconcile();

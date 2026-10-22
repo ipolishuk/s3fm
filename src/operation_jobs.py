@@ -35,6 +35,14 @@ _PURGE_MIN_INTERVAL_SEC = float(os.environ.get('OPERATION_PURGE_MIN_INTERVAL_SEC
 # pending без worker: короткий таймаут (тост иначе висит в /active часами)
 _STALE_PENDING_SEC = int(os.environ.get('OPERATION_STALE_PENDING_SEC', '600'))
 _STALE_RUNNING_SEC = int(os.environ.get('OPERATION_STALE_RUNNING_SEC', str(6 * 3600)))
+# copy/move/delete/acl/upload/download_archive: короче — иначе после рестарта worker
+# тост «Deleting …» всплывает при логине часами.
+_STALE_INTERACTIVE_RUNNING_SEC = int(
+    os.environ.get('OPERATION_STALE_INTERACTIVE_RUNNING_SEC', '1800')
+)
+_INTERACTIVE_OPS = frozenset({
+    'copy', 'move', 'delete', 'acl', 'upload', 'download_archive',
+})
 _last_purge_at = 0.0
 
 
@@ -118,7 +126,8 @@ def _load_job_from_db(job_id: str) -> Optional[Dict[str, Any]]:
                 cur.execute(
                     """
                     SELECT id, username, op, status, meta, history, error,
-                           cancel_requested, created_at, started_at, finished_at
+                           cancel_requested, created_at, started_at, finished_at,
+                           updated_at
                     FROM operation_jobs
                     WHERE id = %s
                     """,
@@ -142,6 +151,7 @@ def _load_job_from_db(job_id: str) -> Optional[Dict[str, Any]]:
                 'created_at': _dt_to_ts(row.get('created_at')) or _now(),
                 'started_at': _dt_to_ts(row.get('started_at')),
                 'finished_at': _dt_to_ts(row.get('finished_at')),
+                'updated_at': _dt_to_ts(row.get('updated_at')),
                 'history': history if isinstance(history, list) else [],
                 'error': row.get('error'),
                 'cancel_requested': bool(row.get('cancel_requested')),
@@ -152,12 +162,22 @@ def _load_job_from_db(job_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _running_stale_limit_sec(op: str) -> int:
+    op = (op or '').strip()
+    if op in _INTERACTIVE_OPS and _STALE_INTERACTIVE_RUNNING_SEC > 0:
+        return _STALE_INTERACTIVE_RUNNING_SEC
+    return _STALE_RUNNING_SEC
+
+
 def _job_is_stale(job: Dict[str, Any], now: float) -> bool:
     status = job.get('status')
     if status == 'pending' and _STALE_PENDING_SEC > 0:
         age = now - float(job.get('created_at') or now)
         return age > _STALE_PENDING_SEC
-    if status == 'running' and _STALE_RUNNING_SEC > 0:
+    if status == 'running':
+        limit = _running_stale_limit_sec(job.get('op') or '')
+        if limit <= 0:
+            return False
         # Как в PG-purge: по last activity (updated_at), не по started_at —
         # длинный reindex с прогрессом не должен считаться stale.
         age = now - float(
@@ -166,7 +186,7 @@ def _job_is_stale(job: Dict[str, Any], now: float) -> bool:
             or job.get('created_at')
             or now
         )
-        return age > _STALE_RUNNING_SEC
+        return age > limit
     return False
 
 
@@ -231,6 +251,21 @@ def _purge_stale_jobs() -> None:
                         """,
                         (int(_STALE_PENDING_SEC),),
                     )
+                if _STALE_INTERACTIVE_RUNNING_SEC > 0:
+                    cur.execute(
+                        """
+                        UPDATE operation_jobs
+                        SET status = 'error',
+                            error = COALESCE(NULLIF(error, ''), 'stale_timeout'),
+                            finished_at = COALESCE(finished_at, NOW()),
+                            updated_at = NOW()
+                        WHERE status = 'running'
+                          AND op = ANY(%s)
+                          AND COALESCE(updated_at, started_at, created_at)
+                              < NOW() - (%s * INTERVAL '1 second')
+                        """,
+                        (list(_INTERACTIVE_OPS), int(_STALE_INTERACTIVE_RUNNING_SEC)),
+                    )
                 if _STALE_RUNNING_SEC > 0:
                     cur.execute(
                         """
@@ -291,6 +326,7 @@ def create_job(username: str, op: str, meta: Optional[Dict[str, Any]] = None) ->
         'created_at': _now(),
         'started_at': None,
         'finished_at': None,
+        'updated_at': _now(),
         'history': [],
         'error': None,
         'cancel_requested': False,
@@ -365,6 +401,7 @@ def _sync_job_from_db(job_id: str) -> Optional[Dict[str, Any]]:
             mem['error'] = loaded.get('error')
             mem['finished_at'] = loaded.get('finished_at')
             mem['started_at'] = loaded.get('started_at')
+            mem['updated_at'] = loaded.get('updated_at')
             mem['cancel_requested'] = bool(loaded.get('cancel_requested'))
     return {
         'id': loaded['id'],
@@ -375,6 +412,7 @@ def _sync_job_from_db(job_id: str) -> Optional[Dict[str, Any]]:
         'created_at': loaded['created_at'],
         'started_at': loaded.get('started_at'),
         'finished_at': loaded.get('finished_at'),
+        'updated_at': loaded.get('updated_at'),
         'history': list(loaded.get('history') or []),
         'error': loaded.get('error'),
         'cancel_requested': bool(loaded.get('cancel_requested')),
@@ -463,6 +501,7 @@ def publish(job_id: str, event: Dict[str, Any]) -> None:
             job['history'] = history[-_MAX_HISTORY:]
         etype = event.get('type')
         now = _now()
+        job['updated_at'] = now
         if etype == 'error':
             job['status'] = 'error'
             job['error'] = event.get('error')
@@ -558,6 +597,7 @@ def mark_running(job_id: str) -> None:
         if job and job.get('status') == 'pending':
             job['status'] = 'running'
             job['started_at'] = _now()
+            job['updated_at'] = job['started_at']
             snapshot = {
                 'id': job['id'],
                 'username': job.get('username'),
@@ -800,8 +840,8 @@ def get_job_with_cancel(job_id: str) -> Optional[Dict[str, Any]]:
 
 
 def list_jobs_for_user(username: str, *, active_only: bool = True) -> List[Dict[str, Any]]:
-    # Не полный purge на каждый poll — DELETE ждёт UPSERT progress и «вешает» /active.
-    _purge_stale_jobs_maybe()
+    # Force purge: иначе зомби delete/copy всплывает тостом при логине / resume.
+    _purge_stale_jobs_maybe(force=True)
     by_id: Dict[str, Dict[str, Any]] = {}
 
     def _add(job_id: str, op: str, status: str, meta: Dict[str, Any], created_at) -> None:

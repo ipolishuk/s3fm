@@ -43,7 +43,8 @@
 - `OPERATION_PROGRESS_PERSIST_SEC` — как часто писать progress-события job в PostgreSQL (по умолчанию `2`; `0` — каждый progress). Снижает блокировки `/files/operation-jobs/active`.
 - `OPERATION_PURGE_MIN_INTERVAL_SEC` — минимальный интервал purge старых job (по умолчанию `60`).
 - `OPERATION_STALE_PENDING_SEC` — `pending` дольше N секунд (worker не забрал) → `error` / уходит из `/active` (по умолчанию `600` = 10 мин).
-- `OPERATION_STALE_RUNNING_SEC` — `running` без обновлений дольше N секунд → `error` (по умолчанию `21600` = 6 ч).
+- `OPERATION_STALE_RUNNING_SEC` — `running` без обновлений дольше N секунд → `error` (по умолчанию `21600` = 6 ч; для reindex/bucket_size).
+- `OPERATION_STALE_INTERACTIVE_RUNNING_SEC` — то же для copy/move/delete/acl/upload/download_archive (по умолчанию `1800` = 30 мин), чтобы зомби-job не всплывал тостом при следующем логине.
 
 ### Загрузка и логирование
 - `MAX_UPLOAD_MB` — лимит загрузки (по умолчанию `100`).

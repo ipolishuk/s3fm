@@ -237,6 +237,10 @@
         if (op === 'delete') {
             var elemWord = pluralKeys(op, current);
             var currentLabel = current + ' ' + elemWord;
+            // Пока total неизвестен (0 / totalPending) — не «Deleting N from 0 (0%)»
+            if (options.totalPending || !total) {
+                return currentLabel + '…';
+            }
             var key = options.itemDone ? meta.progressItemDone : meta.progress;
             return tr(key, '{current}/{total}')
                 .replace('{current}', currentLabel)

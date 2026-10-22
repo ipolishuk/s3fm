@@ -2112,11 +2112,16 @@ function applyAddUserStatus(isActive, locked) {
     if (trigger) trigger.disabled = !!locked;
     applyAddUserActiveUntil(arguments.length > 2 ? arguments[2] : undefined, !!locked);
 }
+function padDatePart(n) {
+    n = Number(n) || 0;
+    return (n < 10 ? '0' : '') + n;
+}
+
 function applyAddUserActiveUntil(activeUntil, locked) {
     var dateEl = document.getElementById('addUserActiveUntil');
     if (!dateEl) return;
     var now = new Date();
-    dateEl.min = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    dateEl.min = now.getFullYear() + '-' + padDatePart(now.getMonth() + 1) + '-' + padDatePart(now.getDate());
     var raw = activeUntil == null ? '' : String(activeUntil).slice(0, 10);
     dateEl.value = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
     if (!dateEl.dataset.untilPlaceholderBound) {
@@ -2180,6 +2185,7 @@ function detachAddUserModalFocusClose() {
 function attachAddUserModalFocusClose() {
     var um = document.getElementById('addUserModal');
     detachAddUserModalFocusClose();
+    if (!um) return;
     um._userFocusClose = function(ev) {
         if (um.style.display === 'none') return;
         if (!um.contains(ev.target)) return;
@@ -2194,6 +2200,20 @@ function attachAddUserModalFocusClose() {
         closeAllAddUserDropdownPanels();
     };
     um.addEventListener('click', um._userClickClose, true);
+}
+
+function fetchJsonSafe(url) {
+    return fetch(url, { credentials: 'include' })
+        .then(function (r) {
+            return r.json().then(function (data) {
+                return { ok: r.ok, status: r.status, data: data };
+            }).catch(function () {
+                return { ok: false, status: r.status, data: null };
+            });
+        })
+        .catch(function () {
+            return { ok: false, status: 0, data: null };
+        });
 }
 function setFormControlRevealLabel(btn, label) {
     if (!btn) return;
@@ -2269,15 +2289,27 @@ function toggleAddUserPasswordVisibility() {
     }
 }
 var addUserSubmitInFlight = false;
+var addUserFormReady = true;
+var addUserFormLoadSeq = 0;
+
+function syncAddUserSubmitEnabled() {
+    var submitBtn = document.getElementById('addUserSubmitBtn');
+    if (!submitBtn) return;
+    var blocked = addUserSubmitInFlight || !addUserFormReady;
+    submitBtn.disabled = blocked;
+    submitBtn.setAttribute('aria-busy', blocked ? 'true' : 'false');
+}
+
+function setAddUserFormLoading(loading) {
+    addUserFormReady = !loading;
+    syncAddUserSubmitEnabled();
+}
 
 function setAddUserSubmitBusy(busy) {
-    var submitBtn = document.getElementById('addUserSubmitBtn');
     var cancelBtn = document.getElementById('addUserCancelBtn');
     addUserSubmitInFlight = !!busy;
-    if (submitBtn) {
-        submitBtn.disabled = !!busy;
-        submitBtn.setAttribute('aria-busy', busy ? 'true' : 'false');
-    }
+    syncAddUserSubmitEnabled();
+    // Cancel блокируем только на время PUT/POST, не на время подгрузки формы
     if (cancelBtn) cancelBtn.disabled = !!busy;
 }
 
@@ -2291,6 +2323,8 @@ function hideAddUserModal() {
         delete modal._userDocClickClose;
     }
     modal.style.display = 'none';
+    addUserFormLoadSeq += 1;
+    addUserFormReady = true;
     setAddUserSubmitBusy(false);
     resetAddUserModalForm();
     var editInput = document.getElementById('addUserEditUsername');
@@ -2540,7 +2574,6 @@ function wireAddUserLdapSearch() {
     });
 }
 function openEditUserModal(username, mode) {
-    setAddUserSubmitBusy(false);
     mode = mode || 'edit';
     var isCopy = mode === 'copy';
     if (!isCopy && !canEditTargetUser(username)) {
@@ -2550,6 +2583,10 @@ function openEditUserModal(username, mode) {
         return;
     }
     var t = window.I18N || {};
+    var loadSeq = ++addUserFormLoadSeq;
+    setAddUserSubmitBusy(false);
+    // Пока GET user + options не завершились — Update отключён (иначе можно затереть профиль пустыми полями)
+    setAddUserFormLoading(true);
     wireAddUserLdapSearch();
     document.getElementById('addUserEditUsername').value = isCopy ? '' : username;
     document.getElementById('addUserUsername').value = isCopy ? '' : username;
@@ -2558,14 +2595,15 @@ function openEditUserModal(username, mode) {
     document.getElementById('addUserUsername').disabled = usernameLocked;
     applyAddUserLdapAvailability(!usernameLocked);
     closeAddUserLdapResults();
+    // Сразу очищаем профиль — иначе до прихода API видны поля предыдущей УЗ / пустота кажется «сохранённой»
+    var fullNameClear = document.getElementById('addUserFullName');
+    if (fullNameClear) fullNameClear.value = '';
+    var emailClear = document.getElementById('addUserEmail');
+    if (emailClear) emailClear.value = '';
     if (isCopy) {
         fillAddUserGeneratedPassword();
         document.getElementById('addUserPassword').required = true;
         document.getElementById('addUserPassword').placeholder = '';
-        var fullNameClear = document.getElementById('addUserFullName');
-        if (fullNameClear) fullNameClear.value = '';
-        var emailClear = document.getElementById('addUserEmail');
-        if (emailClear) emailClear.value = '';
     } else {
         document.getElementById('addUserPassword').value = '';
         document.getElementById('addUserPassword').required = false;
@@ -2618,20 +2656,45 @@ function openEditUserModal(username, mode) {
     // Показать окно сразу — не ждать options/LDAP status
     if (addUserModalEdit) addUserModalEdit.style.display = 'flex';
     attachAddUserModalFocusClose();
+    var defaultRoleOptions = [
+        { value: 'admin', label: 'admin' },
+        { value: 'storage_admin', label: 'storage_admin' },
+        { value: 'storage_editor', label: 'storage_editor' },
+        { value: 'storage_viewer', label: 'storage_viewer' }
+    ];
     Promise.all([
-        fetch('/api/settings/users/' + encodeURIComponent(username), { credentials: 'include' }).then(function(r) { return r.json(); }),
-        fetch('/api/settings/options/buckets', { credentials: 'include' }).then(function(r) { return r.json(); }),
-        fetch('/api/settings/options/clouds', { credentials: 'include' }).then(function(r) { return r.json(); }),
-        fetchRoleOptionsForUserForm()
+        fetchJsonSafe('/api/settings/users/' + encodeURIComponent(username)),
+        fetchJsonSafe('/api/settings/options/buckets'),
+        fetchJsonSafe('/api/settings/options/clouds'),
+        fetchRoleOptionsForUserForm().catch(function () { return defaultRoleOptions.slice(); })
     ]).then(function(results) {
-        var user = results[0] && results[0].username ? results[0] : null;
-        var bucketItems = (results[1] && results[1].items) ? results[1].items : [];
-        var cloudItems = (results[2] && results[2].items) ? results[2].items : [];
-        var roleOptions = results[3] || [];
-        var userRole = (user && user.role) ? user.role : 'storage_viewer';
-        roleValueInput.value = userRole;
-        rolePanel.innerHTML = '';
+        if (loadSeq !== addUserFormLoadSeq) return;
+        var userRes = results[0] || {};
+        var userData = userRes.data;
+        // Пустой профиль (без email/ФИО/ACL) — норма; важен только успешный GET с username
+        var user = (userRes.ok && userData && userData.username) ? userData : null;
+        if (!user) {
+            var loadErr = (userData && userData.error)
+                || (window.I18N && window.I18N['error.load_user_or_options_failed'])
+                || '';
+            toastFormError(loadErr);
+            // Без загруженного пользователя Update опасен — оставляем кнопку заблокированной
+            setAddUserFormLoading(true);
+            return;
+        }
+        var bucketItems = (results[1] && results[1].data && Array.isArray(results[1].data.items))
+            ? results[1].data.items
+            : [];
+        var cloudItems = (results[2] && results[2].data && Array.isArray(results[2].data.items))
+            ? results[2].data.items
+            : [];
+        var roleOptions = Array.isArray(results[3]) && results[3].length ? results[3] : defaultRoleOptions.slice();
+        try {
+        var userRole = (user.role && String(user.role).trim()) ? String(user.role).trim() : 'storage_viewer';
+        if (roleValueInput) roleValueInput.value = userRole;
+        if (rolePanel) rolePanel.innerHTML = '';
         roleOptions.forEach(function(opt) {
+            if (!opt || !rolePanel) return;
             var lab = document.createElement('div');
             lab.className = 'dropdown-item' + (opt.value === userRole ? ' selected' : '');
             lab.setAttribute('role', 'option');
@@ -2692,10 +2755,10 @@ function openEditUserModal(username, mode) {
             if (usernameElEdit) usernameElEdit.disabled = usernameLockedEdit;
             applyAddUserLdapAvailability(!usernameLockedEdit);
         }
-        var userClouds = (user && Array.isArray(user.clouds)) ? user.clouds : [];
-        var userBuckets = (user && Array.isArray(user.buckets)) ? user.buckets : [];
-        var userBucketRolesMap = bucketRolesMapFromList(user && user.bucket_roles);
-        cloudsPanel.innerHTML = '';
+        var userClouds = Array.isArray(user.clouds) ? user.clouds : [];
+        var userBuckets = Array.isArray(user.buckets) ? user.buckets : [];
+        var userBucketRolesMap = bucketRolesMapFromList(user.bucket_roles);
+        if (cloudsPanel) cloudsPanel.innerHTML = '';
         var optAllC = document.createElement('label');
         optAllC.className = 'lables dropdown-item';
         optAllC.innerHTML = '<input type="checkbox" class="checkbox" value="*" data-label="' + allLabel.replace(/"/g, '&quot;') + '"> <span>' + allLabel + '</span>';
@@ -2703,12 +2766,15 @@ function openEditUserModal(username, mode) {
         optAllC.querySelector('input').checked = allChecked;
         optAllC.addEventListener('change', function() {
             var cb = optAllC.querySelector('input');
-            cloudsPanel.querySelectorAll('input').forEach(function(inp) { inp.checked = cb.checked; });
+            if (cloudsPanel) {
+                cloudsPanel.querySelectorAll('input').forEach(function(inp) { inp.checked = cb.checked; });
+            }
             updateCloudsLabel();
             rebuildBucketsPanelForEdit();
         });
-        cloudsPanel.appendChild(optAllC);
+        if (cloudsPanel) cloudsPanel.appendChild(optAllC);
         cloudItems.forEach(function(item) {
+            if (!item || !cloudsPanel) return;
             var lab = document.createElement('label');
             lab.className = 'lables dropdown-item';
             lab.innerHTML = '<input type="checkbox" class="checkbox" value="' + (item.id + '').replace(/"/g, '&quot;') + '" data-label="' + (item.label + '').replace(/"/g, '&quot;') + '"> <span>' + (item.label || item.id) + '</span>';
@@ -2722,6 +2788,7 @@ function openEditUserModal(username, mode) {
             cloudsPanel.appendChild(lab);
         });
         function updateCloudsLabel() {
+            if (!cloudsPanel || !cloudsLabel) return;
             var ch = cloudsPanel.querySelectorAll('input:checked');
             var vals = Array.from(ch).map(function(c) { return c.value; });
             if (vals.indexOf('*') !== -1 || vals.length === 0) {
@@ -2743,8 +2810,9 @@ function openEditUserModal(username, mode) {
                 onAddUserBucketsSelectionChanged(roleOptions);
                 return;
             }
+            if (!bucketsPanel) return;
             var showAll = selectedClouds.indexOf('*') !== -1;
-            var filtered = showAll ? bucketItems : bucketItems.filter(function(item) { return selectedClouds.indexOf(item.cloud_id || '') !== -1; });
+            var filtered = showAll ? bucketItems : bucketItems.filter(function(item) { return item && selectedClouds.indexOf(item.cloud_id || '') !== -1; });
             var keptIds = {};
             if (preserveSelection !== false) {
                 var kept = bucketsPanel.querySelectorAll('input:checked');
@@ -2776,6 +2844,7 @@ function openEditUserModal(username, mode) {
             });
             bucketsPanel.appendChild(optAllB);
             filtered.forEach(function(item) {
+                if (!item) return;
                 var lab = document.createElement('label');
                 lab.className = 'lables dropdown-item';
                 lab.innerHTML = buildAddUserBucketDropdownItemHtml(item);
@@ -2792,8 +2861,10 @@ function openEditUserModal(username, mode) {
                 var checked = bucketsAllMode
                     || !!keptIds[itemId]
                     || userBuckets.some(function(tok) { return userBucketTokenMatchesOption(tok, item); });
-                lab.querySelector('input').checked = checked;
-                lab.querySelector('input').addEventListener('change', function() {
+                var inp = lab.querySelector('input');
+                if (!inp) return;
+                inp.checked = checked;
+                inp.addEventListener('change', function() {
                     var allCb = optAllB.querySelector('input');
                     if (allCb && allCb.checked) allCb.checked = false;
                     updateBucketsLabel();
@@ -2807,6 +2878,7 @@ function openEditUserModal(username, mode) {
                 allNonAllAfter.forEach(function(inp) { inp.checked = true; });
             }
             function updateBucketsLabel() {
+                if (!bucketsLabel) return;
                 var checked = bucketsPanel.querySelectorAll('input:checked');
                 var vals = Array.from(checked).map(function(c) { return c.value; });
                 if (vals.indexOf('*') !== -1 || vals.length === 0) {
@@ -2825,14 +2897,23 @@ function openEditUserModal(username, mode) {
         loadAddUserBucketRolesOverrides(userBucketRolesMap);
         updateCloudsLabel();
         rebuildBucketsPanelForEdit(false);
-        document.getElementById('addUserRoleTrigger').onclick = function(ev) { ev.stopPropagation(); toggleAddUserDropdown(roleWrap, rolePanel, [cloudsWrap, bucketsWrap, document.getElementById('addUserStatusWrap')]); };
-        document.getElementById('addUserCloudsTrigger').onclick = function(ev) { ev.stopPropagation(); toggleAddUserDropdown(cloudsWrap, cloudsPanel, [bucketsWrap, roleWrap, document.getElementById('addUserStatusWrap')]); };
-        document.getElementById('addUserBucketsTrigger').onclick = function(ev) {
-            if (ev.currentTarget.disabled) return;
-            ev.stopPropagation();
-            toggleAddUserDropdown(bucketsWrap, bucketsPanel, [cloudsWrap, roleWrap, document.getElementById('addUserStatusWrap')]);
-        };
-        applyAddUserStatus(!(user && user.is_active === false), !isCopy && String(username || '').toLowerCase() === 'admin', user && user.active_until);
+        var roleTrigger = document.getElementById('addUserRoleTrigger');
+        var cloudsTrigger = document.getElementById('addUserCloudsTrigger');
+        var bucketsTrigger = document.getElementById('addUserBucketsTrigger');
+        if (roleTrigger) {
+            roleTrigger.onclick = function(ev) { ev.stopPropagation(); toggleAddUserDropdown(roleWrap, rolePanel, [cloudsWrap, bucketsWrap, document.getElementById('addUserStatusWrap')]); };
+        }
+        if (cloudsTrigger) {
+            cloudsTrigger.onclick = function(ev) { ev.stopPropagation(); toggleAddUserDropdown(cloudsWrap, cloudsPanel, [bucketsWrap, roleWrap, document.getElementById('addUserStatusWrap')]); };
+        }
+        if (bucketsTrigger) {
+            bucketsTrigger.onclick = function(ev) {
+                if (ev.currentTarget.disabled) return;
+                ev.stopPropagation();
+                toggleAddUserDropdown(bucketsWrap, bucketsPanel, [cloudsWrap, roleWrap, document.getElementById('addUserStatusWrap')]);
+            };
+        }
+        applyAddUserStatus(user.is_active !== false, !isCopy && String(username || '').toLowerCase() === 'admin', user.active_until);
         wireAddUserStatusTrigger([roleWrap, cloudsWrap, bucketsWrap]);
         function closeDropdownsEdit(e) {
             if (isAddUserDropdownUiTarget(e && e.target)) return;
@@ -2849,8 +2930,18 @@ function openEditUserModal(username, mode) {
             addUserModalEdit._userDocClickClose = closeDropdownsEdit;
             setTimeout(function() { document.addEventListener('click', closeDropdownsEdit); }, 0);
         }
+        if (loadSeq === addUserFormLoadSeq) setAddUserFormLoading(false);
+        } catch (fillErr) {
+            toastFormError((window.I18N && window.I18N['error.load_user_or_options_failed']) || '');
+            if (typeof console !== 'undefined' && console.error) {
+                console.error('openEditUserModal fill failed', fillErr);
+            }
+            if (loadSeq === addUserFormLoadSeq) setAddUserFormLoading(true);
+        }
     }).catch(function() {
+        if (loadSeq !== addUserFormLoadSeq) return;
         toastFormError((window.I18N && window.I18N['error.load_user_or_options_failed']) || '');
+        setAddUserFormLoading(true);
         var m = document.getElementById('addUserModal');
         if (m) m.style.display = 'flex';
     });
@@ -2931,18 +3022,25 @@ if (settingsAddBtn) {
             if (iconElAdd) iconElAdd.className = 'fa-solid fa-user-plus modal-icon modal-icon-info';
             if (btnElAdd) setModalSubmitBtn(btnElAdd, t['settings.add'] || 'Add', 'add');
             setAddUserSubmitBusy(false);
+            var addLoadSeq = ++addUserFormLoadSeq;
+            setAddUserFormLoading(true);
             var hintAdd = document.getElementById('addUserPasswordHint');
             if (hintAdd) hintAdd.classList.add('hidden');
             if (addUserModalEl) addUserModalEl.style.display = 'flex';
             attachAddUserModalFocusClose();
             Promise.all([
-                fetch('/api/settings/options/buckets', { credentials: 'include' }).then(function(r) { return r.json(); }),
-                fetch('/api/settings/options/clouds', { credentials: 'include' }).then(function(r) { return r.json(); }),
-                fetchRoleOptionsForUserForm()
+                fetchJsonSafe('/api/settings/options/buckets'),
+                fetchJsonSafe('/api/settings/options/clouds'),
+                fetchRoleOptionsForUserForm().catch(function () { return []; })
             ]).then(function(results) {
-                var bucketItems = (results[0] && results[0].items) ? results[0].items : [];
-                var cloudItems = (results[1] && results[1].items) ? results[1].items : [];
-                var roleOptions = results[2] || [];
+                if (addLoadSeq !== addUserFormLoadSeq) return;
+                var bucketItems = (results[0] && results[0].data && Array.isArray(results[0].data.items))
+                    ? results[0].data.items
+                    : [];
+                var cloudItems = (results[1] && results[1].data && Array.isArray(results[1].data.items))
+                    ? results[1].data.items
+                    : [];
+                var roleOptions = Array.isArray(results[2]) ? results[2] : [];
                 rolePanel.innerHTML = '';
                 roleOptions.forEach(function(opt) {
                     var lab = document.createElement('div');
@@ -3116,8 +3214,11 @@ if (settingsAddBtn) {
                 addUserBucketRolesOverrides = {};
                 renderAddUserBucketRolesView();
                 onAddUserBucketsSelectionChanged(roleOptions);
+                if (addLoadSeq === addUserFormLoadSeq) setAddUserFormLoading(false);
             }).catch(function() {
+                if (addLoadSeq !== addUserFormLoadSeq) return;
                 toastFormError((window.I18N && window.I18N['error.load_options_failed']) || '');
+                setAddUserFormLoading(true);
             });
         } else if (window.settingsPanelState.currentTab === 'roles') {
             openAddRoleModal();
@@ -3136,6 +3237,10 @@ var addUserForm = document.getElementById('addUserForm');
 
 function submitAddUserForm() {
     if (addUserSubmitInFlight) return;
+    if (!addUserFormReady) {
+        toastFormError((window.I18N && window.I18N['settings.loading']) || 'Loading...');
+        return;
+    }
     var editUsername = (document.getElementById('addUserEditUsername') && document.getElementById('addUserEditUsername').value) || '';
     var isEdit = editUsername.length > 0;
     var username = (document.getElementById('addUserUsername').value || '').trim();

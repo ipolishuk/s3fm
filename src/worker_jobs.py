@@ -244,6 +244,8 @@ def enqueue_reindex(
         if not locked:
             # Другой процесс как раз ставит reindex — не дублируем.
             return None
+        # Force purge: зомби running без worker иначе блокирует enqueue часами.
+        operation_jobs.purge_stale_jobs(force=True)
         if operation_jobs.find_active_job_by_op('reindex'):
             return None
         job_id = operation_jobs.create_job(username or 'system', 'reindex', meta)

@@ -289,8 +289,8 @@ function setupSettingsPanel() {
         const nextBtn = document.getElementById('settingsPageNext');
         if (!footer) return;
         const tab = (window.settingsPanelState && window.settingsPanelState.currentTab) || '';
-        // Status / Search — не табличный список, пагинация не нужна.
-        if (tab === 'status' || tab === 'search') {
+        // Status — карточки, не таблица. Search — таблица бакетов, пагинация как у Buckets.
+        if (tab === 'status') {
             footer.classList.add('hidden');
             return;
         }

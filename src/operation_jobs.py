@@ -158,7 +158,14 @@ def _job_is_stale(job: Dict[str, Any], now: float) -> bool:
         age = now - float(job.get('created_at') or now)
         return age > _STALE_PENDING_SEC
     if status == 'running' and _STALE_RUNNING_SEC > 0:
-        age = now - float(job.get('started_at') or job.get('created_at') or now)
+        # Как в PG-purge: по last activity (updated_at), не по started_at —
+        # длинный reindex с прогрессом не должен считаться stale.
+        age = now - float(
+            job.get('updated_at')
+            or job.get('started_at')
+            or job.get('created_at')
+            or now
+        )
         return age > _STALE_RUNNING_SEC
     return False
 
@@ -185,16 +192,32 @@ def _purge_stale_jobs() -> None:
                 # Не ждать вечно за UPSERT progress с другого процесса
                 cur.execute("SET LOCAL lock_timeout = '2s'")
                 cur.execute("SET LOCAL statement_timeout = '10s'")
-                # cancel запрошен, но worker не взял — не держим в /active
+                # cancel запрошен, worker мёртв / не взял — не держим singleton (reindex и т.п.)
                 cur.execute(
                     """
                     UPDATE operation_jobs
                     SET status = 'cancelled',
                         finished_at = COALESCE(finished_at, NOW()),
                         updated_at = NOW()
-                    WHERE status = 'pending' AND cancel_requested = true
+                    WHERE cancel_requested = true
+                      AND status = 'pending'
                     """
                 )
+                # running + cancel: даём worker время остановиться; иначе — orphan
+                if _STALE_PENDING_SEC > 0:
+                    cur.execute(
+                        """
+                        UPDATE operation_jobs
+                        SET status = 'cancelled',
+                            finished_at = COALESCE(finished_at, NOW()),
+                            updated_at = NOW()
+                        WHERE cancel_requested = true
+                          AND status = 'running'
+                          AND COALESCE(updated_at, started_at, created_at)
+                              < NOW() - (%s * INTERVAL '1 second')
+                        """,
+                        (int(_STALE_PENDING_SEC),),
+                    )
                 if _STALE_PENDING_SEC > 0:
                     cur.execute(
                         """
@@ -237,14 +260,23 @@ def _purge_stale_jobs() -> None:
         pass
 
 
-def _purge_stale_jobs_maybe() -> None:
+def _purge_stale_jobs_maybe(*, force: bool = False) -> None:
     """Rate-limit purge: на каждый /active DELETE под нагрузкой лочит таблицу."""
     global _last_purge_at
     now = _now()
-    if _PURGE_MIN_INTERVAL_SEC > 0 and (now - _last_purge_at) < _PURGE_MIN_INTERVAL_SEC:
+    if (
+        not force
+        and _PURGE_MIN_INTERVAL_SEC > 0
+        and (now - _last_purge_at) < _PURGE_MIN_INTERVAL_SEC
+    ):
         return
     _last_purge_at = now
     _purge_stale_jobs()
+
+
+def purge_stale_jobs(*, force: bool = False) -> None:
+    """Публичный вход для enqueue/singleton-проверок (force — без rate-limit)."""
+    _purge_stale_jobs_maybe(force=force)
 
 
 def create_job(username: str, op: str, meta: Optional[Dict[str, Any]] = None) -> str:
@@ -697,6 +729,12 @@ def find_active_job_by_op(op: str) -> Optional[Dict[str, Any]]:
     if not op:
         return None
 
+    # Иначе зомби pending/running в PG блокирует reindex, пока /active не вызовет purge.
+    _purge_stale_jobs_maybe()
+
+    def _is_active(job: Optional[Dict[str, Any]]) -> bool:
+        return bool(job and job.get('status') in ('pending', 'running'))
+
     with _jobs_lock:
         candidates = [
             j for j in _jobs.values()
@@ -704,21 +742,11 @@ def find_active_job_by_op(op: str) -> Optional[Dict[str, Any]]:
         ]
     if candidates:
         candidates.sort(key=lambda j: j.get('created_at') or 0)
-        job = candidates[0]
-        loaded = _sync_job_from_db(job['id'])
-        return loaded or {
-            'id': job['id'],
-            'username': job.get('username') or '',
-            'op': job.get('op') or '',
-            'meta': dict(job.get('meta') or {}),
-            'status': job.get('status') or 'pending',
-            'created_at': job.get('created_at'),
-            'started_at': job.get('started_at'),
-            'finished_at': job.get('finished_at'),
-            'history': list(job.get('history') or []),
-            'error': job.get('error'),
-            'cancel_requested': bool(job.get('cancel_requested')),
-        }
+        for job in candidates:
+            loaded = _sync_job_from_db(job['id'])
+            if _is_active(loaded):
+                return loaded
+            # In-memory ещё «active», в PG уже terminal — не считаем активным.
 
     try:
         from db import get_connection
@@ -743,7 +771,8 @@ def find_active_job_by_op(op: str) -> Optional[Dict[str, Any]]:
             conn.close()
     except Exception:
         return None
-    return _sync_job_from_db(job_id)
+    loaded = _sync_job_from_db(job_id)
+    return loaded if _is_active(loaded) else None
 
 
 def get_job_with_cancel(job_id: str) -> Optional[Dict[str, Any]]:

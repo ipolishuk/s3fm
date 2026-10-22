@@ -876,9 +876,10 @@ def get_user(username):
                     conn.commit()
                     is_active = False
                     active_until = None
+            role = (row.get('role') or '').strip() or 'storage_viewer'
             return {
                 'password_hash': row['password'],
-                'role': row['role'],
+                'role': role,
                 'allowed_buckets': buckets,
                 'allowed_clouds': clouds,
                 'bucket_roles': bucket_roles,
@@ -895,7 +896,12 @@ def get_user(username):
             }
         finally:
             conn.close()
-    except Exception:
+    except Exception as exc:
+        try:
+            from logs import log_warning
+            log_warning(f'get_user failed for {username!r}: {exc}', 'get_user')
+        except Exception:
+            pass
         return None
 
 

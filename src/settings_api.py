@@ -550,10 +550,10 @@ def settings_user_by_name_impl(username):
                 return jsonify({'error': _('error.cannot_edit_admin')}), 403
             user = get_user(username)
             if not user:
-                return jsonify({'error': _('error.bucket_not_found')}), 404
+                return jsonify({'error': _('error.user_not_found')}), 404
             return jsonify({
                 'username': username,
-                'role': user['role'],
+                'role': (user.get('role') or '').strip() or 'storage_viewer',
                 'buckets': _session_allowed_list(user.get('allowed_buckets', [])),
                 'clouds': _session_allowed_list(user.get('allowed_clouds', [])),
                 'bucket_roles': user.get('bucket_roles') or [],

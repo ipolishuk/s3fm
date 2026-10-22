@@ -1249,7 +1249,10 @@
         };
         _reindexEventSource.onerror = function () {
             stopReindexJobStream();
-            syncReindexJobFromServer();
+            // close() тоже может дать onerror — не опрашивать status вне вкладки Search
+            if (window.settingsPanelState && window.settingsPanelState.currentTab === 'search') {
+                syncReindexJobFromServer();
+            }
         };
     }
 
@@ -1565,6 +1568,14 @@
             }
             return;
         }
+        // Сверяем с сервером: клиентский _reindexJobState мог остаться active после
+        // зомби-job / обрыва SSE, хотя воркер уже ничего не делает.
+        syncReindexJobFromServer().then(function () {
+            confirmAndReindexBucketAfterSync(bucketId);
+        });
+    }
+
+    function confirmAndReindexBucketAfterSync(bucketId) {
         if (isBucketReindexInProgress(bucketId)) {
             requestStopReindexJob();
             return;
@@ -1710,8 +1721,11 @@
     }
 
     function resetSettingsSearchLayout() {
+        // Уход с вкладки Search: только спрятать search-toolbar.
+        // Не дергать /api/search/reindex/status — это лишняя нагрузка на Users/Roles/Clouds/Buckets
+        // и на любую УЗ, открывшую настройки. Статус подтягивается в loadSettingsSearch.
         updateSearchToolbar(_meiliStatusCache);
-        syncReindexJobFromServer();
+        stopReindexJobStream();
     }
 
     bindSearchToolbarControls();

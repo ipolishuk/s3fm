@@ -992,7 +992,8 @@ def get_buckets_config():
                     SELECT cloud_id, cloud_name, cloud_icon, endpoint_url,
                            display_name, bucket_name, bucket_id,
                            aws_access_key_id, aws_secret_access_key, ca_bundle_path,
-                           region_name, skip_tls_verify
+                           region_name, skip_tls_verify,
+                           COALESCE(search_index_enabled, true) AS search_index_enabled
                     FROM buckets
                     ORDER BY cloud_id, display_name
                 """)
@@ -1017,6 +1018,7 @@ def get_buckets_config():
                     'aws_access_key_id': r['aws_access_key_id'],
                     'aws_secret_access_key': r['aws_secret_access_key'],
                     'endpoint_url': (r.get('endpoint_url') or '').strip(),
+                    'search_index_enabled': bool(r.get('search_index_enabled', True)),
                 }
                 _decrypt_bucket_secret_fields(bc)
                 if r['bucket_id']:
@@ -2044,14 +2046,23 @@ def list_users():
 
 def get_users_as_users_data():
     """
-    Словарь в формате USERS_DATA: {username: {password_hash, role, allowed_buckets, allowed_clouds}}.
+    Словарь в формате USERS_DATA для s3 export/import:
+    {username: {password_hash, role, allowed_buckets, allowed_clouds, bucket_roles,
+                email, full_name, given_name, family_name, middle_name,
+                is_active, active_until}}.
     """
     try:
         conn = get_connection()
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT username, password, role, buckets, clouds, email FROM users ORDER BY username"
+                    """
+                    SELECT username, password, role, buckets, clouds, email,
+                           given_name, family_name, middle_name, full_name,
+                           is_active, active_until
+                    FROM users
+                    ORDER BY username
+                    """
                 )
                 rows = cur.fetchall()
                 roles_by_user = _fetch_all_user_bucket_roles(cur)
@@ -2059,14 +2070,21 @@ def get_users_as_users_data():
             for r in rows:
                 buckets = _jsonb_bucket_cloud_list(r.get("buckets"))
                 clouds = _jsonb_bucket_cloud_list(r.get("clouds"))
-                out[r["username"]] = {
+                entry = {
                     "password_hash": r["password"],
                     "role": r["role"],
                     "allowed_buckets": buckets,
                     "allowed_clouds": clouds,
                     "bucket_roles": roles_by_user.get(r["username"], []),
                     "email": _normalize_user_email(r.get("email")),
+                    "full_name": _normalize_user_text(r.get("full_name")),
+                    "given_name": _normalize_user_text(r.get("given_name")),
+                    "family_name": _normalize_user_text(r.get("family_name")),
+                    "middle_name": _normalize_user_text(r.get("middle_name")),
+                    "is_active": r.get("is_active") is not False,
+                    "active_until": _iso_date(r.get("active_until")),
                 }
+                out[r["username"]] = entry
             return out
         finally:
             conn.close()
@@ -2264,13 +2282,30 @@ def touch_user_last_login(username, conn=None):
             conn.close()
 
 
-def insert_user(username, password_hash, role, buckets=None, clouds=None, bucket_roles=None, email=None, full_name=None, is_active=True, active_until=None, conn=None):
+def insert_user(
+    username,
+    password_hash,
+    role,
+    buckets=None,
+    clouds=None,
+    bucket_roles=None,
+    email=None,
+    full_name=None,
+    given_name=None,
+    family_name=None,
+    middle_name=None,
+    is_active=True,
+    active_until=None,
+    conn=None,
+):
     """Добавить или обновить пользователя. buckets/clouds — списки, сохраняются как JSONB."""
     buckets = buckets if buckets is not None else []
     clouds = clouds if clouds is not None else []
     grants = _normalize_bucket_roles_input(bucket_roles)
     if grants and '*' not in buckets:
         buckets = bucket_roles_to_allowed_buckets(grants, buckets)
+    active = bool(is_active)
+    until = _iso_date(active_until) if active else None
     own = conn is None
     if own:
         conn = get_connection()
@@ -2278,15 +2313,24 @@ def insert_user(username, password_hash, role, buckets=None, clouds=None, bucket
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO users (username, password, role, buckets, clouds, email, full_name, is_active, active_until)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO users (
+                    username, password, role, buckets, clouds,
+                    email, full_name, given_name, family_name, middle_name,
+                    is_active, active_until
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (username) DO UPDATE SET
                     password = EXCLUDED.password,
                     role = EXCLUDED.role,
                     buckets = EXCLUDED.buckets,
                     clouds = EXCLUDED.clouds,
                     email = EXCLUDED.email,
-                    full_name = EXCLUDED.full_name
+                    full_name = EXCLUDED.full_name,
+                    given_name = EXCLUDED.given_name,
+                    family_name = EXCLUDED.family_name,
+                    middle_name = EXCLUDED.middle_name,
+                    is_active = EXCLUDED.is_active,
+                    active_until = EXCLUDED.active_until
                 """,
                 (
                     username,
@@ -2296,8 +2340,11 @@ def insert_user(username, password_hash, role, buckets=None, clouds=None, bucket
                     json.dumps(clouds),
                     _normalize_user_email(email),
                     _normalize_user_text(full_name),
-                    bool(is_active),
-                    active_until if is_active else None,
+                    _normalize_user_text(given_name),
+                    _normalize_user_text(family_name),
+                    _normalize_user_text(middle_name),
+                    active,
+                    until,
                 ),
             )
         set_user_bucket_roles(username, grants, conn=conn)
@@ -2540,6 +2587,7 @@ def insert_bucket(
     cloud_name=None, cloud_icon=None, endpoint_url=None,
     ca_bundle_path=None, region_name=None, skip_tls_verify=None,
     created_by=None,
+    search_index_enabled=None,
     conn=None,
 ):
     """Добавить или обновить бакет в таблице buckets. Возвращает итоговый bucket_id."""
@@ -2557,6 +2605,12 @@ def insert_bucket(
         stv = skip_tls_verify.lower() in ("true", "1", "yes")
     else:
         stv = bool(skip_tls_verify)
+    if search_index_enabled is None:
+        sie = None
+    elif isinstance(search_index_enabled, str):
+        sie = search_index_enabled.lower() in ("true", "1", "yes")
+    else:
+        sie = bool(search_index_enabled)
     try:
         ensure_cloud(cloud_id, cn, endpoint_url=endpoint_url, conn=conn)
         with conn.cursor() as cur:
@@ -2581,15 +2635,16 @@ def insert_bucket(
                 bid = allocate_bucket_id(cur)
             from secrets_crypto import encrypt_secret
             stored_secret = encrypt_secret(aws_secret_access_key) if aws_secret_access_key else aws_secret_access_key
+            sie_insert = True if sie is None else sie
             cur.execute(
                 """
                 INSERT INTO buckets (
                     cloud_id, cloud_name, cloud_icon, endpoint_url,
                     display_name, bucket_name, bucket_id,
                     aws_access_key_id, aws_secret_access_key, ca_bundle_path,
-                    region_name, skip_tls_verify, created_by
+                    region_name, skip_tls_verify, created_by, search_index_enabled
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 ON CONFLICT (cloud_id, display_name) DO UPDATE SET
                     cloud_name = COALESCE(EXCLUDED.cloud_name, buckets.cloud_name),
@@ -2602,7 +2657,8 @@ def insert_bucket(
                     ca_bundle_path = COALESCE(EXCLUDED.ca_bundle_path, buckets.ca_bundle_path),
                     region_name = COALESCE(EXCLUDED.region_name, buckets.region_name),
                     skip_tls_verify = COALESCE(EXCLUDED.skip_tls_verify, buckets.skip_tls_verify),
-                    created_by = COALESCE(buckets.created_by, EXCLUDED.created_by)
+                    created_by = COALESCE(buckets.created_by, EXCLUDED.created_by),
+                    search_index_enabled = COALESCE(%s, buckets.search_index_enabled)
                 """,
                 (
                     cloud_id,
@@ -2618,6 +2674,8 @@ def insert_bucket(
                     region_name,
                     stv,
                     creator,
+                    sie_insert,
+                    sie,
                 ),
             )
         if own:

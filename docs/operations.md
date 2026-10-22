@@ -34,7 +34,18 @@
 
 При импорте `--clouds/--all` для одного `cloud_id` создаются отдельные строки в таблице `clouds` по каждому endpoint.
 
-Экспорт/импорт пользователей включает `bucket_roles` (массив grants или пустой список). Поле опционально: без него при импорте grants для пользователя не меняются.
+Экспорт/импорт пользователей включает:
+- `bucket_roles` (массив grants или пустой список; без поля при импорте grants очищаются через `insert_user`);
+- `email`, `full_name` (Имя Фамилия в UI), `given_name` / `family_name` / `middle_name` (SSO);
+- `is_active`, `active_until` (статус УЗ и дата «включено до»).
+
+Экспорт/импорт бакетов включает `search_index_enabled` (флаг индексации поиска на бакет).
+
+Облака: `endpoint_url` / `endpoints` (+ `virtual_hosted`), `public_url_enabled`, `available`.
+
+Роли: `name`, `permissions`.
+
+Настройки Meilisearch из вкладки Search (`public.meilisearch`) в `s3 export` пока не входят.
 
 Пример:
 

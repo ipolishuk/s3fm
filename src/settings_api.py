@@ -627,11 +627,17 @@ def settings_user_by_name_impl(username):
             return jsonify({'error': _('error.user_active_until_invalid')}), 400
         effective_username = username
         if rename_to:
-            if not rename_user(username, rename_to):
+            if rename_user(username, rename_to):
+                effective_username = rename_to
+                if session.get('username') == username:
+                    session['username'] = rename_to
+            elif get_user(rename_to) and not get_user(username):
+                # Параллельный PUT уже переименовал УЗ — продолжаем update по новому имени
+                effective_username = rename_to
+                if session.get('username') == username:
+                    session['username'] = rename_to
+            else:
                 return jsonify({'error': _('error.user_exists')}), 400
-            effective_username = rename_to
-            if session.get('username') == username:
-                session['username'] = rename_to
         if not update_user(
             effective_username, role, buckets, clouds,
             password_hash=password_hash, bucket_roles=bucket_roles, email=email, full_name=display_name,

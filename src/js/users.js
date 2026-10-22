@@ -2268,6 +2268,19 @@ function toggleAddUserPasswordVisibility() {
         setFormControlRevealIcon(btn, false);
     }
 }
+var addUserSubmitInFlight = false;
+
+function setAddUserSubmitBusy(busy) {
+    var submitBtn = document.getElementById('addUserSubmitBtn');
+    var cancelBtn = document.getElementById('addUserCancelBtn');
+    addUserSubmitInFlight = !!busy;
+    if (submitBtn) {
+        submitBtn.disabled = !!busy;
+        submitBtn.setAttribute('aria-busy', busy ? 'true' : 'false');
+    }
+    if (cancelBtn) cancelBtn.disabled = !!busy;
+}
+
 function hideAddUserModal() {
     if (typeof window.hideModalParamsInfo === 'function') window.hideModalParamsInfo();
     closeAllAddUserDropdownPanels();
@@ -2278,6 +2291,7 @@ function hideAddUserModal() {
         delete modal._userDocClickClose;
     }
     modal.style.display = 'none';
+    setAddUserSubmitBusy(false);
     resetAddUserModalForm();
     var editInput = document.getElementById('addUserEditUsername');
     if (editInput) editInput.value = '';
@@ -2526,6 +2540,7 @@ function wireAddUserLdapSearch() {
     });
 }
 function openEditUserModal(username, mode) {
+    setAddUserSubmitBusy(false);
     mode = mode || 'edit';
     var isCopy = mode === 'copy';
     if (!isCopy && !canEditTargetUser(username)) {
@@ -2915,6 +2930,7 @@ if (settingsAddBtn) {
             if (titleElAdd) titleElAdd.textContent = t['modal.add_user'] || 'Add user';
             if (iconElAdd) iconElAdd.className = 'fa-solid fa-user-plus modal-icon modal-icon-info';
             if (btnElAdd) setModalSubmitBtn(btnElAdd, t['settings.add'] || 'Add', 'add');
+            setAddUserSubmitBusy(false);
             var hintAdd = document.getElementById('addUserPasswordHint');
             if (hintAdd) hintAdd.classList.add('hidden');
             if (addUserModalEl) addUserModalEl.style.display = 'flex';
@@ -3117,14 +3133,9 @@ document.getElementById('addUserCancelBtn').addEventListener('click', hideAddUse
 var addUserPasswordToggle = document.getElementById('addUserPasswordToggle');
 if (addUserPasswordToggle) addUserPasswordToggle.addEventListener('click', toggleAddUserPasswordVisibility);
 var addUserForm = document.getElementById('addUserForm');
-if (addUserForm) {
-    addUserForm.addEventListener('submit', function (e) {
-        e.preventDefault();
-        var submitBtn = document.getElementById('addUserSubmitBtn');
-        if (submitBtn) submitBtn.click();
-    });
-}
-document.getElementById('addUserSubmitBtn').addEventListener('click', function() {
+
+function submitAddUserForm() {
+    if (addUserSubmitInFlight) return;
     var editUsername = (document.getElementById('addUserEditUsername') && document.getElementById('addUserEditUsername').value) || '';
     var isEdit = editUsername.length > 0;
     var username = (document.getElementById('addUserUsername').value || '').trim();
@@ -3175,12 +3186,19 @@ document.getElementById('addUserSubmitBtn').addEventListener('click', function()
             body.password = password;
         }
     }
+    setAddUserSubmitBusy(true);
     fetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(body)
-    }).then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+    }).then(function(r) {
+        return r.json().then(function(data) {
+            return { ok: r.ok, data: data };
+        }).catch(function() {
+            return { ok: false, data: { error: (window.I18N && window.I18N['msg.network_error']) || '' } };
+        });
+    })
     .then(function(res) {
         if (res.ok) {
             if (res.data && res.data.session_cleared) {
@@ -3204,7 +3222,19 @@ document.getElementById('addUserSubmitBtn').addEventListener('click', function()
         }
     }).catch(function() {
         toastFormError((window.I18N && window.I18N['msg.network_error']) || '');
+    }).finally(function() {
+        setAddUserSubmitBusy(false);
     });
+}
+
+if (addUserForm) {
+    addUserForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        submitAddUserForm();
+    });
+}
+document.getElementById('addUserSubmitBtn').addEventListener('click', function() {
+    submitAddUserForm();
 });
 
 if (settingsContentInner) {

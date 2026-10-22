@@ -717,6 +717,12 @@ def _import_buckets(conn, cfg):
                 )
             else:
                 skip_tls_verify = bool(skip_tls_verify)
+            # Нет ключа → None: при INSERT дефолт true, при UPDATE флаг не трогаем
+            search_index_enabled = (
+                bucket_config["search_index_enabled"]
+                if "search_index_enabled" in bucket_config
+                else None
+            )
 
             insert_bucket(
                 cloud_id=group_id,
@@ -731,6 +737,7 @@ def _import_buckets(conn, cfg):
                 ca_bundle_path=ca_bundle_path,
                 region_name=region_name,
                 skip_tls_verify=skip_tls_verify,
+                search_index_enabled=search_index_enabled,
                 conn=conn,
             )
             imported.append(f"{group_id} / {display_name}")
@@ -765,6 +772,20 @@ def _import_users(conn, users_dict):
             clouds = list(clouds) if clouds else []
         bucket_roles = entry.get("bucket_roles")
         email = entry.get("email")
+        full_name = entry.get("full_name")
+        if full_name is None:
+            full_name = entry.get("display_name")
+        given_name = entry.get("given_name")
+        family_name = entry.get("family_name")
+        middle_name = entry.get("middle_name")
+        is_active = entry.get("is_active")
+        if is_active is None:
+            is_active = True
+        elif isinstance(is_active, str):
+            is_active = is_active.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            is_active = bool(is_active)
+        active_until = entry.get("active_until")
         insert_user(
             username,
             password_hash,
@@ -773,6 +794,12 @@ def _import_users(conn, users_dict):
             clouds=clouds,
             bucket_roles=bucket_roles,
             email=email,
+            full_name=full_name,
+            given_name=given_name,
+            family_name=family_name,
+            middle_name=middle_name,
+            is_active=is_active,
+            active_until=active_until,
             conn=conn,
         )
         imported.append(username)

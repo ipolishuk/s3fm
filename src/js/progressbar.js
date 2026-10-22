@@ -5,7 +5,7 @@
 (function () {
     'use strict';
 
-    var ALL_OPS = ['upload', 'delete', 'copy', 'move', 'acl'];
+    var ALL_OPS = ['upload', 'delete', 'copy', 'move', 'acl', 'download_archive'];
     var _instances = [];
     var LIST_INITIAL_SIZE = 100;
     var LIST_BATCH_SIZE = 50;
@@ -20,6 +20,16 @@
             done: 'msg.success',
             error: 'notification.error',
             inProgress: 'files.upload_progress'
+        },
+        download_archive: {
+            plural: ['plural.file_one', 'plural.file_two', 'plural.file_five'],
+            progress: 'download.archive_progress',
+            completed: 'download.archive_ready',
+            waiting: 'download.archive_creating',
+            active: 'download.archive_creating',
+            done: 'download.archive_ready',
+            error: 'download.error',
+            inProgress: 'download.archive_creating'
         },
         delete: {
             plural: ['plural.element_one', 'plural.element_two', 'plural.element_five'],
@@ -559,7 +569,9 @@
                         ? event.deleted
                         : (event.applied != null
                             ? event.applied
-                            : (event.uploaded != null ? event.uploaded : state.current))));
+                            : (event.uploaded != null
+                                ? event.uploaded
+                                : (event.downloaded != null ? event.downloaded : state.current)))));
             pb.setProgress(state.current, state.total, { complete: true });
             return state;
         }

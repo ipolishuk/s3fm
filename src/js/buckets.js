@@ -1593,9 +1593,16 @@
                 dbIconClass += ' bucket-db-icon-error';
             }
             var safeBucketId = String(bucket.bucket_id).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-            var safeDisplayName = bucket.display_name
-                ? String(bucket.display_name).replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-                : bucket.name;
+            var displayNameRaw = bucket.display_name || bucket.name || '';
+            var safeDisplayName = String(displayNameRaw).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            var safeCloudId = String(bucket.cloud_id || bucket.group || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            var safeBucketName = String(bucket.bucket_name || bucket.name || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            var canEdit = typeof window.canOpenSettings === 'function'
+                ? window.canOpenSettings()
+                : (typeof window.canAddBucket === 'function' ? window.canAddBucket() : true);
+            var canDelete = typeof window.isCurrentUserAdmin === 'function'
+                ? window.isCurrentUserAdmin()
+                : false;
             var bucketData = {
                 name: bucket.name,
                 display_name: bucket.display_name,
@@ -1616,7 +1623,13 @@
             };
             var jsonAttr = JSON.stringify(bucketData).replace(/"/g, '&quot;');
             return (
-                '<div class="bucket-list-item btn menu-list-header" data-bucket-id="' + safeBucketId + '" onclick="window.handleBucketClick(event, ' + jsonAttr + ')">' +
+                '<div class="bucket-list-item btn menu-list-header" data-bucket-id="' + safeBucketId + '"'
+                + ' data-cloud-id="' + safeCloudId + '"'
+                + ' data-display-name="' + safeDisplayName + '"'
+                + ' data-bucket-name="' + safeBucketName + '"'
+                + ' data-can-edit="' + (canEdit ? '1' : '0') + '"'
+                + ' data-can-delete="' + (canDelete ? '1' : '0') + '"'
+                + ' onclick="window.handleBucketClick(event, ' + jsonAttr + ')">' +
                 '<div class="bucket-list-name">' +
                 '<div class="bucket-list-name-content">' +
                 '<i class="' + dbIconClass + '"></i>' +
@@ -2260,6 +2273,112 @@
         return bid;
     }
 
+    var _bucketInfoRequestId = 0;
+
+    function setBucketInfoField(id, value) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = value == null || value === '' ? '—' : String(value);
+    }
+
+    function formatBucketInfoDate(iso) {
+        if (!iso) return '—';
+        if (typeof window.formatDate === 'function') return window.formatDate(iso);
+        return String(iso);
+    }
+
+    function hideBucketInfoModal() {
+        var modal = document.getElementById('bucketInfoModal');
+        if (modal) modal.style.display = 'none';
+    }
+
+    function showBucketInfoModal(opts) {
+        opts = opts || {};
+        var bucketId = (opts.bucketId || '').trim();
+        var cloudId = (opts.cloudId || '').trim();
+        var displayName = opts.displayName != null ? String(opts.displayName) : '';
+        var modal = document.getElementById('bucketInfoModal');
+        if (!modal) return;
+        if (!bucketId && (!cloudId || !displayName)) return;
+
+        var titleEl = document.getElementById('bucketInfoModalTitle');
+        var t = window.I18N || {};
+        if (titleEl) titleEl.textContent = t['buckets.info_title'] || 'Bucket properties';
+        setBucketInfoField('bucketInfoName', displayName || t['files.info_loading'] || '…');
+        setBucketInfoField('bucketInfoCreatedBy', t['files.info_loading'] || '…');
+        setBucketInfoField('bucketInfoCreated', t['files.info_loading'] || '…');
+        setBucketInfoField('bucketInfoModified', t['files.info_loading'] || '…');
+        modal.style.display = 'flex';
+
+        var requestId = ++_bucketInfoRequestId;
+        var url;
+        if (bucketId) {
+            url = '/api/buckets/' + encodeURIComponent(bucketId) + '/properties';
+        } else {
+            url = '/api/buckets/properties-by-key?cloud_id=' + encodeURIComponent(cloudId)
+                + '&display_name=' + encodeURIComponent(displayName);
+        }
+        fetch(url, { credentials: 'include' })
+            .then(function (r) {
+                return r.json().then(function (data) {
+                    return { ok: r.ok, data: data };
+                });
+            })
+            .then(function (res) {
+                if (requestId !== _bucketInfoRequestId) return;
+                if (!res.ok) {
+                    hideBucketInfoModal();
+                    if (typeof window.showError === 'function') {
+                        window.showError((res.data && res.data.error) || (t['error.unexpected'] || ''));
+                    }
+                    return;
+                }
+                var data = res.data || {};
+                setBucketInfoField('bucketInfoName', data.display_name || displayName || '—');
+                setBucketInfoField('bucketInfoCreatedBy', data.created_by || '—');
+                setBucketInfoField(
+                    'bucketInfoCreated',
+                    data.created_at ? formatBucketInfoDate(data.created_at) : '—'
+                );
+                setBucketInfoField(
+                    'bucketInfoModified',
+                    data.updated_at ? formatBucketInfoDate(data.updated_at) : '—'
+                );
+            })
+            .catch(function (err) {
+                if (requestId !== _bucketInfoRequestId) return;
+                hideBucketInfoModal();
+                if (typeof window.showError === 'function') {
+                    window.showError((err && err.message) || (t['msg.network_error'] || ''));
+                }
+            });
+    }
+
+    function bindBucketInfoUi() {
+        var modal = document.getElementById('bucketInfoModal');
+        if (modal) {
+            modal.addEventListener('click', function (e) {
+                if (e.target === modal) hideBucketInfoModal();
+            });
+        }
+        var closeBtn = document.getElementById('bucketInfoCloseBtn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', hideBucketInfoModal);
+        }
+        document.addEventListener('keydown', function (e) {
+            if (e.key !== 'Escape') return;
+            var m = document.getElementById('bucketInfoModal');
+            if (!m || m.style.display !== 'flex') return;
+            hideBucketInfoModal();
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindBucketInfoUi);
+    } else {
+        bindBucketInfoUi();
+    }
+
     window.loadBuckets = loadBuckets;
     window.displayBuckets = displayBuckets;
     window.updateBucketsAddBtnVisibility = updateBucketsAddBtnVisibility;
@@ -2282,6 +2401,8 @@
     window.confirmDeleteBucket = confirmDeleteBucket;
     window.hideAddBucketModal = hideAddBucketModal;
     window.canManageBucketAccessUi = canManageBucketAccessUi;
+    window.showBucketInfoModal = showBucketInfoModal;
+    window.hideBucketInfoModal = hideBucketInfoModal;
 
     // --- Bucket access modal (Settings → Buckets context menu) ---
     var bucketAccessState = {

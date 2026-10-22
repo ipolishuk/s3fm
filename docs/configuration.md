@@ -30,8 +30,13 @@
 - `FLASK_DEBUG` / `APP_DEBUG` — `true` включает debug и reloader при `python app.py` (по умолчанию `false`).
 - `APP_SESSION_TIMEOUT_MINUTES` — таймаут сессии в минутах (по умолчанию `60`).
 - `APP_ADMIN_PASSWORD` — пароль при **первом** создании `admin`; если учётка уже есть и ни разу не входила, на старте может быть выровнен под env (существующий пароль после смены через `config.py reset-password` не трогается).
-- `WEB_CONCURRENCY` / `GUNICORN_WORKERS`, `WEB_THREADS` / `GUNICORN_THREADS`, `GUNICORN_TIMEOUT` — параметры gunicorn в Docker.
-- `OPERATION_WORKER_MODE` — `embedded` (по умолчанию: job в thread web-процесса) или `external` (только enqueue в PG, выполняет `python worker.py`). В режиме `external` Meili reindex (ручной и `MEILI_PERIODIC_SYNC` / `MEILI_REINDEX_ON_STARTUP`) ставит в очередь и выполняет worker; web только создаёт job и отдаёт status/SSE.
+- `WEB_CONCURRENCY` / `GUNICORN_WORKERS`, `WEB_THREADS` / `GUNICORN_THREADS`, `GUNICORN_TIMEOUT` — параметры gunicorn в Docker. По умолчанию `gthread` + `timeout=3600`: sync-worker иначе рвёт proxy-download больших файлов (~после 2 мин / ~300MB).
+- `GUNICORN_WORKER_CLASS` — класс worker (по умолчанию `gthread`). Для длинных stream не ставьте `sync`.
+- `OPERATION_WORKER_MODE` — `embedded` (по умолчанию: job в thread web-процесса) или `external` (только enqueue в PG, выполняет `python worker.py`). В режиме `external` Meili reindex (ручной и `MEILI_PERIODIC_SYNC` / `MEILI_REINDEX_ON_STARTUP`), ZIP-архивы (`download_archive`) и прочие ops ставит в очередь и выполняет worker; web только создаёт job и отдаёт status/SSE.
+- `DOWNLOAD_PRESIGN_EXPIRES_SEC` — TTL presigned URL для одиночного файла (по умолчанию `3600`). Redirect на S3 только если у облака `public_url_enabled=true`; иначе proxy через web. `0` — всегда proxy.
+- `DOWNLOAD_S3_READ_TIMEOUT` — пауза между чанками S3 при proxy-download (по умолчанию `900`).
+- `DOWNLOAD_STAGING_PREFIX` — префикс временных ZIP в бакете (по умолчанию `.s3fm-downloads/`).
+- Ingress/nginx перед приложением: `proxy-read-timeout` / `proxy_read_timeout` должен быть ≥ длительности скачивания (иначе обрыв снаружи gunicorn).
 - `OPERATION_WORKER_POLL_SEC` — интервал опроса очереди в worker (по умолчанию `1`).
 - `OPERATION_CANCEL_CHECK_EVERY` — проверять cancel каждые N ключей при copy папки (по умолчанию `10`).
 - `OPERATION_DELETE_BATCH_SIZE` — размер батча `delete_objects` с проверкой cancel между батчами (по умолчанию `100`, макс. `1000`).

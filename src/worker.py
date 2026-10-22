@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Отдельный процесс для copy/move/delete/acl/bucket_size/reindex.
+"""Отдельный процесс для copy/move/delete/acl/bucket_size/reindex/download_archive.
 
   OPERATION_WORKER_MODE=external  — web только enqueue
   python worker.py                — этот процесс забирает pending из PostgreSQL

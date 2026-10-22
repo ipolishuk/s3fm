@@ -426,6 +426,10 @@ ALTER TABLE public.buckets ADD COLUMN IF NOT EXISTS search_reindexed_at TIMESTAM
 ALTER TABLE public.buckets ADD COLUMN IF NOT EXISTS search_index_enabled BOOLEAN DEFAULT true;
 UPDATE public.buckets SET search_index_enabled = true WHERE search_index_enabled IS NULL;
 ALTER TABLE public.buckets ADD COLUMN IF NOT EXISTS created_by VARCHAR(255);
+ALTER TABLE public.buckets ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.buckets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+UPDATE public.buckets SET created_at = NOW() WHERE created_at IS NULL;
+UPDATE public.buckets SET updated_at = COALESCE(created_at, NOW()) WHERE updated_at IS NULL;
 ALTER TABLE public.clouds DROP COLUMN IF EXISTS icon;
 ALTER TABLE public.clouds ADD COLUMN IF NOT EXISTS endpoint_url VARCHAR(512);
 ALTER TABLE public.clouds ADD COLUMN IF NOT EXISTS public_url_enabled BOOLEAN DEFAULT false;
@@ -1110,7 +1114,7 @@ def list_buckets_rows():
                            ca_bundle_path, region_name, skip_tls_verify,
                            search_reindexed_at,
                            COALESCE(search_index_enabled, true) AS search_index_enabled,
-                           created_by
+                           created_by, created_at, updated_at
                     FROM buckets
                     ORDER BY cloud_id, display_name
                 """)
@@ -1317,7 +1321,8 @@ def get_bucket_row(cloud_id, display_name):
                     SELECT cloud_id, cloud_name, cloud_icon, endpoint_url,
                            display_name, bucket_name, bucket_id,
                            aws_access_key_id, aws_secret_access_key, ca_bundle_path,
-                           region_name, skip_tls_verify, created_by
+                           region_name, skip_tls_verify, created_by,
+                           created_at, updated_at
                     FROM buckets
                     WHERE cloud_id = %s AND display_name = %s
                 """, (cloud_id, display_name))
@@ -1342,7 +1347,8 @@ def get_bucket_row_by_id(bucket_id):
                     SELECT cloud_id, cloud_name, cloud_icon, endpoint_url,
                            display_name, bucket_name, bucket_id,
                            aws_access_key_id, aws_secret_access_key, ca_bundle_path,
-                           region_name, skip_tls_verify, created_by
+                           region_name, skip_tls_verify, created_by,
+                           created_at, updated_at
                     FROM buckets
                     WHERE bucket_id = %s
                     LIMIT 1
@@ -1473,7 +1479,8 @@ def update_bucket(cloud_id, display_name, bucket_name, bucket_id=None,
                     bucket_name = %s, bucket_id = %s,
                     aws_access_key_id = %s, aws_secret_access_key = %s,
                     cloud_name = %s, cloud_icon = %s, endpoint_url = %s,
-                    ca_bundle_path = %s, region_name = %s, skip_tls_verify = %s
+                    ca_bundle_path = %s, region_name = %s, skip_tls_verify = %s,
+                    updated_at = NOW()
                 WHERE cloud_id = %s AND display_name = %s
             """, (
                 tcid, tdisp,
@@ -2648,9 +2655,11 @@ def insert_bucket(
                     cloud_id, cloud_name, cloud_icon, endpoint_url,
                     display_name, bucket_name, bucket_id,
                     aws_access_key_id, aws_secret_access_key, ca_bundle_path,
-                    region_name, skip_tls_verify, created_by, search_index_enabled
+                    region_name, skip_tls_verify, created_by, search_index_enabled,
+                    created_at, updated_at
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    NOW(), NOW()
                 )
                 ON CONFLICT (cloud_id, display_name) DO UPDATE SET
                     cloud_name = COALESCE(EXCLUDED.cloud_name, buckets.cloud_name),
@@ -2664,7 +2673,8 @@ def insert_bucket(
                     region_name = COALESCE(EXCLUDED.region_name, buckets.region_name),
                     skip_tls_verify = COALESCE(EXCLUDED.skip_tls_verify, buckets.skip_tls_verify),
                     created_by = COALESCE(buckets.created_by, EXCLUDED.created_by),
-                    search_index_enabled = COALESCE(%s, buckets.search_index_enabled)
+                    search_index_enabled = COALESCE(%s, buckets.search_index_enabled),
+                    updated_at = NOW()
                 """,
                 (
                     cloud_id,

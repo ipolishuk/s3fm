@@ -273,6 +273,7 @@
             <button type="button" class="dropdown-item" id="settingsContextEdit" data-action="edit" role="menuitem"><i class="fa-solid fa-pen-to-square"></i><span>{{ _('menu.edit') }}</span></button>
             <button type="button" class="dropdown-item hidden" id="settingsContextAccess" data-action="access" role="menuitem"><i class="fa-solid fa-user-shield"></i><span>{{ _('menu.access') }}</span></button>
             <button type="button" class="dropdown-item" id="settingsContextDelete" data-action="delete" role="menuitem"><i class="fa-solid fa-trash-can"></i><span>{{ _('menu.delete') }}</span></button>
+            <button type="button" class="dropdown-item hidden" id="settingsContextProperties" data-action="properties" role="menuitem"><i class="fa-solid fa-info"></i><span>{{ _('menu.properties') }}</span></button>
         </div>
     </div>
 
@@ -695,6 +696,41 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn" id="folderInfoCloseBtn">{{ _('user_info.close') }}</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="bucketInfoModal" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <i class="fa-solid fa-database modal-icon modal-icon-info"></i>
+                <h3 class="modal-title" id="bucketInfoModalTitle">{{ _('buckets.info_title') }}</h3>
+            </div>
+            <div class="modal-body" id="BucketInfoModal">
+                <div class="file-info-acl-group file-info-details-group">
+                    <label class="lables" for="bucketInfoName" id="bucketInfoDetailsHeading">{{ _('files.info_section') }}</label>
+                    <div class="user-info-content" aria-labelledby="bucketInfoDetailsHeading">
+                        <div class="modal-field">
+                            <span class="lables">{{ _('files.info_name') }}</span>
+                            <span class="user-info-value file-info-value-wrap" id="bucketInfoName">—</span>
+                        </div>
+                        <div class="modal-field">
+                            <span class="lables">{{ _('buckets.info_created_by') }}</span>
+                            <span class="user-info-value" id="bucketInfoCreatedBy">—</span>
+                        </div>
+                        <div class="modal-field">
+                            <span class="lables">{{ _('files.info_created') }}</span>
+                            <span class="user-info-value" id="bucketInfoCreated">—</span>
+                        </div>
+                        <div class="modal-field">
+                            <span class="lables">{{ _('files.info_modified') }}</span>
+                            <span class="user-info-value" id="bucketInfoModified">—</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" id="bucketInfoCloseBtn">{{ _('user_info.close') }}</button>
             </div>
         </div>
     </div>

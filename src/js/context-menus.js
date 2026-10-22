@@ -534,6 +534,7 @@ function setupSettingsContextMenu() {
     const editItem = document.getElementById('settingsContextEdit');
     const accessItem = document.getElementById('settingsContextAccess');
     const deleteItem = document.getElementById('settingsContextDelete');
+    const propertiesItem = document.getElementById('settingsContextProperties');
     const settingsInner = document.getElementById('settingsContentInner');
     if (!container || !trigger || !menu || !settingsInner) return;
 
@@ -562,13 +563,23 @@ function setupSettingsContextMenu() {
         return (window.settingsPanelState && window.settingsPanelState.currentTab) || '';
     }
 
+    function isSidebarBucketRow(row) {
+        return !!(row && (
+            row.getAttribute('data-context-source') === 'sidebar-buckets'
+            || row.classList.contains('bucket-list-item')
+        ));
+    }
+
     function updateMenuForRow(row) {
         setItemLabel(copyItem, I18N['menu.copy'] || 'Copy');
         setItemLabel(editItem, I18N['menu.edit'] || 'Edit');
         setItemLabel(accessItem, I18N['menu.access'] || 'Access');
         setItemLabel(deleteItem, I18N['menu.delete'] || 'Delete');
+        setItemLabel(propertiesItem, I18N['menu.properties'] || 'Properties');
 
         const tab = currentSettingsTab();
+        const sidebarBucket = isSidebarBucketRow(row);
+        const isBucketContext = tab === 'buckets' || sidebarBucket;
         const canEdit = row.getAttribute('data-can-edit') !== '0';
         const canDelete = row.getAttribute('data-can-delete') !== '0';
         if (editItem) {
@@ -583,11 +594,16 @@ function setupSettingsContextMenu() {
                 ? (I18N['menu.delete'] || '')
                 : (row.getAttribute('data-delete-denied-title') || I18N['files.admin_only'] || '');
         }
-        if (copyItem) copyItem.disabled = false;
+        if (copyItem) {
+            // Copy bucket — как в Settings → Buckets
+            copyItem.disabled = sidebarBucket ? !canEdit : false;
+            if (sidebarBucket && !canEdit) {
+                copyItem.title = row.getAttribute('data-edit-denied-title') || I18N['files.admin_only'] || '';
+            }
+        }
         if (accessItem) {
-            const showAccess = tab === 'buckets';
-            accessItem.classList.toggle('hidden', !showAccess);
-            if (showAccess) {
+            accessItem.classList.toggle('hidden', !isBucketContext);
+            if (isBucketContext) {
                 const hasBid = !!(row.getAttribute('data-bucket-id') || '').trim();
                 const canAccess = typeof window.canManageBucketAccessUi === 'function'
                     ? window.canManageBucketAccessUi()
@@ -597,6 +613,11 @@ function setupSettingsContextMenu() {
                     ? (I18N['files.admin_only'] || '')
                     : (I18N['menu.access'] || '');
             }
+        }
+        if (propertiesItem) {
+            propertiesItem.classList.toggle('hidden', !isBucketContext);
+            propertiesItem.disabled = !isBucketContext;
+            propertiesItem.title = I18N['menu.properties'] || '';
         }
     }
 
@@ -661,7 +682,7 @@ function setupSettingsContextMenu() {
             return;
         }
 
-        if (tab === 'buckets') {
+        if (tab === 'buckets' || isSidebarBucketRow(row)) {
             const cloudId = row.getAttribute('data-cloud-id');
             const displayName = row.getAttribute('data-display-name');
             const bucketId = row.getAttribute('data-bucket-id');
@@ -675,7 +696,16 @@ function setupSettingsContextMenu() {
                     row.getAttribute('data-bucket-name')
                 );
             }
-            else if (action === 'delete' && typeof window.confirmDeleteBucket === 'function') window.confirmDeleteBucket(cloudId, displayName);
+            else if (action === 'delete' && typeof window.confirmDeleteBucket === 'function') {
+                window.confirmDeleteBucket(cloudId, displayName);
+            }
+            else if (action === 'properties' && typeof window.showBucketInfoModal === 'function') {
+                window.showBucketInfoModal({
+                    bucketId: bucketId,
+                    cloudId: cloudId,
+                    displayName: displayName,
+                });
+            }
         }
     }
 
@@ -690,7 +720,27 @@ function setupSettingsContextMenu() {
         function (until) { ignoreOutsideClickUntil = until; }
     );
 
-    [copyItem, editItem, accessItem, deleteItem].forEach(function(item) {
+    // Тот же ПКМ на боковом списке бакетов (главная страница)
+    var bucketsListRoot = document.getElementById('bucketsListBody')
+        || document.getElementById('bucketsList');
+    if (bucketsListRoot) {
+        bindContextMenuOpen(
+            bucketsListRoot,
+            function (el) {
+                if (el.closest('input, a, select, textarea')) return null;
+                // Не на заголовке группы облака — только на самом бакете
+                return el.closest('.bucket-list-item[data-bucket-id]');
+            },
+            function (point, row) {
+                // Пометить как sidebar-buckets, чтобы runAction не ждал settings tab
+                row.setAttribute('data-context-source', 'sidebar-buckets');
+                openMenu(point, row);
+            },
+            function (until) { ignoreOutsideClickUntil = until; }
+        );
+    }
+
+    [copyItem, editItem, accessItem, deleteItem, propertiesItem].forEach(function(item) {
         if (!item) return;
         item.addEventListener('click', function() {
             if (item.disabled || item.classList.contains('hidden')) return;

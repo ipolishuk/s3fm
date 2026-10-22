@@ -13,7 +13,9 @@ from typing import Any, Dict, List, Optional
 from logs import LOG_CONFIG, log_error, log_info, log_user_action
 from translations import _
 
-WORKER_OPS = frozenset({'copy', 'move', 'delete', 'acl', 'bucket_size', 'reindex'})
+WORKER_OPS = frozenset({
+    'copy', 'move', 'delete', 'acl', 'bucket_size', 'reindex', 'download_archive',
+})
 
 # Singleton enqueue + Meili scheduler (несколько worker-реплик)
 _REINDEX_ENQUEUE_LOCK_KEY = 87201411
@@ -27,6 +29,7 @@ _OP_LOG_CONTEXT = {
     'acl': 'file_metadata_acl_batch',
     'bucket_size': 'bucket_size',
     'reindex': 'reindex_search',
+    'download_archive': 'download_archive',
 }
 
 
@@ -154,6 +157,19 @@ def serialize_bucket_size_job(bucket_id: str, username: str) -> Dict[str, Any]:
     return {
         'bucket_id': bucket_id,
         'username': username or 'unknown',
+    }
+
+
+def serialize_download_archive_job(job: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        'bucket_id': job['bucket_id'],
+        'bucket_name': job.get('bucket_name') or '',
+        'display_name': job.get('display_name') or '',
+        'paths': list(job.get('paths') or []),
+        'folders': list(job.get('folders') or []),
+        'parent_folder': job.get('parent_folder') or 'archive',
+        'base_path': job.get('base_path') or '',
+        'username': job.get('username') or 'unknown',
     }
 
 
@@ -297,7 +313,7 @@ def _hydrate_s3_clients(payload: Dict[str, Any], op: str) -> Dict[str, Any]:
         job['dst_display'] = job.get('dst_display') or dst_info.get('display_name') or ''
         return job
 
-    if op in ('delete', 'acl', 'bucket_size'):
+    if op in ('delete', 'acl', 'bucket_size', 'download_archive'):
         bucket_id = job.get('bucket_id') or ''
         info = find_bucket_config_by_bucket_id(bucket_id)
         if not info:
@@ -354,6 +370,7 @@ def claim_next_job() -> Optional[str]:
                 ORDER BY
                   CASE op
                     WHEN 'delete' THEN 0
+                    WHEN 'download_archive' THEN 0
                     WHEN 'copy' THEN 1
                     WHEN 'move' THEN 1
                     WHEN 'acl' THEN 2
@@ -451,6 +468,9 @@ def execute_job(job_id: str) -> None:
             _run_acl(job_id, job, cancel_check)
         elif op == 'bucket_size':
             _run_bucket_size(job_id, job, cancel_check)
+        elif op == 'download_archive':
+            job['job_id'] = job_id
+            _run_download_archive(job_id, job, cancel_check)
         else:
             operation_jobs.publish(job_id, {'type': 'error', 'error': _('error.unexpected')})
     except JobCancelled:
@@ -550,6 +570,27 @@ def _run_acl(job_id: str, job: Dict[str, Any], cancel_check) -> None:
             )
             break
         if event.get('type') in ('cancelled', 'error'):
+            break
+
+
+def _run_download_archive(job_id: str, job: Dict[str, Any], cancel_check) -> None:
+    import operation_jobs
+    from download_ops import iter_download_archive_events
+
+    context = 'download_archive'
+    username = job.get('username') or 'SYSTEM'
+    log_progress = _make_progress_logger(job_id, context, username)
+
+    def on_progress(event: Dict[str, Any]) -> None:
+        operation_jobs.publish(job_id, event)
+        log_progress(event)
+
+    for event in iter_download_archive_events(
+        job, cancel_check=cancel_check, on_progress=on_progress,
+    ):
+        operation_jobs.publish(job_id, event)
+        log_progress(event)
+        if event.get('type') in ('done', 'cancelled', 'error'):
             break
 
 

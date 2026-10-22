@@ -36,9 +36,10 @@
 - `POST /files/upload`
 - `POST /files/create-folder`
 - `DELETE /files/delete`
-- `GET /files/download/<bucket_id>/<path:file_path>`
+- `GET /files/download/<bucket_id>/<path:file_path>` — одиночный файл (proxy или 302 наpresigned S3 при `public_url_enabled`)
 - `GET /files/view/<bucket_id>/<path:file_path>` — inline-предпросмотр изображений (JPEG/PNG/GIF/WebP/BMP), PDF, JSON, TXT, MD, HTML и CSS; требует право `preview` и доступ к бакету
-- `POST /files/download-archive`
+- `POST /files/download-archive` — сборка ZIP на operation worker, ответ **202** `{ job_id, op }`; готовность через SSE, скачивание `GET /files/download-job/<job_id>`
+- `GET /files/download-job/<job_id>` — отдать готовый ZIP (владелец job)
 
 ### Поиск и Meilisearch (admin)
 - `GET /api/search/status` — статус подключения и переменные Meilisearch;

@@ -76,42 +76,27 @@
 
         try {
             if (useArchive) {
-                if (typeof global.showInfo === 'function') {
-                    global.showInfo(I18N['download.archive_creating'], 300000);
-                }
                 var filePaths = files.map(function (f) { return f.path; }).filter(Boolean);
                 var basePath = (getPath() || '').replace(/\/$/, '');
                 var pathSegments = basePath.split('/').filter(Boolean);
                 var parentFolder = pathSegments.length > 0 ? pathSegments[pathSegments.length - 1] : 'archive';
-                var res = await fetch('/files/download-archive', {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        bucket: getBucket(),
-                        paths: filePaths,
-                        folders: [],
-                        parent_folder: parentFolder,
-                        base_path: basePath,
-                    }),
+                var labels = files.slice(0, 5).map(function (f) {
+                    return (f.path || '').split('/').pop() || f.path;
                 });
-                if (!res.ok) {
-                    var err = await res.json().catch(function () { return {}; });
+                if (files.length > 5) labels.push('+' + (files.length - 5));
+                if (!global.OperationJobs || typeof global.OperationJobs.startDownloadArchive !== 'function') {
                     if (typeof global.showError === 'function') {
-                        global.showError(err.error || I18N['download.error'] || '');
+                        global.showError(I18N['download.error'] || '');
                     }
                     return;
                 }
-                var blob = await res.blob();
-                var url = URL.createObjectURL(blob);
-                var a = document.createElement('a');
-                a.href = url;
-                a.download = 'archive.zip';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                if (typeof global.hideNotification === 'function') global.hideNotification();
+                await global.OperationJobs.startDownloadArchive({
+                    bucket: getBucket(),
+                    paths: filePaths,
+                    folders: [],
+                    parent_folder: parentFolder,
+                    base_path: basePath,
+                }, labels);
             } else if (typeof global.downloadFile === 'function') {
                 await global.downloadFile(files[0].path);
             }

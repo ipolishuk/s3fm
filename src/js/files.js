@@ -88,45 +88,29 @@ async function deleteObject(path) {
     );
 }
 
-// Скачивание одной папки архивом
+// Скачивание одной папки архивом (сборка ZIP на operation worker)
 async function downloadFolderAsArchive(folderPath) {
     if (!getBucket() || !folderPath) return;
     if (!hasPerm('download_folder')) {
         showError(I18N['files.download_folder_denied']);
         return;
     }
-    showInfo(I18N['download.archive_creating'], 300000);
     const basePath = (getPath() || '').replace(/\/$/, '');
     const pathSegments = basePath.split('/').filter(Boolean);
     const parentFolder = pathSegments.length > 0 ? pathSegments[pathSegments.length - 1] : 'archive';
+    const folderLabel = (folderPath || '').replace(/\/$/, '').split('/').pop() || folderPath;
+    if (!window.OperationJobs || typeof window.OperationJobs.startDownloadArchive !== 'function') {
+        showError(I18N['download.error'] || I18N['msg.download_failed'] || '');
+        return;
+    }
     try {
-        const res = await fetch('/files/download-archive', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                bucket: getBucket(),
-                paths: [],
-                folders: [folderPath],
-                parent_folder: parentFolder,
-                base_path: basePath
-            })
-        });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            showError(err.error || I18N['download.error']);
-            return;
-        }
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'archive.zip';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        hideNotification();
+        await window.OperationJobs.startDownloadArchive({
+            bucket: getBucket(),
+            paths: [],
+            folders: [folderPath],
+            parent_folder: parentFolder,
+            base_path: basePath,
+        }, [folderLabel || 'archive.zip']);
     } catch (e) {
         showError(I18N['msg.download_failed'] + ': ' + (e.message || ''));
     }

@@ -307,6 +307,19 @@
             window.showError(doneEvent.errors.join('\n'));
         }
 
+        if (op === 'download_archive' && doneEvent && doneEvent.download_url) {
+            try {
+                var a = document.createElement('a');
+                a.href = doneEvent.download_url;
+                a.download = doneEvent.filename || 'archive.zip';
+                a.rel = 'noopener';
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            } catch (e) { /* ignore */ }
+        }
+
         handle.pb.finish({ onAfter: onAfter });
     }
 
@@ -551,6 +564,16 @@
         return startPendingJob('acl', '/api/files/metadata/acl-batch', 'notification.error', body, displayNames);
     }
 
+    function startDownloadArchive(body, displayNames) {
+        return startPendingJob(
+            'download_archive',
+            '/files/download-archive',
+            'download.error',
+            body || {},
+            displayNames || ['archive.zip'],
+        );
+    }
+
     async function startUpload(fileDescriptors, options) {
         var folderMode = !!(options && options.folderMode);
         var bucket = typeof window.__getCurrentBucket === 'function'
@@ -690,6 +713,7 @@
         startMove: startMove,
         startDelete: startDelete,
         startAcl: startAcl,
+        startDownloadArchive: startDownloadArchive,
         startUpload: startUpload,
         resumeActive: resumeActive,
         hasActive: hasActive,

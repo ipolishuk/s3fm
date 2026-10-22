@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
-import zipfile
-
-from botocore.exceptions import ClientError
-from flask import Blueprint, jsonify, request, send_file, session
+from flask import Blueprint, jsonify, request, session
 
 from auth_session import login_required
 from bucket_access import (
     check_bucket_access,
     find_bucket_config_by_bucket_id,
-    normalize_s3_object_key,
 )
 from files_api import (
     copy_objects_impl,
@@ -35,13 +29,11 @@ from files_api import (
     seal_upload_job_impl,
     upload_file_impl,
 )
-from logs import LOG_CONFIG, log_error, log_user_action
 from roles import (
     role_download_file,
     role_download_files_multi,
     role_download_folder,
 )
-from s3_client import get_s3_client
 from stream_ops import stream_s3_object_response as _stream_s3_object_response
 from translations import _
 
@@ -57,6 +49,83 @@ def download_file(bucket_id, file_path):
     )
 
 
+@bp.route('/files/download-job/<job_id>')
+@login_required
+def download_job_result(job_id):
+    """Отдать ZIP, собранный worker (staging object в том же бакете)."""
+    import operation_jobs
+    from botocore.exceptions import ClientError
+    from flask import Response, stream_with_context
+    from logs import log_error, log_info
+    from s3_client import _content_disposition, get_s3_client
+
+    username = session.get('username', '')
+    if not operation_jobs.job_belongs_to_user(job_id, username):
+        return jsonify({'error': _('error.access_denied')}), 403
+    job = operation_jobs.get_job_with_cancel(job_id) or operation_jobs.get_job(job_id)
+    if not job or (job.get('op') or '') != 'download_archive':
+        return jsonify({'error': _('error.unexpected')}), 404
+    if (job.get('status') or '') != 'done':
+        return jsonify({'error': _('download.archive_not_ready')}), 409
+    meta = job.get('meta') or {}
+    staging_key = (meta.get('staging_key') or '').strip()
+    bucket_id = ''
+    payload = meta.get('payload') if isinstance(meta.get('payload'), dict) else {}
+    bucket_id = (payload.get('bucket_id') or meta.get('bucket_id') or '').strip()
+    staging_bucket = (meta.get('staging_bucket') or payload.get('bucket_name') or '').strip()
+    filename = (meta.get('filename') or 'archive.zip').strip() or 'archive.zip'
+    if not staging_key or not bucket_id:
+        return jsonify({'error': _('error.unexpected')}), 404
+
+    bucket_info = find_bucket_config_by_bucket_id(bucket_id)
+    if not bucket_info:
+        return jsonify({'error': _('error.bucket_not_found')}), 404
+    if not check_bucket_access(bucket_id):
+        return jsonify({'error': _('error.access_denied')}), 403
+
+    bucket_config = bucket_info['bucket_config']
+    bucket_name = staging_bucket or bucket_config.get('bucket_name')
+    s3_client = get_s3_client(bucket_config)
+    try:
+        log_info(
+            f'Delivering download-job archive job={job_id} key={staging_key}',
+            'download_archive',
+        )
+        s3_response = s3_client.get_object(Bucket=bucket_name, Key=staging_key)
+        body = s3_response['Body']
+        content_length = s3_response.get('ContentLength')
+
+        def stream():
+            try:
+                for chunk in body.iter_chunks(chunk_size=65536):
+                    if chunk:
+                        yield chunk
+            finally:
+                body.close()
+                try:
+                    s3_client.delete_object(Bucket=bucket_name, Key=staging_key)
+                except Exception:
+                    pass
+
+        headers = {
+            'Content-Disposition': _content_disposition(filename, 'attachment'),
+            'Cache-Control': 'no-store',
+            'X-Accel-Buffering': 'no',
+            'X-Content-Type-Options': 'nosniff',
+        }
+        if content_length is not None:
+            headers['Content-Length'] = str(content_length)
+        return Response(
+            stream_with_context(stream()),
+            status=200,
+            mimetype='application/zip',
+            headers=headers,
+        )
+    except ClientError as e:
+        log_error(f'download-job get_object failed job={job_id}', 'download_archive', e)
+        return jsonify({'error': _('download.error')}), 404
+
+
 @bp.route('/files/view/<bucket_id>/<path:file_path>')
 @login_required
 def view_file(bucket_id, file_path):
@@ -69,156 +138,76 @@ def view_file(bucket_id, file_path):
 @bp.route('/files/download-archive', methods=['POST'])
 @login_required
 def download_archive():
-    """Скачать несколько файлов из S3 одним ZIP (stream + лимиты размера)."""
-    context = 'download_archive'
+    """Поставить сборку ZIP в очередь worker (202 + job_id + SSE)."""
     username = session.get('username', 'Неизвестный пользователь')
-    zip_max_bytes = int(os.environ.get('ZIP_MAX_BYTES', str(512 * 1024 * 1024)))
-    zip_max_files = int(os.environ.get('ZIP_MAX_FILES', '5000'))
+    data = request.get_json(silent=True) or {}
+    bucket_id = (data.get('bucket') or '').strip()
+    paths = data.get('paths', []) or []
+    folders_raw = data.get('folders', []) or []
+    if not bucket_id:
+        return jsonify({'error': _('error.bucket_id_required')}), 400
+    if not isinstance(paths, list):
+        paths = []
+    if isinstance(folders_raw, str):
+        folders = [folders_raw] if folders_raw.strip() else []
+    elif isinstance(folders_raw, list):
+        folders = [
+            str(f).strip()
+            for f in folders_raw
+            if f and isinstance(f, str) and f.strip()
+        ]
+    else:
+        folders = []
+    if not paths and not folders:
+        return jsonify({'error': _('download.no_files')}), 400
 
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({'error': _('error.bucket_id_required')}), 400
-        bucket_id = data.get('bucket', '')
-        paths = data.get('paths', []) or []
-        folders_raw = data.get('folders', []) or []
-        if not bucket_id:
-            return jsonify({'error': _('error.bucket_id_required')}), 400
-        if not isinstance(paths, list):
-            paths = []
-        if isinstance(folders_raw, str):
-            folders = [folders_raw] if folders_raw.strip() else []
-        elif isinstance(folders_raw, list):
-            folders = [str(f).strip() for f in folders_raw if f and (isinstance(f, str) and f.strip())]
-        else:
-            folders = []
-        if not paths and not folders:
-            return jsonify({'error': _('download.no_files')}), 400
+    parent_folder = (data.get('parent_folder') or 'archive').strip().rstrip('/') or 'archive'
+    base_path = (data.get('base_path') or '').strip().rstrip('/')
 
-        parent_folder = (data.get('parent_folder') or 'archive').strip().rstrip('/')
-        if not parent_folder:
-            parent_folder = 'archive'
-        base_path = (data.get('base_path') or '').strip().rstrip('/')
+    bucket_info = find_bucket_config_by_bucket_id(bucket_id)
+    if not bucket_info:
+        return jsonify({'error': _('error.bucket_not_found')}), 404
+    bucket_config = bucket_info['bucket_config']
+    display_name = bucket_info['display_name']
+    if not check_bucket_access(bucket_id):
+        return jsonify({'error': _('error.access_denied')}), 403
 
-        bucket_info = find_bucket_config_by_bucket_id(bucket_id)
-        if not bucket_info:
-            return jsonify({'error': _('error.bucket_not_found')}), 404
-        bucket_config = bucket_info['bucket_config']
-        bucket_name = bucket_config.get('bucket_name')
-        display_name = bucket_info['display_name']
-        if not check_bucket_access(bucket_id):
+    if folders and not role_download_folder(bucket_id):
+        return jsonify({'error': _('error.access_denied')}), 403
+    if paths:
+        if len(paths) > 1:
+            if not role_download_files_multi(bucket_id):
+                return jsonify({'error': _('error.access_denied')}), 403
+        elif not (role_download_file(bucket_id) or role_download_files_multi(bucket_id)):
             return jsonify({'error': _('error.access_denied')}), 403
 
-        if folders:
-            if not role_download_folder(bucket_id):
-                return jsonify({'error': _('error.access_denied')}), 403
+    from worker_jobs import enqueue_job, serialize_download_archive_job
 
-        if paths:
-            if len(paths) > 1:
-                if not role_download_files_multi(bucket_id):
-                    return jsonify({'error': _('error.access_denied')}), 403
-            elif not (role_download_file(bucket_id) or role_download_files_multi(bucket_id)):
-                return jsonify({'error': _('error.access_denied')}), 403
+    archive_job = {
+        'bucket_id': bucket_id,
+        'bucket_name': bucket_config.get('bucket_name') or '',
+        'display_name': display_name,
+        'paths': paths,
+        'folders': folders,
+        'parent_folder': parent_folder,
+        'base_path': base_path,
+        'username': username,
+    }
+    labels = []
+    if folders:
+        labels.extend([(f or '').rstrip('/').split('/')[-1] or f for f in folders[:5]])
+    if paths:
+        labels.extend([(p or '').split('/')[-1] or p for p in paths[:5]])
+    if len(folders) + len(paths) > 5:
+        labels = labels[:5] + [f'+{len(folders) + len(paths) - 5}']
 
-        s3_client = get_s3_client(bucket_config)
-        seen_names = set()
-        total_bytes = [0]
-        file_count = [0]
-
-        class ZipLimitExceeded(Exception):
-            def __init__(self, key):
-                self.key = key
-
-        def _account_bytes(n):
-            total_bytes[0] += n
-            if zip_max_bytes > 0 and total_bytes[0] > zip_max_bytes:
-                raise ZipLimitExceeded('error.zip_too_large')
-
-        def add_to_zip(zf, s3_key, name_in_zip, root=parent_folder):
-            if name_in_zip in seen_names:
-                name_in_zip = root + '/' + s3_key.replace('/', '_')
-            seen_names.add(name_in_zip)
-            file_count[0] += 1
-            if zip_max_files > 0 and file_count[0] > zip_max_files:
-                raise ZipLimitExceeded('error.zip_too_many_files')
-            try:
-                resp = s3_client.get_object(Bucket=bucket_name, Key=s3_key)
-                body = resp['Body']
-                info = zipfile.ZipInfo(name_in_zip)
-                info.compress_type = zipfile.ZIP_DEFLATED
-                with zf.open(info, 'w') as dest:
-                    while True:
-                        chunk = body.read(256 * 1024)
-                        if not chunk:
-                            break
-                        _account_bytes(len(chunk))
-                        dest.write(chunk)
-                return True
-            except ClientError:
-                return False
-
-        tmp = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024)
-        try:
-            with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
-                for s3_key in paths:
-                    if not s3_key or not isinstance(s3_key, str):
-                        continue
-                    s3_key = normalize_s3_object_key(s3_key)
-                    if not s3_key:
-                        continue
-                    name_in_zip = s3_key.split('/')[-1] if '/' in s3_key else s3_key
-                    add_to_zip(zf, s3_key, parent_folder + '/' + name_in_zip)
-                for folder_path in list(folders):
-                    if not folder_path or not isinstance(folder_path, str):
-                        continue
-                    folder_path = normalize_s3_object_key(folder_path)
-                    if not folder_path:
-                        continue
-                    prefix = folder_path.rstrip('/') + '/'
-                    folder_stripped = folder_path.rstrip('/')
-                    if base_path and folder_stripped.startswith(base_path + '/'):
-                        folder_rel = folder_stripped[len(base_path) + 1:]
-                    elif base_path and folder_stripped == base_path:
-                        folder_rel = ''
-                    else:
-                        folder_rel = folder_stripped
-                    paginator = s3_client.get_paginator('list_objects_v2')
-                    for page in paginator.paginate(Bucket=bucket_name, Prefix=prefix):
-                        for obj in page.get('Contents') or []:
-                            key = obj['Key']
-                            if key.endswith('/'):
-                                continue
-                            rel_name = key[len(prefix):]
-                            if not rel_name:
-                                continue
-                            if folder_rel:
-                                name_in_zip = parent_folder + '/' + folder_rel + '/' + rel_name
-                            else:
-                                name_in_zip = parent_folder + '/' + rel_name
-                            add_to_zip(zf, key, name_in_zip)
-
-            tmp.seek(0)
-            log_user_action(
-                username,
-                context,
-                f"Bucket: {display_name}, archive: {file_count[0]} files, "
-                f"{len(folders)} folders, {total_bytes[0]} bytes",
-            )
-            return send_file(
-                tmp,
-                mimetype='application/zip',
-                as_attachment=True,
-                download_name='archive.zip',
-            )
-        except ZipLimitExceeded as zle:
-            try:
-                tmp.close()
-            except Exception:
-                pass
-            return jsonify({'error': _(zle.key)}), 413
-    except Exception as e:
-        log_error('Archive creation failed', context, e, LOG_CONFIG['show_traceback'])
-        return jsonify({'error': _('error.unexpected')}), 500
+    job_id = enqueue_job(
+        username,
+        'download_archive',
+        labels or ['archive.zip'],
+        serialize_download_archive_job(archive_job),
+    )
+    return jsonify({'job_id': job_id, 'op': 'download_archive'}), 202
 
 
 @bp.route('/files/operation-jobs/active', methods=['GET'])

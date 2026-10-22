@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+import os
+
 from botocore.exceptions import ClientError
-from flask import Response, jsonify, stream_with_context
+from flask import Response, jsonify, redirect, stream_with_context
 
 from bucket_access import (
     check_bucket_access,
     find_bucket_config_by_bucket_id,
     normalize_s3_object_key as _normalize_s3_object_key,
 )
-from logs import LOG_CONFIG, log_error, log_info, log_s3_exception, log_user_action, log_warning, trf_en
+from logs import LOG_CONFIG, log_error, log_info, log_s3_exception, log_warning, trf_en
 from roles import (
     role_download_file,
     role_download_files_multi,
-    role_download_folder,
     role_preview,
 )
 from s3_client import (
@@ -28,8 +29,27 @@ from s3_client import (
 from translations import _
 
 
+def _download_presign_expires_sec() -> int:
+    try:
+        return max(0, int(os.environ.get('DOWNLOAD_PRESIGN_EXPIRES_SEC', '3600')))
+    except (TypeError, ValueError):
+        return 3600
+
+
+def _download_s3_read_timeout() -> int:
+    """Read timeout между чанками S3 при proxy-download (не общий лимит размера)."""
+    try:
+        return max(60, int(os.environ.get('DOWNLOAD_S3_READ_TIMEOUT', '900')))
+    except (TypeError, ValueError):
+        return 900
+
+
 def _stream_s3_object_response(bucket_id, file_path, *, disposition='attachment', context='download'):
-    """Стримит объект S3 с Content-Disposition attachment|inline. Для inline — только previewable типы."""
+    """Скачивание: proxy-stream через web (или 302 наpresigned при public_url).
+
+    Длинные ответы требуют gunicorn gthread + достаточный GUNICORN_TIMEOUT /
+    ingress proxy-read-timeout — иначе sync-worker рвёт transfer ~после 2 мин.
+    """
     allowed = (
         role_preview(bucket_id)
         if disposition == 'inline'
@@ -58,15 +78,55 @@ def _stream_s3_object_response(bucket_id, file_path, *, disposition='attachment'
         if not file_path:
             return jsonify({'error': _('error.object_path_required')}), 400
 
-        s3_client = get_s3_client(bucket_config)
-        action = 'Previewing' if disposition == 'inline' else 'Downloading'
-        log_info(f'{action} file {file_path} from bucket {display_name}', context)
+        disp_filename = file_path.split('/')[-1] if '/' in file_path else file_path
 
+        # Attachment + public endpoint: 302 на S3 (gunicorn не держит stream).
+        # Иначе private Ceph/RGW — proxy через web.
+        expires = _download_presign_expires_sec()
+        group_data = bucket_info.get('group_data') or {}
+        public_ok = bool(
+            group_data.get('public_url_enabled')
+            or bucket_info.get('public_url_enabled')
+            or bucket_config.get('public_url_enabled')
+        )
+        # Для download — отдельный клиент с длинным read_timeout между чанками.
+        s3_client = get_s3_client(
+            bucket_config,
+            read_timeout=_download_s3_read_timeout() if disposition == 'attachment' else None,
+        )
+        if disposition == 'attachment' and expires > 0 and public_ok:
+            try:
+                from download_ops import generate_object_presigned_url
+                url = generate_object_presigned_url(
+                    s3_client,
+                    bucket_name,
+                    file_path,
+                    filename=disp_filename,
+                    disposition='attachment',
+                    expires_in=expires,
+                )
+                log_info(
+                    f'Redirecting download {file_path} from bucket {display_name} '
+                    f'(presign {expires}s)',
+                    context,
+                )
+                return redirect(url, code=302)
+            except Exception as exc:
+                log_warning(
+                    f'Presign failed for {file_path}, falling back to proxy stream: {exc}',
+                    context,
+                )
+
+        action = 'Previewing' if disposition == 'inline' else 'Downloading'
         s3_response = s3_client.get_object(Bucket=bucket_name, Key=file_path)
         body = s3_response['Body']
         content_type = s3_response.get('ContentType', 'application/octet-stream')
-        disp_filename = file_path.split('/')[-1] if '/' in file_path else file_path
         content_length = s3_response.get('ContentLength')
+        size_part = f' size={content_length}' if content_length is not None else ''
+        log_info(
+            f'{action} file {file_path}{size_part} from bucket {display_name}',
+            context,
+        )
 
         response_mimetype = content_type
         if disposition == 'inline':
@@ -78,11 +138,21 @@ def _stream_s3_object_response(bucket_id, file_path, *, disposition='attachment'
 
         def stream():
             try:
-                for chunk in body.iter_chunks(chunk_size=65536):
+                # Крупнее чанки — меньше накладных расходов на multi-GB.
+                for chunk in body.iter_chunks(chunk_size=256 * 1024):
                     if chunk:
                         yield chunk
+            except GeneratorExit:
+                # Клиент оборвал download — нормально.
+                raise
+            except Exception as exc:
+                log_warning(f'Download stream aborted {file_path}: {exc}', context)
+                raise
             finally:
-                body.close()
+                try:
+                    body.close()
+                except Exception:
+                    pass
 
         headers = {
             'Content-Disposition': _content_disposition(disp_filename, disposition),

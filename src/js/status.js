@@ -10,6 +10,7 @@
     var _loadSeq = 0;
     var _headerBtnBound = false;
     var _headerPrefetchStarted = false;
+    var _prefetchPromise = null;
     var STATUS_FETCH_TIMEOUT_MS = 35000;
 
     function t(key, fallback) {
@@ -431,7 +432,18 @@
         return cache && cache.services ? cache.services.ldap : null;
     }
 
-    function prefetchServicesStatus() {
+    function prefetchServicesStatus(options) {
+        var force = !!(options && options.force);
+        var cached = _lastStatus || window._servicesStatusCache || null;
+        updateHeaderStatusIndicator(cached);
+        // Не дёргать тяжёлый /api/settings/status на каждое открытие модалки —
+        // иначе конкурирует с options/users и модалки открываются с задержкой.
+        if (!force && cached) {
+            return Promise.resolve(cached);
+        }
+        if (!force && _prefetchPromise) {
+            return _prefetchPromise;
+        }
         var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
         var timer = null;
         if (ctrl) {
@@ -439,8 +451,7 @@
                 try { ctrl.abort(); } catch (e) { /* ignore */ }
             }, STATUS_FETCH_TIMEOUT_MS);
         }
-        updateHeaderStatusIndicator(_lastStatus || window._servicesStatusCache || null);
-        return fetchServicesStatus(ctrl ? ctrl.signal : null)
+        _prefetchPromise = fetchServicesStatus(ctrl ? ctrl.signal : null)
             .then(function (res) {
                 if (res.ok) {
                     _lastStatus = res.data || null;
@@ -458,7 +469,9 @@
             })
             .finally(function () {
                 if (timer) clearTimeout(timer);
+                _prefetchPromise = null;
             });
+        return _prefetchPromise;
     }
 
     function canSeeHeaderStatus() {

@@ -1866,6 +1866,8 @@ function openCopyCloudModal(cloudId) {
     if (title) title.textContent = t['modal.copy_cloud'] || 'Copy cloud';
     if (icon) icon.className = 'fa-solid fa-copy modal-icon modal-icon-info';
     if (submit) setModalSubmitBtn(submit, t['settings.add'] || 'Add', 'add');
+    var copyModal = document.getElementById('cloudEditModal');
+    if (copyModal) copyModal.style.display = 'flex';
     fetch('/api/settings/clouds/' + encodeURIComponent(cloudId), { credentials: 'include' })
         .then(function(r) { return r.ok ? r.json() : r.json().then(function(j) { return Promise.reject(new Error(j.error || r.statusText)); }); })
         .then(function(row) {
@@ -1874,8 +1876,6 @@ function openCopyCloudModal(cloudId) {
             resetCloudEndpointsInputs(endpointEntries.length ? endpointEntries : ['']);
             setCloudEditPublicUrl(cloudPublicUrlValueFromRaw(row && row.public_url_enabled));
             setCloudEditAvailable(row && (row.available !== undefined ? row.available : row.visibility));
-            var modal = document.getElementById('cloudEditModal');
-            if (modal) modal.style.display = 'flex';
         })
         .catch(function(e) {
             toastFormError((e && e.message) || t['settings.error_load'] || t['notification.error'] || '');
@@ -1906,6 +1906,8 @@ function openEditCloudModal(cloudId) {
     if (title) title.textContent = t['modal.edit_cloud'] || 'Edit cloud';
     if (icon) icon.className = 'fa-solid fa-pen-to-square modal-icon modal-icon-info';
     if (submit) setModalSubmitBtn(submit, t['modal.update'] || 'Update', 'update');
+    var editModal = document.getElementById('cloudEditModal');
+    if (editModal) editModal.style.display = 'flex';
     fetch('/api/settings/clouds/' + encodeURIComponent(cloudId), { credentials: 'include' })
         .then(function(r) { return r.ok ? r.json() : r.json().then(function(j) { return Promise.reject(new Error(j.error || r.statusText)); }); })
         .then(function(row) {
@@ -1915,8 +1917,6 @@ function openEditCloudModal(cloudId) {
             resetCloudEndpointsInputs(endpointEntries);
             setCloudEditPublicUrl(cloudPublicUrlValueFromRaw(row && row.public_url_enabled));
             setCloudEditAvailable(row && (row.available !== undefined ? row.available : row.visibility));
-            var modal = document.getElementById('cloudEditModal');
-            if (modal) modal.style.display = 'flex';
         })
         .catch(function(e) {
             toastFormError((e && e.message) || t['settings.error_load'] || t['notification.error'] || '');
@@ -2347,8 +2347,12 @@ function applyAddUserLdapAvailability(modeAllows) {
         btn.classList.toggle('add-user-ldap-search-unavailable', !allowed);
     }
     var cached = typeof window.getCachedLdapStatus === 'function' ? window.getCachedLdapStatus() : null;
-    if (cached) applyLdapState(cached);
-    else applyLdapState(null);
+    if (cached) {
+        applyLdapState(cached);
+        return;
+    }
+    applyLdapState(null);
+    // Полный status probe только если кэша ещё нет (раз в сессию / после header prefetch)
     if (typeof window.prefetchServicesStatus === 'function') {
         window.prefetchServicesStatus().then(function () {
             applyLdapState(typeof window.getCachedLdapStatus === 'function' ? window.getCachedLdapStatus() : null);
@@ -2595,6 +2599,10 @@ function openEditUserModal(username, mode) {
     addUserBucketRolesRoleOptions = [];
     syncAddUserBucketsTriggerState(cloudsPanel);
     var allLabel = t['settings.all'] || 'All';
+    var addUserModalEdit = document.getElementById('addUserModal');
+    // Показать окно сразу — не ждать options/LDAP status
+    if (addUserModalEdit) addUserModalEdit.style.display = 'flex';
+    attachAddUserModalFocusClose();
     Promise.all([
         fetch('/api/settings/users/' + encodeURIComponent(username), { credentials: 'include' }).then(function(r) { return r.json(); }),
         fetch('/api/settings/options/buckets', { credentials: 'include' }).then(function(r) { return r.json(); }),
@@ -2811,23 +2819,25 @@ function openEditUserModal(username, mode) {
         };
         applyAddUserStatus(!(user && user.is_active === false), !isCopy && String(username || '').toLowerCase() === 'admin', user && user.active_until);
         wireAddUserStatusTrigger([roleWrap, cloudsWrap, bucketsWrap]);
-        var addUserModalEdit = document.getElementById('addUserModal');
         function closeDropdownsEdit(e) {
             if (isAddUserDropdownUiTarget(e && e.target)) return;
             closeAllAddUserDropdownPanels();
             document.removeEventListener('click', closeDropdownsEdit);
-            if (addUserModalEdit._userDocClickClose === closeDropdownsEdit) delete addUserModalEdit._userDocClickClose;
+            if (addUserModalEdit && addUserModalEdit._userDocClickClose === closeDropdownsEdit) {
+                delete addUserModalEdit._userDocClickClose;
+            }
         }
-        if (addUserModalEdit._userDocClickClose) {
+        if (addUserModalEdit && addUserModalEdit._userDocClickClose) {
             document.removeEventListener('click', addUserModalEdit._userDocClickClose);
         }
-        addUserModalEdit._userDocClickClose = closeDropdownsEdit;
-        setTimeout(function() { document.addEventListener('click', closeDropdownsEdit); }, 0);
-        attachAddUserModalFocusClose();
-        addUserModalEdit.style.display = 'flex';
+        if (addUserModalEdit) {
+            addUserModalEdit._userDocClickClose = closeDropdownsEdit;
+            setTimeout(function() { document.addEventListener('click', closeDropdownsEdit); }, 0);
+        }
     }).catch(function() {
         toastFormError((window.I18N && window.I18N['error.load_user_or_options_failed']) || '');
-        document.getElementById('addUserModal').style.display = 'flex';
+        var m = document.getElementById('addUserModal');
+        if (m) m.style.display = 'flex';
     });
 }
 function confirmDeleteUser(username) {
@@ -2898,6 +2908,17 @@ if (settingsAddBtn) {
             var t = window.I18N || {};
             var allLabel = t['settings.all'] || 'All';
             rolePanel.innerHTML = '';
+            var addUserModalEl = document.getElementById('addUserModal');
+            var titleElAdd = document.getElementById('addUserModalTitle');
+            var iconElAdd = document.getElementById('addUserModalIcon');
+            var btnElAdd = document.getElementById('addUserSubmitBtn');
+            if (titleElAdd) titleElAdd.textContent = t['modal.add_user'] || 'Add user';
+            if (iconElAdd) iconElAdd.className = 'fa-solid fa-user-plus modal-icon modal-icon-info';
+            if (btnElAdd) setModalSubmitBtn(btnElAdd, t['settings.add'] || 'Add', 'add');
+            var hintAdd = document.getElementById('addUserPasswordHint');
+            if (hintAdd) hintAdd.classList.add('hidden');
+            if (addUserModalEl) addUserModalEl.style.display = 'flex';
+            attachAddUserModalFocusClose();
             Promise.all([
                 fetch('/api/settings/options/buckets', { credentials: 'include' }).then(function(r) { return r.json(); }),
                 fetch('/api/settings/options/clouds', { credentials: 'include' }).then(function(r) { return r.json(); }),
@@ -3075,15 +3096,12 @@ if (settingsAddBtn) {
                 }
                 addUserModalEl._userDocClickClose = closeDropdowns;
                 setTimeout(function() { document.addEventListener('click', closeDropdowns); }, 0);
-                attachAddUserModalFocusClose();
                 setAddUserBucketRolesRoleOptions(roleOptions);
                 addUserBucketRolesOverrides = {};
                 renderAddUserBucketRolesView();
                 onAddUserBucketsSelectionChanged(roleOptions);
-                addUserModalEl.style.display = 'flex';
             }).catch(function() {
                 toastFormError((window.I18N && window.I18N['error.load_options_failed']) || '');
-                document.getElementById('addUserModal').style.display = 'flex';
             });
         } else if (window.settingsPanelState.currentTab === 'roles') {
             openAddRoleModal();

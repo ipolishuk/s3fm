@@ -42,9 +42,8 @@
 - `OPERATION_DELETE_BATCH_SIZE` — размер батча `delete_objects` с проверкой cancel между батчами (по умолчанию `100`, макс. `1000`).
 - `OPERATION_PROGRESS_PERSIST_SEC` — как часто писать progress-события job в PostgreSQL (по умолчанию `2`; `0` — каждый progress). Снижает блокировки `/files/operation-jobs/active`.
 - `OPERATION_PURGE_MIN_INTERVAL_SEC` — минимальный интервал purge старых job (по умолчанию `60`).
-- `OPERATION_STALE_PENDING_SEC` — `pending` дольше N секунд (worker не забрал) → `error` / уходит из `/active` (по умолчанию `600` = 10 мин).
-- `OPERATION_STALE_RUNNING_SEC` — `running` без обновлений дольше N секунд → `error` (по умолчанию `21600` = 6 ч; для reindex/bucket_size).
-- `OPERATION_STALE_INTERACTIVE_RUNNING_SEC` — то же для copy/move/delete/acl/upload/download_archive (по умолчанию `1800` = 30 мин), чтобы зомби-job не всплывал тостом при следующем логине.
+- `OPERATION_STALE_PENDING_SEC` — `pending` дольше N секунд (worker не забрал) → `error` (по умолчанию `120`).
+- `OPERATION_STALE_RUNNING_SEC` — любой `running` без `updated_at` дольше N секунд → `error` (по умолчанию `60`). Worker после рестарта не reclaim'ит `running` — idle = мёртвый исполнитель; progress в PG ~каждые `OPERATION_PROGRESS_PERSIST_SEC`. При старте worker — force-purge.
 
 ### Загрузка и логирование
 - `MAX_UPLOAD_MB` — лимит загрузки (по умолчанию `100`).

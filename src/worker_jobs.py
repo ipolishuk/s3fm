@@ -865,7 +865,15 @@ def start_meili_schedulers() -> None:
 
 def worker_loop(poll_sec: float = 1.0) -> None:
     """Бесконечный цикл claim → execute (для `python worker.py`)."""
+    import operation_jobs
+
     log_info(f'Operation worker started mode={worker_mode()} ops={sorted(WORKER_OPS)}', 'worker')
+    # Orphan running после нашего же рестарта: claim берёт только pending.
+    # Сразу снять зомби по idle updated_at (не ждём следующего /active).
+    try:
+        operation_jobs.purge_stale_jobs(force=True)
+    except Exception as exc:
+        log_error('Startup purge failed', 'worker', exc, False)
     start_meili_schedulers()
     while True:
         try:

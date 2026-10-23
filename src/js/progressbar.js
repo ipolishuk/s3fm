@@ -169,7 +169,7 @@
         el.textContent = '';
         if (kind === 'waiting') {
             el.className = 'progressbar-status';
-            el.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>';
+            el.innerHTML = '<span class="ui-spinner ui-spinner--sm" aria-hidden="true"></span>';
             if (ariaLabel) el.setAttribute('aria-label', ariaLabel);
             else el.removeAttribute('aria-label');
             return;
@@ -203,7 +203,8 @@
 
     function formatProgressText(op, current, total, options) {
         options = options || {};
-        var meta = OP_META[op] || OP_META.delete;
+        var meta = OP_META[op];
+        if (!meta) return '';
         var pct = total > 0 ? Math.round((current / total) * 100) : 0;
 
         if (options.complete && meta.completed) {
@@ -275,12 +276,18 @@
     function create(op, displayNames, options) {
         options = options || {};
 
+        // Без fallback на delete: иначе bucket_size/reindex из /active
+        // показывают «Deleting files...» при неизвестном op.
+        var meta = OP_META[op];
+        if (!meta) {
+            return null;
+        }
+
         var names = displayNames || [];
         var listParts = splitListNames(names, options);
         var initialNames = listParts.initial;
         var pendingNames = listParts.pending;
         var listBuiltCount = initialNames.length;
-        var meta = OP_META[op] || OP_META.delete;
         var uid = makeUid(op, options);
         var id = function (suffix) { return uid + suffix; };
 

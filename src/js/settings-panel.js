@@ -207,6 +207,7 @@ function setupSettingsPanel() {
         var appFooter = document.getElementById('appFooter');
         if (appFooter) appFooter.classList.add('hidden');
         settingsView.classList.remove('hidden');
+        document.documentElement.classList.remove('boot-settings');
         var tab = activeTab;
         if (!tab) {
             tab = getSettingsTabFromLocation() || 'buckets';
@@ -258,6 +259,7 @@ function setupSettingsPanel() {
         else if (urlMode === 'replace') updateSettingsURL(tab, true);
     }
     function closeSettings() {
+        document.documentElement.classList.remove('boot-settings');
         settingsView.classList.add('hidden');
         var secondaryToolbar = document.getElementById('secondaryToolbar');
         if (secondaryToolbar) secondaryToolbar.classList.remove('settings-toolbar-search');

@@ -1636,8 +1636,9 @@
             inner.classList.add('content-body-soft-refresh');
         } else {
             inner.classList.remove('content-body-soft-refresh');
+            // Search tab: спиннер как раньше (не table-skeleton)
             inner.innerHTML =
-                '<div class="empty-state"><i class="fa-solid fa-spinner fa-spin empty-state-icon"></i><div>' +
+                '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span><div>' +
                 escapeHtml(t('settings.loading')) + '</div></div>';
         }
 

@@ -63,11 +63,14 @@
 
     function ensureHandle(jobId, op, displayNames) {
         if (_handles[jobId]) return _handles[jobId];
+        // bucket_size / reindex не имеют ProgressBars UI — не поднимать тост
+        if (!PB || typeof PB.create !== 'function') return null;
         var pb = PB.create(op, displayNames || [], {
             instanceId: jobId,
             collapsed: true,
             onCancel: function () { cancelJob(jobId); },
         });
+        if (!pb) return null;
         _handles[jobId] = {
             jobId: jobId,
             op: op,
@@ -328,6 +331,7 @@
         if (_streams[jobId]) return;
 
         var handle = ensureHandle(jobId, op, displayNames);
+        if (!handle) return;
 
         if (typeof EventSource === 'undefined') {
             finishHandle(handle, true, tr('notification.error', 'Error'));
@@ -425,6 +429,7 @@
 
     function createPendingHandle(op, pendingId, names) {
         var pb = createPendingProgress(op, pendingId, names);
+        if (!pb) return null;
         var abortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
         _handles[pendingId] = {
             jobId: pendingId,
@@ -498,6 +503,9 @@
 
         var pendingId = '_pending_' + op + '_' + Date.now();
         var pb = createPendingHandle(op, pendingId, names);
+        if (!pb) {
+            return Promise.reject(new Error(tr(errorKey, 'Operation failed')));
+        }
         var pending = _handles[pendingId];
         var signal = pending && pending.abortController ? pending.abortController.signal : null;
         var jobId = null;

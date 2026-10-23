@@ -14,6 +14,12 @@
                 ? saved
                 : ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
             document.documentElement.setAttribute('data-theme', theme);
+            // До JS: не показывать home «Выберите бакет…» при загрузке /settings/...
+            try {
+                if (/^\/settings(\/|$)/.test(location.pathname || '')) {
+                    document.documentElement.classList.add('boot-settings');
+                }
+            } catch (e) {}
         })();
     </script>
     <script>{{ boot_meta_js|safe }}</script>
@@ -104,7 +110,7 @@
                 </button>
                 <div id="bucketsListBody">
                     <div class="no-buckets-message">
-                        <i class="fa-solid fa-spinner fa-spin empty-state-icon"></i>
+                        <span class="ui-spinner empty-state-icon" aria-hidden="true"></span>
                         <div>{{ _('buckets.loading') }}</div>
                     </div>
                 </div>
@@ -354,7 +360,16 @@
                 <div class="content-scroll-wrap">
                     <div class="content-area content-panel" id="settingsPanel">
                         <div class="content-body" id="settingsContentInner">
-                            <div class="content-empty" id="settingsEmpty">{{ _('settings.select_item') }}</div>
+                            <div class="settings-table-skeleton" id="settingsEmpty" role="status" aria-busy="true" aria-label="{{ _('settings.loading') }}" style="--settings-skeleton-cols:7">
+                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
+                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
+                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
+                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
+                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
+                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
+                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
+                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -502,7 +517,20 @@
                 </div>
                 <div class="form-group">
                     <div class="copy-dst-browser">
-                        <div class="copy-dst-breadcrumb" id="copyDstBreadcrumb"></div>
+                        <div class="copy-dst-toolbar">
+                            <div class="copy-dst-breadcrumb" id="copyDstBreadcrumb"></div>
+                            <div class="search-container copy-dst-search">
+                                <i class="fa-solid fa-magnifying-glass search-icon" aria-hidden="true"></i>
+                                <input type="text" class="search-input" id="copyDstFolderSearch"
+                                       placeholder="{{ _('copy.dst_search_placeholder') }}"
+                                       title="{{ _('copy.dst_search_title') }}"
+                                       autocomplete="off" />
+                                <button type="button" class="search-clear hidden" id="copyDstFolderSearchClear"
+                                        title="{{ _('toolbar.search_clear') }}" aria-label="{{ _('toolbar.search_clear') }}">
+                                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                        </div>
                         <div class="copy-dst-folder-list" id="copyDstFolderList"></div>
                     </div>
                 </div>
@@ -565,7 +593,20 @@
                 </div>
                 <div class="form-group">
                     <div class="copy-dst-browser">
-                        <div class="copy-dst-breadcrumb" id="moveDstBreadcrumb"></div>
+                        <div class="copy-dst-toolbar">
+                            <div class="copy-dst-breadcrumb" id="moveDstBreadcrumb"></div>
+                            <div class="search-container copy-dst-search">
+                                <i class="fa-solid fa-magnifying-glass search-icon" aria-hidden="true"></i>
+                                <input type="text" class="search-input" id="moveDstFolderSearch"
+                                       placeholder="{{ _('move.dst_search_placeholder') }}"
+                                       title="{{ _('move.dst_search_title') }}"
+                                       autocomplete="off" />
+                                <button type="button" class="search-clear hidden" id="moveDstFolderSearchClear"
+                                        title="{{ _('toolbar.search_clear') }}" aria-label="{{ _('toolbar.search_clear') }}">
+                                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                        </div>
                         <div class="copy-dst-folder-list" id="moveDstFolderList"></div>
                     </div>
                 </div>

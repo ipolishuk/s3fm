@@ -1439,15 +1439,50 @@
   background: var(--common-bg);
 }
 
+.copy-dst-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: var(--border-style);
+  background: var(--light-bg);
+  flex-shrink: 0;
+  min-height: 0;
+}
+
 .copy-dst-breadcrumb {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  padding: 8px 10px;
-  border-bottom: var(--border-style);
-  background: var(--light-bg);
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.copy-dst-search {
+  flex: 0 1 180px;
+  min-width: 120px;
+  max-width: 220px;
+  min-height: 30px;
+}
+
+.copy-dst-search .search-input {
+  height: 30px;
+  min-height: 30px;
+  font-size: var(--font-size-sm);
+  padding-left: 30px;
+}
+
+.copy-dst-search .search-icon {
+  font-size: 12px;
+  left: 10px;
+}
+
+.copy-dst-search .search-clear {
+  width: 20px;
+  height: 20px;
+  right: 6px;
 }
 
 .copy-dst-crumb {

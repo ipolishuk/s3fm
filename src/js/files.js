@@ -294,12 +294,22 @@ async function loadFiles(path = '', loadOptions = {}) {
             fileList.classList.add('content-body-loading');
         } else {
             fileList.classList.remove('content-body-loading');
-            fileList.innerHTML = `
-            <div class="empty-state">
-                <i class="fa-solid fa-spinner fa-spin empty-state-icon"></i>
-                <div>${(global.I18N || {})['files.loading_list']}</div>
-            </div>
-        `;
+            var skeletonLabel = (global.I18N || {})['files.loading_list'] || 'Loading…';
+            var skeletonRows = '';
+            for (var si = 0; si < 8; si++) {
+                skeletonRows +=
+                    '<div class="file-list-skeleton-row">' +
+                    '<div class="file-list-skeleton-bar file-list-skeleton-bar--name"></div>' +
+                    '<div class="file-list-skeleton-bar file-list-skeleton-bar--size"></div>' +
+                    '<div class="file-list-skeleton-bar file-list-skeleton-bar--date"></div>' +
+                    '</div>';
+            }
+            fileList.innerHTML =
+                '<div class="file-list-skeleton" role="status" aria-busy="true" aria-label="' +
+                String(skeletonLabel).replace(/"/g, '&quot;') +
+                '">' +
+                skeletonRows +
+                '</div>';
         }
         document.getElementById('filesHeader').style.display = 'grid';
         global.setFilesPaginationLoading(true);

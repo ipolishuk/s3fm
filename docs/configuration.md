@@ -43,7 +43,8 @@
 - `OPERATION_PROGRESS_PERSIST_SEC` — как часто писать progress-события job в PostgreSQL (по умолчанию `2`; `0` — каждый progress). Снижает блокировки `/files/operation-jobs/active`.
 - `OPERATION_PURGE_MIN_INTERVAL_SEC` — минимальный интервал purge старых job (по умолчанию `60`).
 - `OPERATION_STALE_PENDING_SEC` — `pending` дольше N секунд (worker не забрал) → `error` (по умолчанию `120`).
-- `OPERATION_STALE_RUNNING_SEC` — любой `running` без `updated_at` дольше N секунд → `error` (по умолчанию `60`). Worker после рестарта не reclaim'ит `running` — idle = мёртвый исполнитель; progress в PG ~каждые `OPERATION_PROGRESS_PERSIST_SEC`. При старте worker — force-purge.
+- `OPERATION_STALE_RUNNING_SEC` — interactive `running` (copy/move/delete/acl/…) без `updated_at` дольше N секунд → `error` (по умолчанию `60`). Worker после рестарта не reclaim'ит `running` — idle = мёртвый исполнитель; progress в PG ~каждые `OPERATION_PROGRESS_PERSIST_SEC`. При старте worker — force-purge.
+- `OPERATION_STALE_LONG_RUNNING_SEC` — то же для длинных ops `reindex` / `bucket_size` / `download_archive` (по умолчанию `3600`). Листинг S3 / Meili может минутами не слать progress; worker шлёт heartbeat `updated_at` ~каждые 30с и прерывается, если job уже помечен terminal в PG.
 
 ### Загрузка и логирование
 - `MAX_UPLOAD_MB` — лимит загрузки (по умолчанию `100`).

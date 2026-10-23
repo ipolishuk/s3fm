@@ -1,9 +1,48 @@
 /* Centralized icon styles */
 
+/* Thin brand ring — replaces fa-spinner in loading states */
+.ui-spinner {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 1.15em;
+  height: 1.15em;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--brand-accent);
+  border-radius: 50%;
+  vertical-align: -0.15em;
+  animation: ui-spinner-rotate 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.ui-spinner--sm {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+  vertical-align: -2px;
+}
+
+.ui-spinner.empty-state-icon,
 i.fa-solid.empty-state-icon {
+  display: block;
   margin: 0 auto 20px;
-  color: var(--gray-light);
+  width: 36px;
+  height: 36px;
   font-size: 40px;
+  color: var(--gray-light);
+  vertical-align: unset;
+}
+
+.ui-spinner.empty-state-icon {
+  font-size: 0;
+  color: transparent;
+  border-color: var(--border-color);
+  border-top-color: var(--brand-accent);
+}
+
+@keyframes ui-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 i.fa-solid.empty-state-icon-warning {

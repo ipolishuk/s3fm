@@ -137,7 +137,7 @@
             var password = passwordEl.value;
             var submitLabel = loginBtn.getAttribute('data-label-submit') || (t['login.submit'] || 'Log in');
 
-            loginBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span class="login-btn-label">' +
+            loginBtn.innerHTML = '<span class="ui-spinner ui-spinner--sm" aria-hidden="true"></span> <span class="login-btn-label">' +
                 (t['login.logging_in'] || 'Logging in...') + '</span>';
             loginBtn.disabled = true;
             if (typeof window.hideNotification === 'function') window.hideNotification();
@@ -184,7 +184,7 @@
             var t = i18n();
             var loginBtn = document.getElementById('loginBtn');
             ssoBtn.disabled = true;
-            ssoBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span class="login-btn-label">' +
+            ssoBtn.innerHTML = '<span class="ui-spinner ui-spinner--sm" aria-hidden="true"></span> <span class="login-btn-label">' +
                 (t['login.logging_in'] || 'Signing in...') + '</span>';
             if (loginBtn) loginBtn.disabled = true;
         });

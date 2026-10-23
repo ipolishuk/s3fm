@@ -52,7 +52,7 @@
         if (item && item.pending) {
             return '<span class="settings-status-var-pending" title="' +
                 escapeHtml(t('settings.status.state_pending', 'Pending')) +
-                '"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i></span>';
+                '"><span class="ui-spinner ui-spinner--sm" aria-hidden="true"></span></span>';
         }
         if (item && item.ok) {
             return '<span class="settings-status-var-ok" title="' +

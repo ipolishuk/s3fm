@@ -34,9 +34,12 @@ _PROGRESS_PERSIST_MIN_INTERVAL_SEC = float(
 _PURGE_MIN_INTERVAL_SEC = float(os.environ.get('OPERATION_PURGE_MIN_INTERVAL_SEC', '60'))
 # pending без claim: worker poll ~1с; запас если worker временно выключен.
 _STALE_PENDING_SEC = int(os.environ.get('OPERATION_STALE_PENDING_SEC', '120'))
-# любой running без updated_at: progress в PG ~каждые OPERATION_PROGRESS_PERSIST_SEC (2с).
-# Worker после рестарта НЕ reclaim'ит running — idle = мёртвый исполнитель.
+# Interactive running без updated_at (copy/move/delete/…): короткий idle.
 _STALE_RUNNING_SEC = int(os.environ.get('OPERATION_STALE_RUNNING_SEC', '60'))
+# Длинные ops (reindex / bucket_size / download_archive): листинг S3 может
+# минутами не слать progress — 60с stale убивает живой job и блокирует worker.
+_STALE_LONG_RUNNING_SEC = int(os.environ.get('OPERATION_STALE_LONG_RUNNING_SEC', '3600'))
+_LONG_RUNNING_OPS = frozenset({'reindex', 'bucket_size', 'download_archive'})
 _last_purge_at = 0.0
 
 
@@ -156,12 +159,22 @@ def _load_job_from_db(job_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _running_stale_limit_sec(op: str) -> int:
+    op = (op or '').strip()
+    if op in _LONG_RUNNING_OPS:
+        return _STALE_LONG_RUNNING_SEC
+    return _STALE_RUNNING_SEC
+
+
 def _job_is_stale(job: Dict[str, Any], now: float) -> bool:
     status = job.get('status')
     if status == 'pending' and _STALE_PENDING_SEC > 0:
         age = now - float(job.get('created_at') or now)
         return age > _STALE_PENDING_SEC
-    if status == 'running' and _STALE_RUNNING_SEC > 0:
+    if status == 'running':
+        limit = _running_stale_limit_sec(job.get('op') or '')
+        if limit <= 0:
+            return False
         # По last activity (updated_at), не по started_at —
         # длинный reindex с прогрессом не должен считаться stale.
         age = now - float(
@@ -170,7 +183,7 @@ def _job_is_stale(job: Dict[str, Any], now: float) -> bool:
             or job.get('created_at')
             or now
         )
-        return age > _STALE_RUNNING_SEC
+        return age > limit
     return False
 
 
@@ -235,6 +248,7 @@ def _purge_stale_jobs() -> None:
                         """,
                         (int(_STALE_PENDING_SEC),),
                     )
+                # Interactive running: короткий idle.
                 if _STALE_RUNNING_SEC > 0:
                     cur.execute(
                         """
@@ -244,10 +258,27 @@ def _purge_stale_jobs() -> None:
                             finished_at = COALESCE(finished_at, NOW()),
                             updated_at = NOW()
                         WHERE status = 'running'
+                          AND op <> ALL(%s)
                           AND COALESCE(updated_at, started_at, created_at)
                               < NOW() - (%s * INTERVAL '1 second')
                         """,
-                        (int(_STALE_RUNNING_SEC),),
+                        (list(_LONG_RUNNING_OPS), int(_STALE_RUNNING_SEC)),
+                    )
+                # Long ops: отдельный лимит (S3 list / Meili без частого progress).
+                if _STALE_LONG_RUNNING_SEC > 0:
+                    cur.execute(
+                        """
+                        UPDATE operation_jobs
+                        SET status = 'error',
+                            error = COALESCE(NULLIF(error, ''), 'stale_timeout'),
+                            finished_at = COALESCE(finished_at, NOW()),
+                            updated_at = NOW()
+                        WHERE status = 'running'
+                          AND op = ANY(%s)
+                          AND COALESCE(updated_at, started_at, created_at)
+                              < NOW() - (%s * INTERVAL '1 second')
+                        """,
+                        (list(_LONG_RUNNING_OPS), int(_STALE_LONG_RUNNING_SEC)),
                     )
                 cur.execute(
                     """
@@ -407,6 +438,62 @@ def is_cancel_requested(job_id: str) -> bool:
                     state['sealed'] = True
                     _cancel_upload_idle_timer(state)
     return True
+
+
+def is_job_terminal_or_cancel(job_id: str) -> bool:
+    """True если cancel или job уже terminal в PG (stale_timeout и т.п.).
+
+    Worker должен прервать длинный reindex/bucket_size, иначе блокирует очередь.
+    """
+    if is_cancel_requested(job_id):
+        return True
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job and job.get('status') in ('done', 'error', 'cancelled'):
+            return True
+    loaded = _load_job_from_db(job_id)
+    if not loaded:
+        return True
+    status = loaded.get('status')
+    if status in ('done', 'error', 'cancelled'):
+        with _jobs_lock:
+            mem = _jobs.get(job_id)
+            if mem:
+                mem['status'] = status
+                mem['error'] = loaded.get('error')
+                mem['finished_at'] = loaded.get('finished_at')
+        return True
+    return False
+
+
+def touch_job(job_id: str, *, min_interval_sec: float = 30.0) -> None:
+    """Heartbeat updated_at в PG — длинные ops без progress не получают stale_timeout."""
+    now = _now()
+    snapshot = None
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job or job.get('status') not in ('pending', 'running'):
+            return
+        last = float(job.get('_last_touch_at') or 0)
+        if min_interval_sec > 0 and (now - last) < min_interval_sec:
+            return
+        job['_last_touch_at'] = now
+        job['updated_at'] = now
+        snapshot = {
+            'id': job['id'],
+            'username': job.get('username'),
+            'op': job.get('op'),
+            'meta': dict(job.get('meta') or {}),
+            'status': job.get('status'),
+            'created_at': job.get('created_at'),
+            'started_at': job.get('started_at'),
+            'finished_at': job.get('finished_at'),
+            'history': list(job.get('history') or []),
+            'error': job.get('error'),
+            'cancel_requested': bool(job.get('cancel_requested')),
+        }
+    if snapshot:
+        _persist_job(snapshot)
 
 
 def request_cancel(job_id: str) -> bool:

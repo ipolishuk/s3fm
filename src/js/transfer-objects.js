@@ -239,7 +239,10 @@
             dstBucketId: '',
             dstPath: '',
             hasFolders: false,
-            pendingItems: null
+            pendingItems: null,
+            folderSearchQuery: '',
+            folderSearchTimeout: null,
+            folderSearchSeq: 0
         };
 
         function setError(message) {
@@ -414,7 +417,7 @@
                     if (bucketHidden) bucketHidden.value = '';
                     state.dstPath = '';
                     rebuildDstBucketDropdown(state.hasFolders, { keepCloud: true });
-                    loadDstFolders();
+                    clearDstFolderSearch({ clearInput: true, reload: true });
                 });
                 panel.appendChild(item);
             });
@@ -480,7 +483,7 @@
                     label.classList.add('has-selection');
                     closeDstBucketDropdown();
                     state.dstPath = '';
-                    loadDstFolders();
+                    clearDstFolderSearch({ clearInput: true, reload: true });
                 });
                 panel.appendChild(item);
             });
@@ -489,6 +492,29 @@
             bindDropdownToggle('Bucket', function (bucketPanel) {
                 if (bucketPanel._dropdownSearchSetMode) bucketPanel._dropdownSearchSetMode(true);
             });
+        }
+
+        function getDstFolderSearchInput() {
+            return document.getElementById(id(prefix, 'DstFolderSearch'));
+        }
+
+        function getDstFolderSearchClear() {
+            return document.getElementById(id(prefix, 'DstFolderSearchClear'));
+        }
+
+        function clearDstFolderSearch(options) {
+            options = options || {};
+            if (state.folderSearchTimeout) {
+                clearTimeout(state.folderSearchTimeout);
+                state.folderSearchTimeout = null;
+            }
+            state.folderSearchQuery = '';
+            state.folderSearchSeq += 1;
+            var input = getDstFolderSearchInput();
+            var clearBtn = getDstFolderSearchClear();
+            if (input && options.clearInput !== false) input.value = '';
+            if (clearBtn) clearBtn.classList.add('hidden');
+            if (options.reload !== false) loadDstFolders();
         }
 
         function renderDstBreadcrumb() {
@@ -501,7 +527,7 @@
             rootBtn.textContent = tk(prefix, 'dst_root', 'Root');
             rootBtn.addEventListener('click', function () {
                 state.dstPath = '';
-                loadDstFolders();
+                clearDstFolderSearch({ clearInput: true, reload: true });
             });
             el.appendChild(rootBtn);
 
@@ -520,22 +546,65 @@
                     btn.textContent = part;
                     btn.addEventListener('click', function () {
                         state.dstPath = pathSnapshot;
-                        loadDstFolders();
+                        clearDstFolderSearch({ clearInput: true, reload: true });
                     });
                     el.appendChild(btn);
                 })(acc);
             });
         }
 
+        function renderDstFolderRows(listEl, folders, options) {
+            options = options || {};
+            listEl.innerHTML = '';
+            if (!folders.length) {
+                listEl.innerHTML = '<div class="copy-dst-empty">' +
+                    (options.emptyText || tk(prefix, 'dst_empty', 'No subfolders')) +
+                    '</div>';
+                return;
+            }
+            folders.forEach(function (folder) {
+                var row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'copy-dst-folder-item btn';
+                var label = options.showPath
+                    ? (folder.path || folder.name || '')
+                    : (folder.name || folder.path || '');
+                row.innerHTML = '<i class="fa-solid fa-folder folder-icon"></i><span></span>';
+                row.querySelector('span').textContent = label.replace(/\/$/, '');
+                row.title = (folder.path || '').replace(/\/$/, '') || label;
+                row.addEventListener('click', function () {
+                    state.dstPath = folder.path || '';
+                    clearDstFolderSearch({ clearInput: true, reload: true });
+                });
+                listEl.appendChild(row);
+            });
+        }
+
+        function updateDstFolderSearchEnabled() {
+            var input = getDstFolderSearchInput();
+            var wrap = input && input.closest('.copy-dst-search');
+            var enabled = !!state.dstBucketId;
+            if (input) {
+                input.disabled = !enabled;
+                input.classList.toggle('search-input-disabled', !enabled);
+            }
+            if (wrap) wrap.classList.toggle('search-container-disabled', !enabled);
+        }
+
         async function loadDstFolders() {
             var listEl = document.getElementById(id(prefix, 'DstFolderList'));
             if (!listEl) return;
+            renderDstBreadcrumb();
+            updateDstFolderSearchEnabled();
             if (!state.dstBucketId) {
                 listEl.innerHTML = '<div class="copy-dst-empty">' + tk(prefix, 'dst_select_bucket', 'Select bucket') + '</div>';
                 return;
             }
+            if (state.folderSearchQuery) {
+                searchDstFolders(state.folderSearchQuery);
+                return;
+            }
             listEl.innerHTML = '<div class="copy-dst-empty">' + tk(prefix, 'dst_loading', 'Loading folders...') + '</div>';
-            renderDstBreadcrumb();
 
             try {
                 var params = new URLSearchParams({
@@ -546,26 +615,70 @@
                 var response = await fetch('/files?' + params.toString(), { credentials: 'include' });
                 var data = await response.json();
                 if (!response.ok) throw new Error(data.error || response.statusText);
-                listEl.innerHTML = '';
-                var folders = data.folders || [];
-                if (folders.length === 0) {
-                    listEl.innerHTML = '<div class="copy-dst-empty">' + tk(prefix, 'dst_empty', 'No subfolders') + '</div>';
-                    return;
-                }
-                folders.forEach(function (folder) {
-                    var row = document.createElement('button');
-                    row.type = 'button';
-                    row.className = 'copy-dst-folder-item btn';
-                    row.innerHTML = '<i class="fa-solid fa-folder folder-icon"></i><span></span>';
-                    row.querySelector('span').textContent = folder.name || folder.path;
-                    row.addEventListener('click', function () {
-                        state.dstPath = folder.path || '';
-                        loadDstFolders();
-                    });
-                    listEl.appendChild(row);
-                });
+                if (state.folderSearchQuery) return;
+                renderDstFolderRows(listEl, data.folders || []);
             } catch (err) {
                 listEl.innerHTML = '<div class="copy-dst-empty">' + (err.message || tk(prefix, 'error', 'Failed')) + '</div>';
+            }
+        }
+
+        async function searchDstFolders(query) {
+            var listEl = document.getElementById(id(prefix, 'DstFolderList'));
+            if (!listEl) return;
+            if (!state.dstBucketId) {
+                listEl.innerHTML = '<div class="copy-dst-empty">' + tk(prefix, 'dst_select_bucket', 'Select bucket') + '</div>';
+                return;
+            }
+            var seq = ++state.folderSearchSeq;
+            listEl.innerHTML = '<div class="copy-dst-empty">' + tk(prefix, 'dst_loading', 'Loading folders...') + '</div>';
+            try {
+                var params = new URLSearchParams({
+                    bucket: state.dstBucketId,
+                    q: query
+                });
+                var response = await fetch('/api/search?' + params.toString(), { credentials: 'include' });
+                var data = await response.json();
+                if (seq !== state.folderSearchSeq) return;
+                if (!response.ok) throw new Error(data.error || response.statusText);
+                renderDstFolderRows(listEl, data.folders || [], {
+                    showPath: true,
+                    emptyText: tk(prefix, 'dst_search_empty', 'No folders found'),
+                });
+            } catch (err) {
+                if (seq !== state.folderSearchSeq) return;
+                listEl.innerHTML = '<div class="copy-dst-empty">' + (err.message || tk(prefix, 'error', 'Failed')) + '</div>';
+            }
+        }
+
+        function bindDstFolderSearch() {
+            var input = getDstFolderSearchInput();
+            var clearBtn = getDstFolderSearchClear();
+            if (!input || input._dstFolderSearchBound) return;
+            input._dstFolderSearchBound = true;
+
+            input.addEventListener('input', function () {
+                var q = (input.value || '').trim();
+                if (clearBtn) clearBtn.classList.toggle('hidden', !q);
+                if (state.folderSearchTimeout) {
+                    clearTimeout(state.folderSearchTimeout);
+                    state.folderSearchTimeout = null;
+                }
+                state.folderSearchTimeout = setTimeout(function () {
+                    state.folderSearchTimeout = null;
+                    state.folderSearchQuery = q;
+                    if (!q) {
+                        loadDstFolders();
+                        return;
+                    }
+                    searchDstFolders(q);
+                }, 280);
+            });
+
+            if (clearBtn) {
+                clearBtn.addEventListener('click', function () {
+                    clearDstFolderSearch({ clearInput: true, reload: true });
+                    input.focus();
+                });
             }
         }
 
@@ -612,6 +725,7 @@
             state.dstCloudId = '';
             state.dstBucketId = '';
             setError('');
+            clearDstFolderSearch({ clearInput: true, reload: false });
             renderSrcSummary(items);
             rebuildDstBucketDropdown(state.hasFolders);
             loadDstFolders();
@@ -625,6 +739,7 @@
             var modal = document.getElementById(id(prefix, 'ObjectsModal'));
             if (modal) modal.style.display = 'none';
             closeAllDstDropdowns();
+            clearDstFolderSearch({ clearInput: true, reload: false });
             setError('');
             state.pendingItems = null;
         }
@@ -683,6 +798,7 @@
         }
 
         document.addEventListener('DOMContentLoaded', function () {
+            bindDstFolderSearch();
             var modal = document.getElementById(id(prefix, 'ObjectsModal'));
             if (modal) {
                 modal.addEventListener('click', function (e) {

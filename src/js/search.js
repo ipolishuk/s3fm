@@ -188,7 +188,7 @@
             var fileList = document.getElementById('fileList');
             fileList.innerHTML =
                 '<div class="empty-state">' +
-                '<i class="fa-solid fa-spinner fa-spin empty-state-icon"></i>' +
+                '<span class="ui-spinner empty-state-icon" aria-hidden="true"></span>' +
                 '<div>' + (tr['files.searching'] || '').replace('{query}', String(query).replace(/</g, '&lt;')) + '</div>' +
                 '</div>';
 

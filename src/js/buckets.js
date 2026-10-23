@@ -599,13 +599,16 @@
 
         var t = window.I18N || {};
         if (!soft) {
+            // Add + Search скрыты до данных (как раньше); skeleton только в таблице, без fake-header
             setSettingsToolbarVisible(false);
             if (typeof window.onSettingsTableCleared === 'function') window.onSettingsTableCleared();
             if (typeof window.resetSettingsSearchLayout === 'function') {
                 window.resetSettingsSearchLayout();
             }
             settingsContentInner.classList.remove('content-body-soft-refresh');
-            settingsContentInner.innerHTML = '<div class="empty-state"><i class="fa-solid fa-spinner fa-spin empty-state-icon"></i><div>' + (t['settings.loading'] || 'Loading...') + '</div></div>';
+            settingsContentInner.innerHTML = (typeof window.buildSettingsTableSkeletonHtml === 'function')
+                ? window.buildSettingsTableSkeletonHtml({ cols: 7, rows: 8, label: t['settings.loading'] })
+                : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span><div>' + (t['settings.loading'] || 'Loading...') + '</div></div>';
         } else {
             settingsContentInner.classList.add('content-body-soft-refresh');
             setSettingsToolbarState(true, { searchLocked: false });
@@ -1916,7 +1919,7 @@
             var tr = window.I18N || {};
             fileList.innerHTML =
                 '<div class="empty-state">' +
-                '<i class="fa-solid fa-spinner fa-spin empty-state-icon"></i>' +
+                '<span class="ui-spinner empty-state-icon" aria-hidden="true"></span>' +
                 '<div>' + (tr['files.connecting_bucket'] || '').replace('{name}', bucket.display_name) + '</div>' +
                 '</div>';
         }

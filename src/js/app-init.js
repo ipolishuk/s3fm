@@ -70,14 +70,30 @@ document.addEventListener('DOMContentLoaded', function() {
     // до завершения загрузки/рендера списка бакетов.
     window.setMainToolbarLocked(true);
     window.renderHomeBreadcrumb();
+    var bootPath = window.location.pathname || '';
     // Avoid "select a bucket" flash on refresh of /bucket/... — show spinner until list loads
-    if (/^\/bucket\//.test(window.location.pathname)) {
+    if (/^\/bucket\//.test(bootPath)) {
         var bootFileList = document.getElementById('fileList');
         if (bootFileList) {
             bootFileList.innerHTML =
                 '<div class="empty-state">' +
-                '<i class="fa-solid fa-spinner fa-spin empty-state-icon"></i>' +
+                '<span class="ui-spinner empty-state-icon" aria-hidden="true"></span>' +
                 '</div>';
+        }
+    }
+    // /settings/...: сразу settingsView, иначе до auth виден home «Выберите бакет…» + лоадер
+    if (/^\/settings(\/|$)/.test(bootPath)) {
+        var bootMainView = document.querySelector('.container-content:not(#settingsView):not(#helpView)');
+        var bootSettingsView = document.getElementById('settingsView');
+        var bootSettingsInner = document.getElementById('settingsContentInner');
+        var bootAppFooter = document.getElementById('appFooter');
+        if (bootMainView) bootMainView.classList.add('hidden');
+        if (bootAppFooter) bootAppFooter.classList.add('hidden');
+        if (bootSettingsView) bootSettingsView.classList.remove('hidden');
+        if (bootSettingsInner) {
+            bootSettingsInner.innerHTML = (typeof window.buildSettingsTableSkeletonHtml === 'function')
+                ? window.buildSettingsTableSkeletonHtml({ cols: 7, rows: 8 })
+                : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span></div>';
         }
     }
     window.checkAuthentication().then(authenticated => {

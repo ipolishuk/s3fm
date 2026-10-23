@@ -7,6 +7,7 @@ API только создаёт job (pending + serializable payload). Этот �
 from __future__ import annotations
 
 import os
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -440,10 +441,42 @@ def execute_job(job_id: str) -> None:
     if snap.get('status') == 'pending':
         operation_jobs.mark_running(job_id)
 
-    cancel_check = lambda: operation_jobs.is_cancel_requested(job_id)
+    # Long ops: heartbeat updated_at + abort если purge уже пометил stale/error.
+    _long_ops = frozenset({'reindex', 'bucket_size', 'download_archive'})
+    stop_heartbeat = threading.Event()
+
+    def cancel_check() -> bool:
+        if op in _long_ops:
+            try:
+                operation_jobs.touch_job(job_id, min_interval_sec=30.0)
+            except Exception:
+                pass
+            return operation_jobs.is_job_terminal_or_cancel(job_id)
+        return operation_jobs.is_cancel_requested(job_id)
+
+    def _heartbeat_loop() -> None:
+        while not stop_heartbeat.wait(30.0):
+            try:
+                snap_h = operation_jobs.get_job(job_id)
+                if not snap_h or snap_h.get('status') not in ('pending', 'running'):
+                    return
+                operation_jobs.touch_job(job_id, min_interval_sec=0)
+            except Exception:
+                return
+
+    heartbeat_thread = None
+    if op in _long_ops:
+        heartbeat_thread = threading.Thread(
+            target=_heartbeat_loop, name=f'job-hb-{job_id[:8]}', daemon=True,
+        )
+        heartbeat_thread.start()
 
     try:
         if cancel_check():
+            # Не публикуем cancelled поверх уже записанного stale_timeout/error
+            snap2 = operation_jobs.get_job_with_cancel(job_id) or {}
+            if snap2.get('status') in ('done', 'error', 'cancelled'):
+                return
             operation_jobs.publish(job_id, {'type': 'cancelled'})
             return
 
@@ -474,7 +507,9 @@ def execute_job(job_id: str) -> None:
         else:
             operation_jobs.publish(job_id, {'type': 'error', 'error': _('error.unexpected')})
     except JobCancelled:
-        operation_jobs.publish(job_id, {'type': 'cancelled'})
+        snap_c = operation_jobs.get_job_with_cancel(job_id) or {}
+        if snap_c.get('status') not in ('done', 'error', 'cancelled'):
+            operation_jobs.publish(job_id, {'type': 'cancelled'})
     except Exception as exc:
         log_error(
             f'Job failed job={job_id}{suffix}',
@@ -483,8 +518,11 @@ def execute_job(job_id: str) -> None:
             LOG_CONFIG['show_traceback'],
             username=username,
         )
-        operation_jobs.publish(job_id, {'type': 'error', 'error': _('error.unexpected')})
+        snap_e = operation_jobs.get_job_with_cancel(job_id) or {}
+        if snap_e.get('status') not in ('done', 'error', 'cancelled'):
+            operation_jobs.publish(job_id, {'type': 'error', 'error': _('error.unexpected')})
     finally:
+        stop_heartbeat.set()
         if started:
             log_info(f'Finished job={job_id}{suffix}', context, username=username)
 
@@ -825,7 +863,10 @@ def _run_reindex(job_id: str, payload: Dict[str, Any], cancel_check) -> None:
     finally:
         meilisearch.reset_reindex_log_context()
 
-    st = _reindex_status_from_job(operation_jobs.get_job_with_cancel(job_id))
+    snap_done = operation_jobs.get_job_with_cancel(job_id) or {}
+    if snap_done.get('status') in ('done', 'error', 'cancelled'):
+        return
+    st = _reindex_status_from_job(snap_done)
     operation_jobs.publish(job_id, {'type': 'done', 'job': st})
 
 

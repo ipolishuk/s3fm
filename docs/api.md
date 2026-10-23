@@ -25,7 +25,7 @@
 ### Файловые операции
 - `GET /api/buckets` — список бакетов, доступных текущему пользователю;
 - `GET /api/buckets-config` — конфигурация бакетов для UI;
-- `GET /api/bucket-size/<bucket_id>`
+- `GET /api/bucket-size/<bucket_id>` — размер/число объектов (`?refresh=1` — без process-cache и без повторного использования старого S3 job result)
 - `GET /files`
 - `GET /api/folders`
 - `GET /api/search` — поиск по имени/пути (Meilisearch или fallback через S3; только бакеты с `search_index_enabled=true`)

@@ -189,7 +189,7 @@
                         <i class="fa-solid fa-file file-icon"></i>
                         <span id="objectsText">{{ _('bucket.size_calculating') }}</span>
                     </div>
-                    <button class="btn refresh-size-btn" onclick="loadBucketSize()" title="{{ _('bucket.refresh_size') }}">
+                    <button class="btn refresh-size-btn" onclick="loadBucketSize({ refresh: true })" title="{{ _('bucket.refresh_size') }}">
                         <i class="fa-solid fa-arrows-rotate"></i>
                     </button>
                 </div>

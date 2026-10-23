@@ -2087,8 +2087,13 @@
         );
     }
 
-    async function fetchBucketSizePayload(targetBucket) {
-        var response = await fetch('/api/bucket-size/' + encodeURIComponent(targetBucket), {
+    async function fetchBucketSizePayload(targetBucket, options) {
+        options = options || {};
+        var url = '/api/bucket-size/' + encodeURIComponent(targetBucket);
+        if (options.refresh) {
+            url += (url.indexOf('?') === -1 ? '?' : '&') + 'refresh=1';
+        }
+        var response = await fetch(url, {
             credentials: 'include'
         });
         var contentType = response.headers.get('Content-Type') || '';
@@ -2170,14 +2175,25 @@
         _bucketSizeBgTimer = setTimeout(tick, 3000);
     }
 
-    async function loadBucketSize() {
+    async function loadBucketSize(options) {
+        options = options || {};
+        // onclick="loadBucketSize()" передаёт MouseEvent — не считаем это options
+        if (options && typeof options === 'object' && options instanceof Event) {
+            options = {};
+        }
+        var forceRefresh = !!(options.refresh || options.force);
         var targetBucket = getCurrentBucket();
         if (!targetBucket) return;
 
-        // Параллельные selectBucket/URL-init не должны давать два одинаковых toast
-        if (_bucketSizeInflight === targetBucket) return;
+        // Параллельные selectBucket/URL-init не должны давать два одинаковых toast.
+        // Кнопка refresh обходит: сбрасываем seq и перезапрашиваем без кэша.
+        if (!forceRefresh && _bucketSizeInflight === targetBucket) return;
         var loadSeq = ++_bucketSizeLoadSeq;
         _bucketSizeInflight = targetBucket;
+        if (_bucketSizeBgTimer) {
+            clearTimeout(_bucketSizeBgTimer);
+            _bucketSizeBgTimer = null;
+        }
 
         var sizeText = document.getElementById('sizeText');
         var objectsText = document.getElementById('objectsText');
@@ -2191,7 +2207,7 @@
         if (objectsElPending) objectsElPending.removeAttribute('title');
 
         try {
-            var result = await fetchBucketSizePayload(targetBucket);
+            var result = await fetchBucketSizePayload(targetBucket, { refresh: forceRefresh });
             if (loadSeq !== _bucketSizeLoadSeq || getCurrentBucket() !== targetBucket) return;
 
             // Краткий 502/503/504 при reload (прокси/gunicorn) — несколько тихих retry.

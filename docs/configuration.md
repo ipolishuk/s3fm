@@ -54,7 +54,7 @@
 
 ### S3-клиент и TLS
 - `REQUESTS_CA_BUNDLE` / `SSL_CERT_FILE` / `AWS_CA_BUNDLE` — путь к CA bundle на хосте, если `ca_bundle_path` из конфига бакета недоступен.
-- `BUCKET_SIZE_CACHE_TTL` — TTL кэша размера бакета в секундах (по умолчанию `300`).
+- `BUCKET_SIZE_CACHE_TTL` — TTL кэша размера бакета в секундах (по умолчанию `300`). Кнопка refresh в UI шлёт `?refresh=1` и обходит кэш; без refresh повторно используется и недавний `bucket_size` job result не старше этого TTL.
 - `BUCKET_MAX_OBJECTS` — лимит объектов при полном обходе для подсчёта размера (по умолчанию `500000`).
 - `BUCKET_MAX_SIZE` — лимит суммарного размера в байтах при том же обходе (по умолчанию `107000000000`).
 - `BUCKET_SIZE_PROGRESS_EVERY` — писать `bucket_size processing` каждые N объектов (по умолчанию `5000`).

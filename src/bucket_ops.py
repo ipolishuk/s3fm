@@ -8,7 +8,7 @@ import time
 from operator import itemgetter
 
 from botocore.exceptions import ClientError
-from flask import jsonify, session
+from flask import jsonify, request, session
 
 from bucket_access import (
     _build_session_accessible_buckets,
@@ -57,6 +57,13 @@ def list_buckets_config_impl():
         return jsonify({'error': _('error.get_buckets')}), 500
 
 
+def _bucket_size_cache_ttl_sec() -> int:
+    try:
+        return max(0, int(os.environ.get('BUCKET_SIZE_CACHE_TTL', '300')))
+    except (TypeError, ValueError):
+        return 300
+
+
 def store_bucket_size_cache(bucket_id: str, payload: dict) -> None:
     with _bucket_size_cache_lock:
         cache = _bucket_size_cache
@@ -67,13 +74,21 @@ def store_bucket_size_cache(bucket_id: str, payload: dict) -> None:
                 del cache[k]
 
 
+def clear_bucket_size_cache(bucket_id: str = None) -> None:
+    with _bucket_size_cache_lock:
+        if bucket_id is None:
+            _bucket_size_cache.clear()
+            return
+        _bucket_size_cache.pop(bucket_id, None)
+
+
 def get_cached_bucket_size(bucket_id: str):
-    BUCKET_SIZE_CACHE_TTL = int(os.environ.get('BUCKET_SIZE_CACHE_TTL', '300'))
+    ttl = _bucket_size_cache_ttl_sec()
     with _bucket_size_cache_lock:
         cached = _bucket_size_cache.get(bucket_id)
         if cached:
             payload, ts = cached
-            if time.time() - ts < BUCKET_SIZE_CACHE_TTL and isinstance(payload, dict):
+            if time.time() - ts < ttl and isinstance(payload, dict):
                 return payload
     return None
 
@@ -200,10 +215,16 @@ def _find_bucket_size_job(username: str, bucket_id: str, *, active_only: bool):
     return None
 
 
-def _find_recent_bucket_size_result(username: str, bucket_id: str):
-    """Результат S3-scan лежит в meta job (общий для API и worker через PG)."""
+def _find_recent_bucket_size_result(username: str, bucket_id: str, *, max_age_sec: int = None):
+    """Результат S3-scan лежит в meta job (общий для API и worker через PG).
+
+    max_age_sec — не отдавать job старше TTL (иначе refresh никогда не пересчитает).
+    """
     import operation_jobs
 
+    if max_age_sec is None:
+        max_age_sec = _bucket_size_cache_ttl_sec()
+    now = time.time()
     best = None
     best_ts = -1.0
     for item in operation_jobs.list_jobs_for_user(username, active_only=False):
@@ -218,6 +239,8 @@ def _find_recent_bucket_size_result(username: str, bucket_id: str):
         if not isinstance(result, dict):
             continue
         ts = float(job.get('finished_at') or job.get('created_at') or 0)
+        if max_age_sec >= 0 and ts and (now - ts) > max_age_sec:
+            continue
         if ts >= best_ts:
             best_ts = ts
             best = result
@@ -229,8 +252,13 @@ def get_bucket_size_impl(bucket_id):
 
     1) кэш / Prometheus — синхронно
     2) иначе S3-listing через worker (202 pending) или embedded sync
+
+    Query: refresh=1 — сбросить process-cache и не брать старый job result.
     """
     context = 'bucket_size'
+    force_refresh = str(
+        request.args.get('refresh') or request.args.get('force') or ''
+    ).strip().lower() in ('1', 'true', 'yes')
     try:
         bucket_info = find_bucket_config_by_bucket_id(bucket_id)
         if not bucket_info:
@@ -247,9 +275,12 @@ def get_bucket_size_impl(bucket_id):
             log_warning(error_msg, context)
             return jsonify({'error': _('error.access_denied')}), 403
 
-        cached = get_cached_bucket_size(bucket_id)
-        if cached:
-            return jsonify(cached)
+        if force_refresh:
+            clear_bucket_size_cache(bucket_id)
+        else:
+            cached = get_cached_bucket_size(bucket_id)
+            if cached:
+                return jsonify(cached)
 
         s3_client = get_s3_client(bucket_config)
 
@@ -281,7 +312,8 @@ def get_bucket_size_impl(bucket_id):
             username = session.get('username') or 'SYSTEM'
             log_info(
                 f"Bucket {display_name}: {payload['size']} bytes, "
-                f"{payload['objects_count']} objects (prometheus)",
+                f"{payload['objects_count']} objects (prometheus"
+                f"{', refresh' if force_refresh else ''})",
                 context,
                 username=username,
             )
@@ -300,11 +332,7 @@ def get_bucket_size_impl(bucket_id):
 
         username = session.get('username', 'unknown')
 
-        done_result = _find_recent_bucket_size_result(username, bucket_id)
-        if done_result:
-            store_bucket_size_cache(bucket_id, done_result)
-            return jsonify(done_result)
-
+        # Сначала active job — иначе poll после refresh снова отдаст старый done result.
         active = _find_bucket_size_job(username, bucket_id, active_only=True)
         if active:
             return jsonify({
@@ -313,6 +341,12 @@ def get_bucket_size_impl(bucket_id):
                 'bucket_id': bucket_id,
                 'source': 's3',
             }), 202
+
+        if not force_refresh:
+            done_result = _find_recent_bucket_size_result(username, bucket_id)
+            if done_result:
+                store_bucket_size_cache(bucket_id, done_result)
+                return jsonify(done_result)
 
         job_id = enqueue_job(
             username,

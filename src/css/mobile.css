@@ -2,8 +2,7 @@
 @media (max-width: 1024px) {
   .file-item,
   .folder-item,
-  .content-panel > .content-header,
-  .file-list-skeleton-row {
+  .content-panel > .content-header {
     grid-template-columns: minmax(150px, 1fr) 100px 140px;
     gap: 10px;
     font-size: var(--font-size-md);
@@ -44,8 +43,7 @@
 
   .file-item,
   .folder-item,
-  .content-panel > .content-header,
-  .file-list-skeleton-row {
+  .content-panel > .content-header {
     grid-template-columns: 1fr 80px 120px;
   }
   .file-modified,
@@ -168,12 +166,8 @@
   }
   .file-item,
   .folder-item,
-  .content-panel > .content-header,
-  .file-list-skeleton-row {
+  .content-panel > .content-header {
     grid-template-columns: 1fr 60px;
-  }
-  .file-list-skeleton-row .file-list-skeleton-bar--date {
-    display: none;
   }
 
   .bucket-info {

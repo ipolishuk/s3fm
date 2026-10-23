@@ -99,6 +99,15 @@ html.boot-settings #settingsView {
   display: flex !important;
 }
 
+/* First paint on /bucket/... — spinner вместо «Выберите бакет…» */
+html.boot-bucket #fileList > .file-list-boot-idle {
+  display: none !important;
+}
+
+html:not(.boot-bucket) #fileList > .file-list-boot-loading {
+  display: none !important;
+}
+
 .content-row {
   display: flex;
   gap: 4px;
@@ -416,117 +425,6 @@ html.boot-settings #settingsView {
   pointer-events: none;
   opacity: 0.6;
 }
-
-/* File list loading: skeleton rows instead of centered spinner */
-.file-list-skeleton {
-  padding: 0;
-  margin: 0;
-}
-
-.file-list-skeleton-row {
-  display: grid;
-  grid-template-columns: minmax(200px, 1fr) 120px 180px;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-bottom: var(--border-style);
-}
-
-.file-list-skeleton-bar {
-  height: 12px;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(
-    90deg,
-    var(--border-color) 0%,
-    var(--selection-bg) 45%,
-    var(--border-color) 90%
-  );
-  background-size: 200% 100%;
-  animation: file-list-skeleton-shimmer 1.2s ease-in-out infinite;
-}
-
-.file-list-skeleton-bar--name {
-  width: 55%;
-  max-width: 280px;
-}
-
-.file-list-skeleton-bar--size {
-  width: 48px;
-  margin-left: auto;
-}
-
-.file-list-skeleton-bar--date {
-  width: 96px;
-  margin-left: auto;
-}
-
-.file-list-skeleton-row:nth-child(2) .file-list-skeleton-bar--name { width: 42%; }
-.file-list-skeleton-row:nth-child(3) .file-list-skeleton-bar--name { width: 68%; }
-.file-list-skeleton-row:nth-child(4) .file-list-skeleton-bar--name { width: 36%; }
-.file-list-skeleton-row:nth-child(5) .file-list-skeleton-bar--name { width: 50%; }
-.file-list-skeleton-row:nth-child(6) .file-list-skeleton-bar--name { width: 61%; }
-.file-list-skeleton-row:nth-child(7) .file-list-skeleton-bar--name { width: 44%; }
-.file-list-skeleton-row:nth-child(8) .file-list-skeleton-bar--name { width: 57%; }
-
-@keyframes file-list-skeleton-shimmer {
-  0% { background-position: 100% 0; }
-  100% { background-position: -100% 0; }
-}
-
-/* Settings tables loading skeleton */
-.settings-table-skeleton {
-  padding: 0;
-  margin: 0;
-  --settings-skeleton-cols: 5;
-}
-
-.settings-table-skeleton-row {
-  display: grid;
-  grid-template-columns: repeat(var(--settings-skeleton-cols), minmax(0, 1fr));
-  align-items: center;
-  gap: 16px;
-  padding: 12px 14px;
-  border-bottom: var(--border-style);
-}
-
-.settings-table-skeleton-row--head {
-  background: var(--light-bg);
-  border-bottom: var(--border-style);
-  padding-top: 14px;
-  padding-bottom: 14px;
-}
-
-.settings-table-skeleton-bar {
-  height: 12px;
-  width: 72%;
-  max-width: 100%;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(
-    90deg,
-    var(--border-color) 0%,
-    var(--selection-bg) 45%,
-    var(--border-color) 90%
-  );
-  background-size: 200% 100%;
-  animation: file-list-skeleton-shimmer 1.2s ease-in-out infinite;
-}
-
-.settings-table-skeleton-bar--head {
-  height: 10px;
-  width: 48%;
-  opacity: 0.85;
-}
-
-.settings-table-skeleton-row:nth-child(2) .settings-table-skeleton-bar:nth-child(1) { width: 58%; }
-.settings-table-skeleton-row:nth-child(2) .settings-table-skeleton-bar:nth-child(2) { width: 64%; }
-.settings-table-skeleton-row:nth-child(3) .settings-table-skeleton-bar:nth-child(1) { width: 70%; }
-.settings-table-skeleton-row:nth-child(3) .settings-table-skeleton-bar:nth-child(3) { width: 45%; }
-.settings-table-skeleton-row:nth-child(4) .settings-table-skeleton-bar:nth-child(1) { width: 42%; }
-.settings-table-skeleton-row:nth-child(5) .settings-table-skeleton-bar:nth-child(1) { width: 66%; }
-.settings-table-skeleton-row:nth-child(6) .settings-table-skeleton-bar:nth-child(2) { width: 55%; }
-.settings-table-skeleton-row:nth-child(7) .settings-table-skeleton-bar:nth-child(1) { width: 51%; }
-.settings-table-skeleton-row:nth-child(8) .settings-table-skeleton-bar:nth-child(1) { width: 63%; }
-.settings-table-skeleton-row:nth-child(9) .settings-table-skeleton-bar:nth-child(1) { width: 47%; }
 
 .header-name {
   display: flex;

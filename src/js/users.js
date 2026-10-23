@@ -682,9 +682,9 @@ function loadSettingsUsers() {
     setSettingsToolbarVisibleFallback(false);
     const t = window.I18N || {};
     if (typeof window.onSettingsTableCleared === 'function') window.onSettingsTableCleared();
-    settingsContentInner.innerHTML = (typeof window.buildSettingsTableSkeletonHtml === 'function')
-        ? window.buildSettingsTableSkeletonHtml({ cols: 5, rows: 8, label: t['settings.loading'] })
-        : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span><div>' + (t['settings.loading'] || 'Loading...') + '</div></div>';
+    settingsContentInner.innerHTML = (typeof window.buildEmptyStateSpinnerHtml === 'function')
+        ? window.buildEmptyStateSpinnerHtml(t['settings.loading'] || 'Loading...')
+        : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span></div>';
     Promise.all([
         fetch('/api/settings/users', { credentials: 'include' }).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(new Error(j.error || r.statusText)))),
         fetch('/api/settings/options/buckets', { credentials: 'include' }).then(function(r) { return r.ok ? r.json() : { items: [] }; })
@@ -886,9 +886,9 @@ function loadSettingsRoles() {
     setSettingsToolbarVisibleFallback(false);
     const t = window.I18N || {};
     if (typeof window.onSettingsTableCleared === 'function') window.onSettingsTableCleared();
-    settingsContentInner.innerHTML = (typeof window.buildSettingsTableSkeletonHtml === 'function')
-        ? window.buildSettingsTableSkeletonHtml({ cols: 5, rows: 8, label: t['settings.loading'] })
-        : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span><div>' + (t['settings.loading'] || 'Loading...') + '</div></div>';
+    settingsContentInner.innerHTML = (typeof window.buildEmptyStateSpinnerHtml === 'function')
+        ? window.buildEmptyStateSpinnerHtml(t['settings.loading'] || 'Loading...')
+        : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span></div>';
     fetch('/api/settings/roles', { credentials: 'include' })
         .then(function(r) { return r.ok ? r.json() : r.json().then(function(j) { return Promise.reject(new Error(j.error || r.statusText)); }); })
         .then(function(data) {
@@ -957,9 +957,9 @@ function loadSettingsClouds() {
     setSettingsToolbarVisibleFallback(false);
     var t = window.I18N || {};
     if (typeof window.onSettingsTableCleared === 'function') window.onSettingsTableCleared();
-    settingsContentInner.innerHTML = (typeof window.buildSettingsTableSkeletonHtml === 'function')
-        ? window.buildSettingsTableSkeletonHtml({ cols: 5, rows: 8, label: t['settings.loading'] })
-        : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span><div>' + (t['settings.loading'] || 'Loading...') + '</div></div>';
+    settingsContentInner.innerHTML = (typeof window.buildEmptyStateSpinnerHtml === 'function')
+        ? window.buildEmptyStateSpinnerHtml(t['settings.loading'] || 'Loading...')
+        : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span></div>';
     fetch('/api/settings/clouds', { credentials: 'include' })
         .then(function(r) { return r.ok ? r.json() : r.json().then(function(j) { return Promise.reject(new Error(j.error || r.statusText)); }); })
         .then(function(data) {

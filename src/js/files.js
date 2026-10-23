@@ -253,6 +253,7 @@ function downloadFile(path) {
 
 var isRevealingPendingItem = false;
 var loadFilesRequestId = 0;
+
 async function loadFiles(path = '', loadOptions = {}) {
     if (!loadOptions || typeof loadOptions !== 'object') {
         loadOptions = {};
@@ -291,27 +292,17 @@ async function loadFiles(path = '', loadOptions = {}) {
 
         const isPaginate = !!loadOptions.paginate;
         if (isPaginate) {
+            document.getElementById('filesHeader').style.display = 'grid';
             fileList.classList.add('content-body-loading');
         } else {
+            document.getElementById('filesHeader').style.display = 'none';
             fileList.classList.remove('content-body-loading');
-            var skeletonLabel = (global.I18N || {})['files.loading_list'] || 'Loading…';
-            var skeletonRows = '';
-            for (var si = 0; si < 8; si++) {
-                skeletonRows +=
-                    '<div class="file-list-skeleton-row">' +
-                    '<div class="file-list-skeleton-bar file-list-skeleton-bar--name"></div>' +
-                    '<div class="file-list-skeleton-bar file-list-skeleton-bar--size"></div>' +
-                    '<div class="file-list-skeleton-bar file-list-skeleton-bar--date"></div>' +
-                    '</div>';
-            }
-            fileList.innerHTML =
-                '<div class="file-list-skeleton" role="status" aria-busy="true" aria-label="' +
-                String(skeletonLabel).replace(/"/g, '&quot;') +
-                '">' +
-                skeletonRows +
-                '</div>';
+            var loadingList = (global.I18N || {})['files.loading_list'] || 'Loading files and folders...';
+            fileList.innerHTML = (typeof global.buildEmptyStateSpinnerHtml === 'function')
+                ? global.buildEmptyStateSpinnerHtml(loadingList)
+                : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span><div>' +
+                    String(loadingList).replace(/</g, '&lt;') + '</div></div>';
         }
-        document.getElementById('filesHeader').style.display = 'grid';
         global.setFilesPaginationLoading(true);
         global.updateFilesPaginationUI();
 

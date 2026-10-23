@@ -18,32 +18,13 @@
         return escapeHtml(value).replace(/`/g, '&#96;');
     }
 
-    /** Skeleton table for settings panels (buckets/users/roles/clouds/search). */
-    function buildSettingsTableSkeletonHtml(options) {
-        options = options || {};
-        var cols = Math.max(2, parseInt(options.cols, 10) || 5);
-        var rows = Math.max(1, parseInt(options.rows, 10) || 8);
-        var label = options.label
-            || ((global.I18N || {})['settings.loading'])
-            || 'Loading...';
-        function bar() {
-            return '<div class="settings-table-skeleton-bar"></div>';
-        }
-        var body = '';
-        var r;
-        var c;
-        for (r = 0; r < rows; r++) {
-            body += '<div class="settings-table-skeleton-row">';
-            for (c = 0; c < cols; c++) {
-                body += bar();
-            }
-            body += '</div>';
-        }
+    /** Центрированный empty-state с новым ui-spinner (вместо FA / skeleton). */
+    function buildEmptyStateSpinnerHtml(message) {
+        var text = message != null && String(message) !== '' ? String(message) : '';
         return (
-            '<div class="settings-table-skeleton" role="status" aria-busy="true" aria-label="' +
-            escapeAttr(label) +
-            '" style="--settings-skeleton-cols:' + cols + '">' +
-            body +
+            '<div class="empty-state">' +
+            '<span class="ui-spinner empty-state-icon" aria-hidden="true"></span>' +
+            (text ? '<div>' + escapeHtml(text) + '</div>' : '') +
             '</div>'
         );
     }
@@ -51,8 +32,8 @@
     global.S3FM = global.S3FM || {};
     global.S3FM.escapeHtml = escapeHtml;
     global.S3FM.escapeAttr = escapeAttr;
-    global.S3FM.buildSettingsTableSkeletonHtml = buildSettingsTableSkeletonHtml;
+    global.S3FM.buildEmptyStateSpinnerHtml = buildEmptyStateSpinnerHtml;
     // Совместимость со старым кодом
     global.escapeHtml = global.escapeHtml || escapeHtml;
-    global.buildSettingsTableSkeletonHtml = buildSettingsTableSkeletonHtml;
+    global.buildEmptyStateSpinnerHtml = buildEmptyStateSpinnerHtml;
 })(typeof window !== 'undefined' ? window : this);

@@ -14,10 +14,13 @@
                 ? saved
                 : ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
             document.documentElement.setAttribute('data-theme', theme);
-            // До JS: не показывать home «Выберите бакет…» при загрузке /settings/...
+            // До JS: не показывать «Выберите бакет…» при загрузке /settings/... или /bucket/...
             try {
-                if (/^\/settings(\/|$)/.test(location.pathname || '')) {
+                var path = location.pathname || '';
+                if (/^\/settings(\/|$)/.test(path)) {
                     document.documentElement.classList.add('boot-settings');
+                } else if (/^\/bucket\//.test(path)) {
+                    document.documentElement.classList.add('boot-bucket');
                 }
             } catch (e) {}
         })();
@@ -230,9 +233,13 @@
                 </div>
 
                 <div class="content-body" id="fileList">
-                    <div class="empty-state">
-                        <i class="fa-solid fa-database empty-state-icon"></i>
+                    <div class="empty-state file-list-boot-idle">
+                        <i class="fa-solid fa-database empty-state-icon" aria-hidden="true"></i>
                         <div class="empty-state-title">{{ _('files.empty_select_bucket') }}</div>
+                    </div>
+                    <div class="empty-state file-list-boot-loading">
+                        <span class="ui-spinner empty-state-icon" aria-hidden="true"></span>
+                        <div>{{ _('files.loading_list') }}</div>
                     </div>
                 </div>
             </div>
@@ -360,15 +367,9 @@
                 <div class="content-scroll-wrap">
                     <div class="content-area content-panel" id="settingsPanel">
                         <div class="content-body" id="settingsContentInner">
-                            <div class="settings-table-skeleton" id="settingsEmpty" role="status" aria-busy="true" aria-label="{{ _('settings.loading') }}" style="--settings-skeleton-cols:7">
-                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
-                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
-                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
-                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
-                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
-                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
-                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
-                                <div class="settings-table-skeleton-row"><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div><div class="settings-table-skeleton-bar"></div></div>
+                            <div class="empty-state" id="settingsEmpty">
+                                <span class="ui-spinner empty-state-icon" aria-hidden="true"></span>
+                                <div>{{ _('settings.loading') }}</div>
                             </div>
                         </div>
                     </div>

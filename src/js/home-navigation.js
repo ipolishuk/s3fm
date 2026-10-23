@@ -21,6 +21,9 @@ function goToHome(options) {
     }
 
     // Сбрасываем состояние
+    try {
+        document.documentElement.classList.remove('boot-bucket');
+    } catch (e) { /* ignore */ }
     if (typeof window.__setCurrentBucket === 'function') window.__setCurrentBucket('');
     else currentBucket = '';
     window.fileManagerCurrentBucketName = '';

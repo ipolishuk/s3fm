@@ -1623,23 +1623,24 @@
             ? window.captureSettingsTableViewState()
             : null;
 
-        if (typeof window.setSettingsToolbarState === 'function') {
-            window.setSettingsToolbarState(true, { searchLocked: false });
-        }
-        updateSearchToolbar(_meiliStatusCache);
-
         if (!soft && typeof window.onSettingsTableCleared === 'function') {
             window.onSettingsTableCleared();
         }
 
         if (soft) {
+            if (typeof window.setSettingsToolbarState === 'function') {
+                window.setSettingsToolbarState(true, { searchLocked: false });
+            }
+            updateSearchToolbar(_meiliStatusCache);
             inner.classList.add('content-body-soft-refresh');
         } else {
+            if (typeof window.setSettingsToolbarState === 'function') {
+                window.setSettingsToolbarState(false);
+            }
             inner.classList.remove('content-body-soft-refresh');
-            // Search tab: спиннер как раньше (не table-skeleton)
-            inner.innerHTML =
-                '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span><div>' +
-                escapeHtml(t('settings.loading')) + '</div></div>';
+            inner.innerHTML = (typeof window.buildEmptyStateSpinnerHtml === 'function')
+                ? window.buildEmptyStateSpinnerHtml(t('settings.loading'))
+                : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span></div>';
         }
 
         var bucketsReq = fetch('/api/settings/buckets', { credentials: 'include' })
@@ -1689,6 +1690,9 @@
                     if (settingsSearchClear) settingsSearchClear.classList.add('hidden');
                 }
 
+                if (typeof window.setSettingsToolbarState === 'function') {
+                    window.setSettingsToolbarState(true, { searchLocked: false });
+                }
                 inner.innerHTML = renderSearchBucketsTable(items, status);
                 if (typeof window.bindSettingsColumnSort === 'function') {
                     window.bindSettingsColumnSort('search');
@@ -1712,6 +1716,9 @@
                 inner.classList.remove('content-body-soft-refresh');
                 if (typeof window.setSettingsMenuCountById === 'function') {
                     window.setSettingsMenuCountById('settingsCountSearch', 0);
+                }
+                if (typeof window.setSettingsToolbarState === 'function') {
+                    window.setSettingsToolbarState(true, { searchLocked: true });
                 }
                 inner.innerHTML =
                     '<div class="content-empty">' + escapeHtml(t('settings.error_load')) + '</div>';

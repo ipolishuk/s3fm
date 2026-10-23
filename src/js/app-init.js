@@ -71,16 +71,7 @@ document.addEventListener('DOMContentLoaded', function() {
     window.setMainToolbarLocked(true);
     window.renderHomeBreadcrumb();
     var bootPath = window.location.pathname || '';
-    // Avoid "select a bucket" flash on refresh of /bucket/... — show spinner until list loads
-    if (/^\/bucket\//.test(bootPath)) {
-        var bootFileList = document.getElementById('fileList');
-        if (bootFileList) {
-            bootFileList.innerHTML =
-                '<div class="empty-state">' +
-                '<span class="ui-spinner empty-state-icon" aria-hidden="true"></span>' +
-                '</div>';
-        }
-    }
+    // /bucket/...: «Выберите бакет…» скрыт классом boot-bucket ещё в <head>
     // /settings/...: сразу settingsView, иначе до auth виден home «Выберите бакет…» + лоадер
     if (/^\/settings(\/|$)/.test(bootPath)) {
         var bootMainView = document.querySelector('.container-content:not(#settingsView):not(#helpView)');
@@ -91,8 +82,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (bootAppFooter) bootAppFooter.classList.add('hidden');
         if (bootSettingsView) bootSettingsView.classList.remove('hidden');
         if (bootSettingsInner) {
-            bootSettingsInner.innerHTML = (typeof window.buildSettingsTableSkeletonHtml === 'function')
-                ? window.buildSettingsTableSkeletonHtml({ cols: 7, rows: 8 })
+            bootSettingsInner.innerHTML = (typeof window.buildEmptyStateSpinnerHtml === 'function')
+                ? window.buildEmptyStateSpinnerHtml((window.I18N || {})['settings.loading'] || '')
                 : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span></div>';
         }
     }

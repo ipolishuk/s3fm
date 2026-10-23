@@ -186,13 +186,11 @@
 
             var tr = I18N();
             var fileList = document.getElementById('fileList');
-            fileList.innerHTML =
-                '<div class="empty-state">' +
-                '<span class="ui-spinner empty-state-icon" aria-hidden="true"></span>' +
-                '<div>' + (tr['files.searching'] || '').replace('{query}', String(query).replace(/</g, '&lt;')) + '</div>' +
-                '</div>';
-
             document.getElementById('filesHeader').style.display = 'none';
+            var searching = (tr['files.searching'] || '').replace('{query}', String(query).replace(/</g, '&lt;'));
+            fileList.innerHTML = (typeof window.buildEmptyStateSpinnerHtml === 'function')
+                ? window.buildEmptyStateSpinnerHtml(searching)
+                : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span><div>' + searching + '</div></div>';
             if (typeof window.updateFilesPaginationUI === 'function') {
                 window.updateFilesPaginationUI();
             }

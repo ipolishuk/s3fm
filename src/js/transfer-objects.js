@@ -52,7 +52,7 @@
 
     function formatPathLabel(prefix, path) {
         var p = (path || '').trim();
-        if (!p) return '/' + tk(prefix, 'dst_root', 'Root');
+        if (!p) return '/' + tk(prefix, 'dst_root', 'root');
         return '/' + p.replace(/\/$/, '');
     }
 
@@ -524,7 +524,7 @@
             var rootBtn = document.createElement('button');
             rootBtn.type = 'button';
             rootBtn.className = 'btn copy-dst-crumb';
-            rootBtn.textContent = tk(prefix, 'dst_root', 'Root');
+            rootBtn.textContent = tk(prefix, 'dst_root', 'root');
             rootBtn.addEventListener('click', function () {
                 state.dstPath = '';
                 clearDstFolderSearch({ clearInput: true, reload: true });

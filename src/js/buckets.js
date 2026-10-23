@@ -599,16 +599,15 @@
 
         var t = window.I18N || {};
         if (!soft) {
-            // Add + Search скрыты до данных (как раньше); skeleton только в таблице, без fake-header
             setSettingsToolbarVisible(false);
             if (typeof window.onSettingsTableCleared === 'function') window.onSettingsTableCleared();
             if (typeof window.resetSettingsSearchLayout === 'function') {
                 window.resetSettingsSearchLayout();
             }
             settingsContentInner.classList.remove('content-body-soft-refresh');
-            settingsContentInner.innerHTML = (typeof window.buildSettingsTableSkeletonHtml === 'function')
-                ? window.buildSettingsTableSkeletonHtml({ cols: 7, rows: 8, label: t['settings.loading'] })
-                : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span><div>' + (t['settings.loading'] || 'Loading...') + '</div></div>';
+            settingsContentInner.innerHTML = (typeof window.buildEmptyStateSpinnerHtml === 'function')
+                ? window.buildEmptyStateSpinnerHtml(t['settings.loading'] || 'Loading...')
+                : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span></div>';
         } else {
             settingsContentInner.classList.add('content-body-soft-refresh');
             setSettingsToolbarState(true, { searchLocked: false });
@@ -1470,6 +1469,16 @@
                 console.log('Buckets already loaded, skipping...');
                 return;
             }
+            var listBody = getBucketsListBody();
+            if (listBody) {
+                var I18Nload = window.I18N || {};
+                var bucketsLoading = I18Nload['buckets.loading'] || 'Loading buckets...';
+                listBody.innerHTML =
+                    '<div class="no-buckets-message">' +
+                    '<span class="ui-spinner empty-state-icon" aria-hidden="true"></span>' +
+                    '<div>' + (typeof window.escapeHtml === 'function' ? window.escapeHtml(bucketsLoading) : String(bucketsLoading).replace(/</g, '&lt;')) + '</div>' +
+                    '</div>';
+            }
             var response = await fetch('/api/buckets', {
                 credentials: 'include'
             });
@@ -1830,6 +1839,22 @@
 
     var _selectBucketSeq = 0;
 
+    function scrollBucketItemIntoSidebar(itemEl) {
+        if (!itemEl || !itemEl.getBoundingClientRect) return;
+        var host = itemEl.closest('#bucketsListBody')
+            || itemEl.closest('#bucketsList')
+            || itemEl.closest('.menu');
+        if (!host) return;
+        var hostRect = host.getBoundingClientRect();
+        var elRect = itemEl.getBoundingClientRect();
+        var pad = 8;
+        if (elRect.top < hostRect.top + pad) {
+            host.scrollTop -= (hostRect.top + pad - elRect.top);
+        } else if (elRect.bottom > hostRect.bottom - pad) {
+            host.scrollTop += (elRect.bottom - (hostRect.bottom - pad));
+        }
+    }
+
     async function selectBucket(bucket, initialPath) {
         initialPath = typeof initialPath === 'string' ? initialPath : '';
         if (!bucket || !bucket.bucket_id) {
@@ -1856,7 +1881,6 @@
         var selectedItem = document.querySelector('.bucket-list-item[data-bucket-id="' + bucket.bucket_id + '"]');
         if (selectedItem) {
             selectedItem.classList.add('active');
-            selectedItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
             var group = selectedItem.closest('.bucket-group');
             if (group) {
@@ -1866,6 +1890,8 @@
                     window.toggleBucketGroup(groupId);
                 }
             }
+            // Только внутри #bucketsListBody — scrollIntoView крутит window и прячет main-header
+            scrollBucketItemIntoSidebar(selectedItem);
         }
 
         if (typeof window.setMainToolbarLocked === 'function') window.setMainToolbarLocked(false);
@@ -1917,15 +1943,19 @@
         var fileList = document.getElementById('fileList');
         if (fileList) {
             var tr = window.I18N || {};
-            fileList.innerHTML =
-                '<div class="empty-state">' +
-                '<span class="ui-spinner empty-state-icon" aria-hidden="true"></span>' +
-                '<div>' + (tr['files.connecting_bucket'] || '').replace('{name}', bucket.display_name) + '</div>' +
-                '</div>';
+            var connecting = (tr['files.connecting_bucket'] || 'Connecting to bucket "{name}"...')
+                .replace('{name}', bucket.display_name || bucket.name || '');
+            fileList.innerHTML = (typeof window.buildEmptyStateSpinnerHtml === 'function')
+                ? window.buildEmptyStateSpinnerHtml(connecting)
+                : '<div class="empty-state"><span class="ui-spinner empty-state-icon" aria-hidden="true"></span><div>' +
+                    String(connecting).replace(/</g, '&lt;') + '</div></div>';
         }
+        try {
+            document.documentElement.classList.remove('boot-bucket');
+        } catch (e) { /* ignore */ }
 
         var filesHeader = document.getElementById('filesHeader');
-        if (filesHeader) filesHeader.style.display = 'grid';
+        if (filesHeader) filesHeader.style.display = 'none';
         if (typeof window.updateFilesPaginationUI === 'function') window.updateFilesPaginationUI();
 
         if (typeof window.clearSelection === 'function') window.clearSelection();

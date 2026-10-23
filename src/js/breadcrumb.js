@@ -37,8 +37,9 @@
 
     function updateBreadcrumb(path) {
         var breadcrumb = document.getElementById('breadcrumb');
-        var searchInput = document.getElementById('searchInput');
-        var hasActiveSearch = searchInput && searchInput.value.trim() !== '';
+        // Скрывать только в реальном search mode — не из‑за текста в инпуте
+        // (иначе гонка: папка мелькнула и пропала при debounce поиска).
+        var hasActiveSearch = !!(global.fileSearch && global.fileSearch.mode);
 
         breadcrumb.innerHTML = '';
 

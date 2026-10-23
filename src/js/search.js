@@ -487,6 +487,11 @@
     }
 
     function exitSearchMode() {
+        var wasSearching = !!(window.fileSearch && window.fileSearch.mode);
+        var searchInput = document.getElementById('searchInput');
+        var clearSearchBtn = document.getElementById('clearSearchBtn');
+        var hadQuery = !!(searchInput && searchInput.value.trim());
+
         if (window.fileSearch.timeout) {
             clearTimeout(window.fileSearch.timeout);
             window.fileSearch.timeout = null;
@@ -496,11 +501,15 @@
         window.fileSearch.query = '';
         window.pendingFileListReveal = null;
 
-        var searchInput = document.getElementById('searchInput');
-        var clearSearchBtn = document.getElementById('clearSearchBtn');
         if (searchInput && clearSearchBtn) {
             searchInput.value = '';
             clearSearchBtn.style.display = 'none';
+        }
+
+        // Уже не в поиске — не трогаем breadcrumb и не перезагружаем список
+        // (selectBucket всегда зовёт exitSearchMode при смене бакета).
+        if (!wasSearching && !hadQuery) {
+            return;
         }
 
         if (window.selectionMode || (typeof window.__getSelectionMode === 'function' && window.__getSelectionMode())) {
@@ -519,6 +528,10 @@
                     window.setupUserPermissions();
                 }
             }
+        }
+
+        if (!wasSearching) {
+            return;
         }
 
         document.getElementById('breadcrumb').innerHTML = '';

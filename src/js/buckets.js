@@ -1981,7 +1981,11 @@
             if (selectSeq !== _selectBucketSeq || getCurrentBucket() !== bucket.bucket_id) {
                 return;
             }
-            if (typeof window.updateBreadcrumb === 'function') window.updateBreadcrumb(pathToLoad);
+            // Не перетирать breadcrumb стартовым pathToLoad: пока считался size,
+            // пользователь мог уже зайти в подпапки (loadFiles сам обновляет crumb).
+            if (typeof window.updateBreadcrumb === 'function') {
+                window.updateBreadcrumb(getCurrentPath());
+            }
         } catch (error) {
             if (selectSeq !== _selectBucketSeq || getCurrentBucket() !== bucket.bucket_id) {
                 return;

@@ -40,10 +40,13 @@
 - `OPERATION_WORKER_POLL_SEC` — интервал опроса очереди в worker (по умолчанию `1`).
 - `OPERATION_CANCEL_CHECK_EVERY` — проверять cancel каждые N ключей при copy папки (по умолчанию `10`).
 - `OPERATION_DELETE_BATCH_SIZE` — размер батча `delete_objects` с проверкой cancel между батчами (по умолчанию `100`, макс. `1000`).
-- `OPERATION_PROGRESS_PERSIST_SEC` — как часто писать progress-события job в PostgreSQL (по умолчанию `2`; `0` — каждый progress). Снижает блокировки `/files/operation-jobs/active`.
+- `OPERATION_PROGRESS_PERSIST_SEC` — как часто писать progress job в PostgreSQL для обычных ops (по умолчанию `5`; `0` — каждый progress). Снижает WAL и блокировки `/files/operation-jobs/active`.
+- `OPERATION_PROGRESS_PERSIST_BULK_SEC` — то же для bulk ops `acl` / `copy` / `move` / `delete` / `upload` (по умолчанию `10`).
+- `OPERATION_JOB_MAX_HISTORY` — кольцевой буфер history in-memory/SSE (по умолчанию `100`).
+- `OPERATION_JOB_DB_PROGRESS_EVENTS` — сколько последних `progress` оставлять в jsonb `history` при UPSERT в PG (по умолчанию `1`; счётчики ещё в `meta.progress`).
 - `OPERATION_PURGE_MIN_INTERVAL_SEC` — минимальный интервал purge старых job (по умолчанию `60`).
 - `OPERATION_STALE_PENDING_SEC` — `pending` дольше N секунд (worker не забрал) → `error` (по умолчанию `120`).
-- `OPERATION_STALE_RUNNING_SEC` — interactive `running` (copy/move/delete/acl/…) без `updated_at` дольше N секунд → `error` (по умолчанию `60`). Worker после рестарта не reclaim'ит `running` — idle = мёртвый исполнитель; progress в PG ~каждые `OPERATION_PROGRESS_PERSIST_SEC`. При старте worker — force-purge.
+- `OPERATION_STALE_RUNNING_SEC` — interactive `running` (copy/move/delete/acl/…) без `updated_at` дольше N секунд → `error` (по умолчанию `60`). Worker после рестарта не reclaim'ит `running` — idle = мёртвый исполнитель; progress в PG ~каждые `OPERATION_PROGRESS_PERSIST_*`. При старте worker — force-purge.
 - `OPERATION_STALE_LONG_RUNNING_SEC` — то же для длинных ops `reindex` / `bucket_size` / `download_archive` (по умолчанию `3600`). Листинг S3 / Meili может минутами не слать progress; worker шлёт heartbeat `updated_at` ~каждые 30с и прерывается, если job уже помечен terminal в PG.
 
 ### Загрузка и логирование

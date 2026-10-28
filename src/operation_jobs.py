@@ -23,14 +23,28 @@ _listeners: Dict[str, List[queue.Queue]] = {}
 
 _SSE_HEARTBEAT_SEC = 25.0
 _SSE_DB_POLL_SEC = 2.0
-_MAX_HISTORY = 500
+# In-memory/SSE ring; в PG пишем ещё компактнее (_compact_history_for_db).
+try:
+    _MAX_HISTORY = max(20, int(os.environ.get('OPERATION_JOB_MAX_HISTORY', '100')))
+except (TypeError, ValueError):
+    _MAX_HISTORY = 100
+# Сколько последних progress оставлять в jsonb history при UPSERT в PG.
+try:
+    _DB_PROGRESS_EVENTS = max(0, int(os.environ.get('OPERATION_JOB_DB_PROGRESS_EVENTS', '1')))
+except (TypeError, ValueError):
+    _DB_PROGRESS_EVENTS = 1
 _JOB_RETENTION_SEC = 3600
 _UPLOAD_IDLE_FINISH_SEC = 3.0
-# Progress UPSERT в PG на каждый файл блокирует /active (DELETE/SELECT).
-# Терминальные события пишем всегда; progress — не чаще интервала.
+# Progress UPSERT в PG раздувает WAL (особенно ACL на десятки тысяч ключей).
+# Терминальные события пишем всегда; progress — throttled.
 _PROGRESS_PERSIST_MIN_INTERVAL_SEC = float(
-    os.environ.get('OPERATION_PROGRESS_PERSIST_SEC', '2.0')
+    os.environ.get('OPERATION_PROGRESS_PERSIST_SEC', '5.0')
 )
+# Bulk ops (acl/copy/move/delete/upload) — ещё реже.
+_PROGRESS_PERSIST_BULK_SEC = float(
+    os.environ.get('OPERATION_PROGRESS_PERSIST_BULK_SEC', '10.0')
+)
+_BULK_PROGRESS_OPS = frozenset({'acl', 'copy', 'move', 'delete', 'upload'})
 _PURGE_MIN_INTERVAL_SEC = float(os.environ.get('OPERATION_PURGE_MIN_INTERVAL_SEC', '60'))
 # pending без claim: worker poll ~1с; запас если worker временно выключен.
 _STALE_PENDING_SEC = int(os.environ.get('OPERATION_STALE_PENDING_SEC', '120'))
@@ -45,6 +59,54 @@ _last_purge_at = 0.0
 
 def _now() -> float:
     return time.time()
+
+
+def _progress_persist_interval_sec(op: str) -> float:
+    """Минимальный интервал UPSERT progress в PG для данного op."""
+    op = (op or '').strip()
+    if op in _BULK_PROGRESS_OPS:
+        return max(0.0, _PROGRESS_PERSIST_BULK_SEC)
+    return max(0.0, _PROGRESS_PERSIST_MIN_INTERVAL_SEC)
+
+
+def _compact_history_for_db(history: Optional[List[Any]]) -> List[Any]:
+    """Урезать history для PostgreSQL: все non-progress + хвост progress.
+
+    Иначе каждый UPSERT переписывает jsonb с сотнями progress → рост WAL.
+    SSE/reconnect опираются на meta.progress и terminal status.
+    """
+    if not history:
+        return []
+    keep_progress = _DB_PROGRESS_EVENTS
+    out: List[Any] = []
+    progress_kept = 0
+    for event in reversed(history):
+        if not event or not isinstance(event, dict):
+            continue
+        if event.get('type') == 'progress':
+            if progress_kept >= keep_progress:
+                continue
+            progress_kept += 1
+        out.append(event)
+        if len(out) >= _MAX_HISTORY:
+            break
+    out.reverse()
+    return out
+
+
+def _apply_progress_to_meta(meta: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, Any]:
+    """Зеркалировать current/total в meta — переживает slim history в PG."""
+    out = dict(meta or {})
+    prog = dict(out.get('progress') or {}) if isinstance(out.get('progress'), dict) else {}
+    if 'current' in event:
+        prog['current'] = event.get('current')
+    if 'total' in event:
+        prog['total'] = event.get('total')
+    if 'item_index' in event:
+        prog['item_index'] = event.get('item_index')
+    if prog:
+        out['progress'] = prog
+    return out
 
 
 def _ts_to_dt(ts: Optional[float]):
@@ -98,7 +160,7 @@ def _persist_job(job: Dict[str, Any]) -> None:
                         job.get('op') or '',
                         job.get('status') or 'pending',
                         json.dumps(job.get('meta') or {}, ensure_ascii=False),
-                        json.dumps((job.get('history') or [])[-_MAX_HISTORY:], ensure_ascii=False),
+                        json.dumps(_compact_history_for_db(job.get('history')), ensure_ascii=False),
                         job.get('error'),
                         bool(job.get('cancel_requested')),
                         _ts_to_dt(job.get('created_at')),
@@ -569,12 +631,12 @@ def publish(job_id: str, event: Dict[str, Any]) -> None:
             job['status'] = 'cancelled'
             job['finished_at'] = now
         elif etype == 'progress':
-            # In-memory + SSE всегда; в PG — throttled, иначе /active ждёт row lock
+            # current/total в meta — UI/reconnect без толстого history в PG
+            job['meta'] = _apply_progress_to_meta(job.get('meta') or {}, event)
+            # In-memory + SSE всегда; в PG — throttled (bulk ещё реже)
+            interval = _progress_persist_interval_sec(job.get('op') or '')
             last_persist = float(job.get('_last_progress_persist_at') or 0)
-            if (
-                _PROGRESS_PERSIST_MIN_INTERVAL_SEC > 0
-                and (now - last_persist) < _PROGRESS_PERSIST_MIN_INTERVAL_SEC
-            ):
+            if interval > 0 and (now - last_persist) < interval:
                 should_persist = False
             else:
                 job['_last_progress_persist_at'] = now

@@ -40,6 +40,24 @@ def _trf(key, **kwargs):
     return text
 
 
+def acl_batch_max_objects() -> int:
+    """Лимит объектов в одном bulk ACL job (защита WAL/PG)."""
+    try:
+        return max(1, int(os.environ.get('ACL_BATCH_MAX_OBJECTS', '10000')))
+    except (TypeError, ValueError):
+        return 10000
+
+
+def acl_batch_too_many_error(count: int, max_objects: int = None):
+    """(error_text, 400, extra_body) для jsonify."""
+    limit = acl_batch_max_objects() if max_objects is None else max(1, int(max_objects))
+    return (
+        _('error.acl_batch_too_many'),
+        400,
+        {'max': limit, 'count': int(count)},
+    )
+
+
 def _format_s3_acl_grantee(grantee: dict) -> str:
     if not grantee:
         return '—'
@@ -549,6 +567,10 @@ def _build_acl_batch_job(data):
     if not normalized_paths:
         return None, (_('error.object_path_required'), 400, {})
 
+    max_objects = acl_batch_max_objects()
+    if len(normalized_paths) > max_objects:
+        return None, acl_batch_too_many_error(len(normalized_paths), max_objects)
+
     bucket_config = bucket_info['bucket_config']
     return {
         'bucket_id': bucket_id,
@@ -602,5 +624,3 @@ def _iter_acl_batch_events(batch_job, context, cancel_check=None):
         'total': total,
         'errors': errors,
     }
-
-

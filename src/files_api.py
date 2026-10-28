@@ -20,6 +20,8 @@ from acl_ops import (
     _object_acl_payload_from_raw,
     _peek_cached_object_acl,
     _store_cached_object_acl,
+    acl_batch_max_objects,
+    acl_batch_too_many_error,
 )
 from bucket_access import (
     check_bucket_access,
@@ -717,6 +719,7 @@ def list_folder_files_recursive_impl():
         bucket_name = bucket_config.get('bucket_name')
         s3_client = get_s3_client(bucket_config)
 
+        max_objects = acl_batch_max_objects()
         all_files = []
         seen_files = set()
         for raw_prefix in raw_prefixes:
@@ -727,6 +730,9 @@ def list_folder_files_recursive_impl():
                 if file_path not in seen_files:
                     seen_files.add(file_path)
                     all_files.append(file_path)
+                    if len(all_files) > max_objects:
+                        err, status, extra = acl_batch_too_many_error(len(all_files), max_objects)
+                        return jsonify({'error': err, **extra}), status
 
         log_info(
             f"Bucket: {bucket_id}, prefixes: {len(raw_prefixes)}, files: {len(all_files)}",
@@ -736,6 +742,7 @@ def list_folder_files_recursive_impl():
             'bucket_id': bucket_id,
             'files': all_files,
             'total_files': len(all_files),
+            'max': max_objects,
         })
 
     except Exception as e:

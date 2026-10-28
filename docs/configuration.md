@@ -40,6 +40,7 @@
 - `OPERATION_WORKER_POLL_SEC` — интервал опроса очереди в worker (по умолчанию `1`).
 - `OPERATION_CANCEL_CHECK_EVERY` — проверять cancel каждые N ключей при copy папки (по умолчанию `10`).
 - `OPERATION_DELETE_BATCH_SIZE` — размер батча `delete_objects` с проверкой cancel между батчами (по умолчанию `100`, макс. `1000`).
+- `ACL_BATCH_MAX_OBJECTS` — максимум объектов в одном bulk ACL job (по умолчанию `10000`). При превышении API и UI отклоняют операцию.
 - `OPERATION_PROGRESS_PERSIST_SEC` — как часто писать progress job в PostgreSQL для обычных ops (по умолчанию `5`; `0` — каждый progress). Снижает WAL и блокировки `/files/operation-jobs/active`.
 - `OPERATION_PROGRESS_PERSIST_BULK_SEC` — то же для bulk ops `acl` / `copy` / `move` / `delete` / `upload` (по умолчанию `10`).
 - `OPERATION_JOB_MAX_HISTORY` — кольцевой буфер history in-memory/SSE (по умолчанию `100`).

@@ -2474,6 +2474,13 @@ async function revealPendingFileListItem() {
                     }
                     return null;
                 }
+                if (paths.length > ACL_BATCH_MAX_OBJECTS) {
+                    window.hideBulkAclModal();
+                    if (typeof window.showError === 'function') {
+                        window.showError(aclBatchTooManyMessage());
+                    }
+                    return null;
+                }
                 _bulkState.paths = paths.slice();
                 setBulkAclSummary(paths.length, folderCount);
 
@@ -2539,6 +2546,13 @@ async function revealPendingFileListItem() {
     }
 
     var BULK_ACL_PROGRESS_LIST_LIMIT = 100;
+    // Должен совпадать с ACL_BATCH_MAX_OBJECTS на сервере (default 10000).
+    var ACL_BATCH_MAX_OBJECTS = 10000;
+
+    function aclBatchTooManyMessage() {
+        return t('error.acl_batch_too_many')
+            || 'Cannot apply bulk ACL (more than 10,000 objects selected)';
+    }
 
     function saveBulkAcl() {
         if (!_bulkState.bucketId || !_bulkState.paths.length) return;
@@ -2546,6 +2560,12 @@ async function revealPendingFileListItem() {
         var validationError = validateGrantsBeforeSave(grants);
         if (validationError) {
             if (typeof window.showError === 'function') window.showError(validationError);
+            return;
+        }
+        if (_bulkState.paths.length > ACL_BATCH_MAX_OBJECTS) {
+            if (typeof window.showError === 'function') {
+                window.showError(aclBatchTooManyMessage());
+            }
             return;
         }
         if (!window.OperationJobs || typeof window.OperationJobs.startAcl !== 'function') {

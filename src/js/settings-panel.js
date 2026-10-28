@@ -382,6 +382,9 @@ function setupSettingsPanel() {
             var maxScroll = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
             scrollEl.scrollTop = Math.min(state.scrollTop || 0, maxScroll);
         }
+        if (typeof window.updateSearchIndexAllHeaderState === 'function') {
+            window.updateSearchIndexAllHeaderState();
+        }
     }
 
     window.captureSettingsTableViewState = captureSettingsTableViewState;
@@ -418,6 +421,10 @@ function setupSettingsPanel() {
         currentSettingsPage = 1;
         applySettingsPagination();
         if (settingsSearchClear) settingsSearchClear.classList.toggle('hidden', !q);
+        // Master-галка «Enabled» / Reindex all должны отражать найденный набор, не весь список.
+        if (typeof window.updateSearchIndexAllHeaderState === 'function') {
+            window.updateSearchIndexAllHeaderState();
+        }
     }
     if (settingsSearchInput) {
         settingsSearchInput.addEventListener('input', filterSettingsTable);

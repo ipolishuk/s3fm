@@ -740,10 +740,11 @@
                     ? e.target
                     : null;
                 if (allCb) {
-                    if (allCb.disabled || _searchIndexToggleAllInProgress) return;
                     var enabled = !!allCb.checked;
-                    // Вернуть чекбокс к состоянию из snapshot до подтверждения
+                    // Всегда возвращаем визуал к состоянию matched-набора:
+                    // иначе при early-return / cancel галка «залипает».
                     updateSearchIndexAllHeaderState();
+                    if (allCb.disabled || _searchIndexToggleAllInProgress) return;
                     confirmAndToggleSearchIndexAll(enabled);
                     return;
                 }
@@ -830,18 +831,43 @@
         });
     }
 
-    function getSearchIndexToggleableBucketIds() {
-        var snap = window._settingsSearchBucketsSnapshot || [];
+    function getSettingsSearchFilterQuery() {
+        var input = document.getElementById('settingsSearchInput');
+        return (input && input.value || '').trim().toLowerCase();
+    }
+
+    function searchBucketRowMatchesFilter(tr, q) {
+        if (!q) return true;
+        return (tr.textContent || '').toLowerCase().indexOf(q) !== -1;
+    }
+
+    /**
+     * Бакеты из текущего поиска (все страницы matched-набора), не весь snapshot.
+     * options.onlyEnabled — только с включённой индексацией (для Reindex all).
+     * options.onlyNeedingToggle — только те, у кого enabled !== targetEnabled.
+     */
+    function getMatchedSearchBucketIds(options) {
+        options = options || {};
+        var onlyEnabled = !!options.onlyEnabled;
+        var onlyNeedingToggle = !!options.onlyNeedingToggle;
+        var targetEnabled = !!options.targetEnabled;
+        var q = getSettingsSearchFilterQuery();
         var ids = [];
         var seen = {};
-        snap.forEach(function (row) {
-            var id = (row.bucket_id || '').trim();
-            if (id && !seen[id]) {
-                seen[id] = true;
-                ids.push(id);
-            }
+        document.querySelectorAll('#settingsTableBody tr[data-bucket-id]').forEach(function (tr) {
+            if (!searchBucketRowMatchesFilter(tr, q)) return;
+            var id = (tr.getAttribute('data-bucket-id') || '').trim();
+            if (!id || seen[id]) return;
+            if (onlyEnabled && !isBucketSearchIndexEnabled(id)) return;
+            if (onlyNeedingToggle && isBucketSearchIndexEnabled(id) === targetEnabled) return;
+            seen[id] = true;
+            ids.push(id);
         });
         return ids;
+    }
+
+    function getSearchIndexToggleableBucketIds() {
+        return getMatchedSearchBucketIds();
     }
 
     function updateSearchIndexAllHeaderState() {
@@ -854,7 +880,7 @@
             allCb.disabled = true;
             return;
         }
-        allCb.disabled = false;
+        allCb.disabled = !!_searchIndexToggleAllInProgress;
         var enabledCount = 0;
         ids.forEach(function (id) {
             if (isBucketSearchIndexEnabled(id)) enabledCount++;
@@ -874,22 +900,36 @@
     var _searchIndexToggleAllInProgress = false;
 
     function confirmAndToggleSearchIndexAll(enabled) {
-        var ids = getSearchIndexToggleableBucketIds();
+        if (_searchIndexToggleAllInProgress) {
+            updateSearchIndexAllHeaderState();
+            return;
+        }
+        var ids = getMatchedSearchBucketIds({
+            onlyNeedingToggle: true,
+            targetEnabled: enabled,
+        });
+        if (!ids.length) {
+            updateSearchIndexAllHeaderState();
+            return;
+        }
+        var msg = (enabled
+            ? t('settings.search.confirm_index_enable_all')
+            : t('settings.search.confirm_index_disable_all')
+        ).replace('{count}', String(ids.length));
+        confirmAction(msg, function () {
+            toggleSearchIndexAll(enabled, ids);
+        }, 'yes');
+    }
+
+    function toggleSearchIndexAll(enabled, ids) {
+        ids = ids || getMatchedSearchBucketIds({
+            onlyNeedingToggle: true,
+            targetEnabled: enabled,
+        });
         if (!ids.length || _searchIndexToggleAllInProgress) {
             updateSearchIndexAllHeaderState();
             return;
         }
-        var msg = enabled
-            ? t('settings.search.confirm_index_enable_all')
-            : t('settings.search.confirm_index_disable_all');
-        confirmAction(msg, function () {
-            toggleSearchIndexAll(enabled);
-        }, 'yes');
-    }
-
-    function toggleSearchIndexAll(enabled) {
-        var ids = getSearchIndexToggleableBucketIds();
-        if (!ids.length || _searchIndexToggleAllInProgress) return;
 
         var previous = {};
         ids.forEach(function (bucketId) {
@@ -900,6 +940,7 @@
         applySearchIndexEnabledRowState();
 
         _searchIndexToggleAllInProgress = true;
+        updateSearchIndexAllHeaderState();
 
         var requests = ids.map(function (bucketId) {
             return setBucketSearchIndexEnabled(bucketId, enabled).then(function (res) {
@@ -1044,17 +1085,7 @@
     }
 
     function collectSearchTabBucketIds() {
-        var items = window._settingsSearchBucketsSnapshot || [];
-        var ids = [];
-        var seen = {};
-        items.forEach(function (row) {
-            var id = (row.bucket_id || '').trim();
-            if (id && !seen[id] && isRowSearchIndexEnabled(row)) {
-                seen[id] = true;
-                ids.push(id);
-            }
-        });
-        return ids;
+        return getMatchedSearchBucketIds({ onlyEnabled: true });
     }
 
     function findBucketReindexButton(bucketId) {
@@ -1479,20 +1510,19 @@
         }
         var bucketIds = collectSearchTabBucketIds();
         if (!bucketIds.length) {
-            var snap = window._settingsSearchBucketsSnapshot || [];
-            var hasAny = snap.some(function (row) {
-                return (row.bucket_id || '').trim();
-            });
+            var matchedAny = getMatchedSearchBucketIds().length > 0;
             if (typeof showError === 'function') {
                 showError(
-                    hasAny
+                    matchedAny
                         ? t('error.search_index_all_disabled')
                         : t('error.reindex_buckets_empty') || t('settings.no_buckets')
                 );
             }
             return;
         }
-        confirmAction(t('settings.search.confirm_reindex_all'), function () {
+        var confirmMsg = t('settings.search.confirm_reindex_all')
+            .replace('{count}', String(bucketIds.length));
+        confirmAction(confirmMsg, function () {
             startReindexAllBatch(bucketIds);
         });
     }
@@ -1745,6 +1775,7 @@
     window.confirmAndReindexBucket = confirmAndReindexBucket;
     window.resetSettingsSearchLayout = resetSettingsSearchLayout;
     window.loadSettingsSearch = loadSettingsSearch;
+    window.updateSearchIndexAllHeaderState = updateSearchIndexAllHeaderState;
     window.isMeiliSearchRunnable = function () {
         return isMeiliRunnable(_meiliStatusCache);
     };
